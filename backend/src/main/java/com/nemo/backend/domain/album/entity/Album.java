@@ -1,7 +1,7 @@
 package com.nemo.backend.domain.album.entity;
 
-import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.user.entity.User;
+import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.global.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
