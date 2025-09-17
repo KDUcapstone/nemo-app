@@ -6,7 +6,8 @@ import 'package:frontend/presentation/screens/album/select_album_photos_screen.d
 import 'package:frontend/providers/photo_provider.dart';
 
 class CreateAlbumScreen extends StatefulWidget {
-  const CreateAlbumScreen({super.key});
+  final List<int>? initialSelectedPhotoIds;
+  const CreateAlbumScreen({super.key, this.initialSelectedPhotoIds});
 
   @override
   State<CreateAlbumScreen> createState() => _CreateAlbumScreenState();
@@ -19,6 +20,18 @@ class _CreateAlbumScreenState extends State<CreateAlbumScreen> {
   bool _submitting = false;
   int? _coverPhotoId;
   final Set<int> _selectedPhotoIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialSelectedPhotoIds;
+    if (initial != null && initial.isNotEmpty) {
+      _selectedPhotoIds
+        ..clear()
+        ..addAll(initial);
+      _coverPhotoId ??= _selectedPhotoIds.first;
+    }
+  }
 
   @override
   void dispose() {
@@ -271,56 +284,6 @@ class _CreateAlbumScreenWithInitialState
     extends State<CreateAlbumScreenWithInitial> {
   @override
   Widget build(BuildContext context) {
-    return CreateAlbumScreenWrapper(initialSelected: widget.selectedPhotoIds);
-  }
-}
-
-class CreateAlbumScreenWrapper extends StatefulWidget {
-  final List<int> initialSelected;
-  const CreateAlbumScreenWrapper({super.key, required this.initialSelected});
-
-  @override
-  State<CreateAlbumScreenWrapper> createState() =>
-      _CreateAlbumScreenWrapperState();
-}
-
-class _CreateAlbumScreenWrapperState extends State<CreateAlbumScreenWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return CreateAlbumScreenInternal(initialSelected: widget.initialSelected);
-  }
-}
-
-class CreateAlbumScreenInternal extends StatefulWidget {
-  final List<int> initialSelected;
-  const CreateAlbumScreenInternal({super.key, required this.initialSelected});
-
-  @override
-  State<CreateAlbumScreenInternal> createState() =>
-      _CreateAlbumScreenInternalState();
-}
-
-class _CreateAlbumScreenInternalState extends State<CreateAlbumScreenInternal> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final state = context.findAncestorStateOfType<_CreateAlbumScreenState>();
-      if (state != null) {
-        state.setState(() {
-          state._selectedPhotoIds
-            ..clear()
-            ..addAll(widget.initialSelected);
-          if (state._selectedPhotoIds.isNotEmpty) {
-            state._coverPhotoId ??= state._selectedPhotoIds.first;
-          }
-        });
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const CreateAlbumScreen();
+    return CreateAlbumScreen(initialSelectedPhotoIds: widget.selectedPhotoIds);
   }
 }
