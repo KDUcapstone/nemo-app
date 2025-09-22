@@ -105,9 +105,12 @@ void _showEmailLoginSheet(BuildContext context) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    isDismissible: true,
+    barrierColor: Colors.black26,
     backgroundColor: Colors.transparent,
     builder: (ctx) {
       return DraggableScrollableSheet(
+        expand: false,
         initialChildSize: 0.55,
         minChildSize: 0.4,
         maxChildSize: 0.9,
