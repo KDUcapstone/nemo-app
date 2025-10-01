@@ -68,14 +68,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             accessToken: result['accessToken'],
             profileImageUrl: result['profileImageUrl'],
           );
-
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('로그인되었습니다!'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          // 로그인 성공 신호를 상위(LoginScreen)로 전달하여 거기서 네비게이션 처리
+          Navigator.pop(context, true);
         }
       } catch (e) {
         if (!mounted) return;
