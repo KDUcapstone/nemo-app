@@ -3,8 +3,13 @@ package com.nemo.backend.domain.album.service;
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.entity.Album;
 import com.nemo.backend.domain.album.repository.AlbumRepository;
+import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
+import com.nemo.backend.domain.photo.entity.Photo;                 // ✅ 추가
+import com.nemo.backend.domain.photo.repository.PhotoRepository;   // ✅ 추가
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.domain.user.repository.UserRepository;
+// import jakarta.transaction.Transactional;                      // ❌ 제거
+import org.springframework.transaction.annotation.Transactional;    // ✅ 교체
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +22,7 @@ public class AlbumService {
 
     private final AlbumRepository albumRepository;
     private final UserRepository userRepository;
+    private final PhotoRepository photoRepository;                  // ✅ 주입
 
     public AlbumResponse createAlbum(AlbumCreateRequest req) {
         User user = userRepository.findById(req.getUserId())
@@ -59,5 +65,50 @@ public class AlbumService {
 
     public void deleteAlbum(Long id) {
         albumRepository.deleteById(id);
+    }
+
+    @Transactional
+    public void addPhoto(Long albumId, Long photoId, Long userId) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
+        if (!album.getUser().getId().equals(userId)) {
+            throw new IllegalStateException("앨범 소유자가 아닙니다.");
+        }
+        Photo photo = photoRepository.findById(photoId)
+                .orElseThrow(() -> new IllegalArgumentException("Photo not found"));
+        if (!photo.getUserId().equals(userId)) {
+            throw new IllegalStateException("본인 사진이 아닙니다.");
+        }
+        photo.setAlbum(album);
+        photoRepository.save(photo);
+    }
+
+    @Transactional(readOnly = true) // ✅ spring-tx 사용하므로 readOnly OK
+    public List<PhotoResponseDto> getPhotos(Long albumId, Long userId) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
+        if (!album.getUser().getId().equals(userId)) {
+            throw new IllegalStateException("앨범 소유자가 아닙니다.");
+        }
+        return photoRepository
+                .findByAlbumAndDeletedIsFalseOrderByCreatedAtDesc(album) // ✅ 리포지토리 메서드 필요
+                .stream()
+                .map(PhotoResponseDto::new)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void removePhoto(Long albumId, Long photoId, Long userId) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
+        Photo photo = photoRepository.findById(photoId)
+                .orElseThrow(() -> new IllegalArgumentException("Photo not found"));
+        if (!album.getUser().getId().equals(userId) || !photo.getUserId().equals(userId)) {
+            throw new IllegalStateException("권한이 없습니다.");
+        }
+        if (photo.getAlbum() != null && photo.getAlbum().getId().equals(albumId)) {
+            photo.setAlbum(null);
+            photoRepository.save(photo);
+        }
     }
 }

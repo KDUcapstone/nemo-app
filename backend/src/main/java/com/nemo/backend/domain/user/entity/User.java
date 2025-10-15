@@ -10,6 +10,11 @@ import lombok.*;
  * authentication concerns.
  */
 @Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder   // ✅ 이거 추가
 @Table(name = "users")
 public class User {
     @Id

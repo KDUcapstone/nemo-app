@@ -9,13 +9,17 @@ import com.nemo.backend.global.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 
+@SecurityRequirement(name = "BearerAuth")
 @RestController
 @RequestMapping("/api/photos")
 public class PhotoController {
+
     private final PhotoService photoService;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -29,7 +33,12 @@ public class PhotoController {
         this.refreshTokenRepository = refreshTokenRepository;
     }
 
-    @PostMapping
+    /**
+     * 📸 사진 업로드 (QR 이미지 기반)
+     * - multipart/form-data 형식으로 전송해야 함
+     * - Swagger에서는 qr 항목이 file upload 필드로 표시됨
+     */
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<PhotoResponseDto> upload(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestPart("qr") MultipartFile qrFile) {
