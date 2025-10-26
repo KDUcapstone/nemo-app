@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app/theme/app_colors.dart';
+import 'package:frontend/services/friend_api.dart';
 
 class ShareScreen extends StatelessWidget {
   const ShareScreen({super.key});
@@ -17,17 +18,23 @@ class ShareScreen extends StatelessWidget {
           ),
           const Divider(height: 1),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  _ShareAndInviteRow(),
-                  SizedBox(height: 20),
-                  _FriendsTagSection(),
-                  SizedBox(height: 20),
-                  _CollaborativeAlbumSection(),
-                ],
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    _ShareAndInviteRow(),
+                    SizedBox(height: 20),
+                    _FriendsListSection(),
+                    SizedBox(height: 20),
+                    _FriendsTagSection(),
+                    SizedBox(height: 20),
+                    _CollaborativeAlbumSection(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -156,6 +163,192 @@ class _OpenSheetTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FriendsListSection extends StatefulWidget {
+  const _FriendsListSection();
+
+  @override
+  State<_FriendsListSection> createState() => _FriendsListSectionState();
+}
+
+class _FriendsListSectionState extends State<_FriendsListSection> {
+  List<Map<String, dynamic>> _friends = const [];
+  List<Map<String, dynamic>> _filtered = const [];
+  bool _loading = true;
+  String _sort = 'latest'; // latest | nickname
+  final Set<int> _inFlight = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await FriendApi.getFriends();
+      _friends = list;
+      _applySort();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _applySort() {
+    _filtered = List.of(_friends);
+    if (_sort == 'nickname') {
+      _filtered.sort(
+        (a, b) => (a['nickname'] ?? '').toString().compareTo(
+          (b['nickname'] ?? '').toString(),
+        ),
+      );
+    } else {
+      _filtered.sort(
+        (a, b) => (b['addedAt'] ?? '').toString().compareTo(
+          (a['addedAt'] ?? '').toString(),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              '친구 목록',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+            DropdownButton<String>(
+              value: _sort,
+              items: const [
+                DropdownMenuItem(value: 'latest', child: Text('최신순')),
+                DropdownMenuItem(value: 'nickname', child: Text('닉네임순')),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _sort = v;
+                  _applySort();
+                });
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          decoration: const InputDecoration(
+            hintText: '친구 검색 (닉네임/이메일)',
+            prefixIcon: Icon(Icons.search),
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          onTapOutside: (_) => FocusScope.of(context).unfocus(),
+          onChanged: (q) async {
+            if (q.trim().isEmpty) {
+              setState(() => _applySort());
+            } else {
+              final results = await FriendApi.search(q);
+              setState(() => _filtered = results);
+            }
+          },
+        ),
+        const SizedBox(height: 8),
+        if (_loading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else if (_filtered.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Text(
+              '친구가 없습니다.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemBuilder: (context, i) {
+              final f = _filtered[i];
+              final id = f['userId'] as int;
+              final nick = (f['nickname'] ?? '') as String;
+              final email = (f['email'] ?? '') as String;
+              final avatar = (f['profileImageUrl'] ?? '') as String?;
+              final pending = _inFlight.contains(id);
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundImage: (avatar != null && avatar.isNotEmpty)
+                      ? NetworkImage(avatar)
+                      : null,
+                  child: (avatar == null || avatar.isEmpty)
+                      ? const Icon(Icons.person_outline)
+                      : null,
+                ),
+                title: Text(nick),
+                subtitle: Text(
+                  email,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: pending
+                          ? null
+                          : () async {
+                              _inFlight.add(id);
+                              setState(() {});
+                              try {
+                                await FriendApi.deleteFriend(id);
+                                _friends.removeWhere((e) => e['userId'] == id);
+                                _applySort();
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('삭제됨: $nick')),
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                final msg =
+                                    e.toString().contains('USER_NOT_FOUND')
+                                    ? '사용자를 찾을 수 없습니다.'
+                                    : e.toString().contains('UNAUTHORIZED')
+                                    ? '로그인이 필요합니다.'
+                                    : '삭제 실패';
+                                ScaffoldMessenger.of(
+                                  context,
+                                ).showSnackBar(SnackBar(content: Text(msg)));
+                              } finally {
+                                _inFlight.remove(id);
+                                if (mounted) setState(() {});
+                              }
+                            },
+                      tooltip: '친구 삭제',
+                    ),
+                  ],
+                ),
+              );
+            },
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemCount: _filtered.length,
+          ),
+      ],
     );
   }
 }

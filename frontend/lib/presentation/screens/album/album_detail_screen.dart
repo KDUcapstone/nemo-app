@@ -95,6 +95,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   Future<void> _showShareSheet(BuildContext context) async {
     final searchCtrl = TextEditingController();
     final selectedIds = <int>{};
+    final Set<int> inFlight = <int>{};
     List<Map<String, dynamic>> friends = await FriendApi.list();
     List<Map<String, dynamic>> shareTargets = [];
     try {
@@ -188,43 +189,116 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
+                    onTapOutside: (_) => FocusScope.of(context).unfocus(),
                     onChanged: (q) async {
-                      friends = await FriendApi.list(search: q);
+                      friends = q.trim().isEmpty
+                          ? await FriendApi.list()
+                          : await FriendApi.search(q);
                       // ignore: use_build_context_synchronously
                       (ctx as Element).markNeedsBuild();
                     },
                   ),
                   const SizedBox(height: 8),
-                  ...friends.map((f) {
+                  ...List.generate(friends.length, (idx) {
+                    final f = friends[idx];
                     final id = f['userId'] as int;
                     final nick = f['nickname'] as String? ?? '친구$id';
+                    final avatarUrl =
+                        (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
+                    final isFriend = (f['isFriend'] as bool?) ?? true;
                     final checked = selectedIds.contains(id);
                     return ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person_outline),
+                      leading: CircleAvatar(
+                        backgroundImage:
+                            avatarUrl != null && avatarUrl.isNotEmpty
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: (avatarUrl == null || avatarUrl.isEmpty)
+                            ? const Icon(Icons.person_outline)
+                            : null,
                       ),
                       title: Text(nick),
-                      trailing: Checkbox(
-                        value: checked,
-                        onChanged: (v) {
-                          if (v == true) {
-                            selectedIds.add(id);
-                          } else {
-                            selectedIds.remove(id);
-                          }
-                          (ctx as Element).markNeedsBuild();
-                        },
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!isFriend)
+                            OutlinedButton(
+                              onPressed: inFlight.contains(id)
+                                  ? null
+                                  : () async {
+                                      inFlight.add(id);
+                                      (ctx as Element).markNeedsBuild();
+                                      try {
+                                        await FriendApi.addFriend(id);
+                                        friends[idx] = {...f, 'isFriend': true};
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text('친구 추가 완료: $nick'),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        final msg =
+                                            e.toString().contains(
+                                              'ALREADY_FRIEND',
+                                            )
+                                            ? '이미 친구입니다.'
+                                            : e.toString().contains(
+                                                'USER_NOT_FOUND',
+                                              )
+                                            ? '사용자를 찾을 수 없습니다.'
+                                            : '친구 추가 실패';
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(content: Text(msg)),
+                                        );
+                                      } finally {
+                                        inFlight.remove(id);
+                                        (ctx).markNeedsBuild();
+                                      }
+                                    },
+                              child: inFlight.contains(id)
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('친구 추가'),
+                            ),
+                          const SizedBox(width: 8),
+                          Checkbox(
+                            value: checked,
+                            onChanged: isFriend
+                                ? (v) {
+                                    if (v == true) {
+                                      selectedIds.add(id);
+                                    } else {
+                                      selectedIds.remove(id);
+                                    }
+                                    (ctx as Element).markNeedsBuild();
+                                  }
+                                : null,
+                          ),
+                        ],
                       ),
-                      onTap: () {
-                        if (checked) {
-                          selectedIds.remove(id);
-                        } else {
-                          selectedIds.add(id);
-                        }
-                        (ctx as Element).markNeedsBuild();
-                      },
+                      onTap: isFriend
+                          ? () {
+                              if (checked) {
+                                selectedIds.remove(id);
+                              } else {
+                                selectedIds.add(id);
+                              }
+                              (ctx as Element).markNeedsBuild();
+                            }
+                          : null,
                     );
-                  }).toList(),
+                  }),
                   const SizedBox(height: 8),
                   Row(
                     children: [
