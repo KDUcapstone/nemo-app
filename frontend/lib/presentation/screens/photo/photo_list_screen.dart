@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/photo_provider.dart';
 import 'photo_viewer_screen.dart';
@@ -9,6 +10,7 @@ import 'package:frontend/presentation/screens/album/create_album_screen.dart';
 import 'package:frontend/presentation/screens/album/select_album_photos_screen.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
+import 'package:frontend/app/theme/app_colors.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -36,131 +38,162 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   Widget build(BuildContext context) {
     final items = context.watch<PhotoProvider>().items;
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: _TopToggle(
-          isAlbums: _showAlbums,
-          onChanged: (isAlbums) => setState(() => _showAlbums = isAlbums),
-        ),
-        actions: [
-          if (_showAlbums)
-            IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: '새 앨범',
-              onPressed: () async {
-                // 1) 사진 먼저 선택
-                final selected = await Navigator.push<List<int>>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SelectAlbumPhotosScreen(),
-                  ),
-                );
-                if (!mounted) return;
-                // 선택이 없으면 취소
-                if (selected == null) return;
-
-                // 2) 제목/설명 입력
-                final created = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        CreateAlbumScreenInitial(selectedPhotoIds: selected),
-                  ),
-                );
-                if (!mounted) return;
-                if (created != null) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('앨범이 생성되었습니다.')));
-                }
-              },
-            ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      appBar: null,
+      body: SafeArea(
         child: Column(
           children: [
+            // Top bar with horizontal padding
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: _TopBar(),
+            ),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            // 사진/앨범 전환 토글(정중앙 고정) + (앨범 모드) 새 앨범 버튼(우측 끝)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                height: 36,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Center(
+                      child: _TopToggle(
+                        isAlbums: _showAlbums,
+                        onChanged: (isAlbums) =>
+                            setState(() => _showAlbums = isAlbums),
+                      ),
+                    ),
+                    if (_showAlbums)
+                      Positioned(
+                        right: 0,
+                        child: IconButton(
+                          icon: const Icon(Icons.add),
+                          tooltip: '새 앨범',
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          onPressed: () async {
+                            // 1) 사진 먼저 선택
+                            final selected = await Navigator.push<List<int>>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SelectAlbumPhotosScreen(),
+                              ),
+                            );
+                            if (!mounted) return;
+                            if (selected == null) return;
+
+                            // 2) 제목/설명 입력
+                            final created = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CreateAlbumScreenInitial(
+                                  selectedPhotoIds: selected,
+                                ),
+                              ),
+                            );
+                            if (!mounted) return;
+                            if (created != null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('앨범이 생성되었습니다.')),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Expanded(
-              child: Stack(
-                children: [
-                  items.isEmpty
-                      ? const _EmptyState()
-                      : (_showAlbums
-                            ? const _AlbumListGrid()
-                            : NotificationListener<ScrollNotification>(
-                                onNotification: (n) {
-                                  if (n.metrics.pixels >=
-                                      n.metrics.maxScrollExtent - 200) {
-                                    final p = context.read<PhotoProvider>();
-                                    if (!p.isLoading && p.hasMore) {
-                                      p.loadNextPage();
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                child: Stack(
+                  children: [
+                    items.isEmpty
+                        ? const _EmptyState()
+                        : (_showAlbums
+                              ? const _AlbumListGrid()
+                              : NotificationListener<ScrollNotification>(
+                                  onNotification: (n) {
+                                    if (n.metrics.pixels >=
+                                        n.metrics.maxScrollExtent - 200) {
+                                      final p = context.read<PhotoProvider>();
+                                      if (!p.isLoading && p.hasMore) {
+                                        p.loadNextPage();
+                                      }
                                     }
-                                  }
-                                  return false;
-                                },
-                                child: Consumer<PhotoProvider>(
-                                  builder: (_, p, __) => Stack(
-                                    children: [
-                                      GridView.builder(
-                                        gridDelegate:
-                                            const SliverGridDelegateWithFixedCrossAxisCount(
-                                              crossAxisCount: 2,
-                                              mainAxisSpacing: 12,
-                                              crossAxisSpacing: 12,
-                                              childAspectRatio: 0.72,
-                                            ),
-                                        itemCount: items.length,
-                                        itemBuilder: (_, i) {
-                                          final item = items[i];
-                                          return _PhotoCard(
-                                            item: item,
-                                            onTap: () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      PhotoViewerScreen(
-                                                        photoId: item.photoId,
-                                                        imageUrl: item.imageUrl,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                          );
-                                        },
-                                      ),
-                                      if (p.isLoading)
-                                        const Positioned(
-                                          left: 0,
-                                          right: 0,
-                                          bottom: 0,
-                                          child: Padding(
-                                            padding: EdgeInsets.all(8),
-                                            child: Center(
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
+                                    return false;
+                                  },
+                                  child: Consumer<PhotoProvider>(
+                                    builder: (_, p, __) => Stack(
+                                      children: [
+                                        GridView.builder(
+                                          gridDelegate:
+                                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                                crossAxisCount: 2,
+                                                mainAxisSpacing: 20,
+                                                crossAxisSpacing: 20,
+                                                childAspectRatio: 0.72,
+                                              ),
+                                          itemCount: items.length,
+                                          itemBuilder: (_, i) {
+                                            final item = items[i];
+                                            return _PhotoCard(
+                                              item: item,
+                                              onTap: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        PhotoViewerScreen(
+                                                          photoId: item.photoId,
+                                                          imageUrl:
+                                                              item.imageUrl,
+                                                        ),
+                                                  ),
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
+                                        if (p.isLoading)
+                                          const Positioned(
+                                            left: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            child: Padding(
+                                              padding: EdgeInsets.all(8),
+                                              child: Center(
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              )),
-                  if (!_showAlbums)
-                    Positioned(
-                      left: 12,
-                      bottom: 12,
-                      child: _FloatingSortButton(
-                        sort: _sort,
-                        onSortSelected: (v) {
-                          setState(() => _sort = v);
-                          context.read<PhotoProvider>().resetAndLoad(sort: v);
-                        },
+                                )),
+                    if (!_showAlbums)
+                      Positioned(
+                        left: 12,
+                        bottom: 12,
+                        child: _FloatingSortButton(
+                          sort: _sort,
+                          onSortSelected: (v) {
+                            setState(() => _sort = v);
+                            context.read<PhotoProvider>().resetAndLoad(sort: v);
+                          },
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -214,6 +247,43 @@ class _EmptyState extends StatelessWidget {
           Text('아직 업로드된 사진이 없습니다'),
         ],
       ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'nemo',
+          style: GoogleFonts.jua(fontSize: 24, color: AppColors.textPrimary),
+        ),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.notifications_none_rounded),
+              color: AppColors.textPrimary,
+              onPressed: () {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('알림 준비 중입니다.')));
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.info_outline_rounded),
+              color: AppColors.textPrimary,
+              onPressed: () {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('도움말 준비 중입니다.')));
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -316,11 +386,7 @@ class _FavoriteBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const CircleAvatar(
-      radius: 12,
-      backgroundColor: Colors.redAccent,
-      child: Icon(Icons.favorite, color: Colors.white, size: 14),
-    );
+    return const Icon(Icons.favorite, color: Colors.white, size: 18);
   }
 }
 
@@ -404,8 +470,8 @@ class _AlbumListGrid extends StatelessWidget {
       child: GridView.builder(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
           childAspectRatio: 0.78,
         ),
         itemCount: provider.albums.length,

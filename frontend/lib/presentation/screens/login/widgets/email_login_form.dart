@@ -18,6 +18,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _errorText;
 
   @override
   void dispose() {
@@ -49,8 +51,13 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
   }
 
   void _handleLogin() async {
+    if (_isLoading) return;
     if (_formKey.currentState!.validate()) {
       try {
+        setState(() {
+          _isLoading = true;
+          _errorText = null;
+        });
         final authService = AuthService();
         final result = await authService.login(
           _emailController.text,
@@ -58,6 +65,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         );
 
         if (result['success'] == true && mounted) {
+          setState(() {
+            _isLoading = false;
+          });
           final userProvider = Provider.of<UserProvider>(
             context,
             listen: false,
@@ -73,9 +83,13 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('로그인 실패: $e'), backgroundColor: Colors.red),
-        );
+        setState(() {
+          _isLoading = false;
+          final message = e.toString();
+          _errorText = message.startsWith('Exception: ')
+              ? message.substring('Exception: '.length)
+              : message;
+        });
       }
     }
   }
@@ -151,8 +165,55 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                     controller: _passwordController,
                     validator: _validatePassword,
                   ),
+                  if (_errorText != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _errorText!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
-                  _PrimaryButton(text: '로그인', onTap: _handleLogin),
+                  if (_isLoading)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary.withOpacity(0.45),
+                            AppColors.primary.withOpacity(0.35),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 6,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const SizedBox(
+                        height: 20,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    _PrimaryButton(text: '로그인', onTap: _handleLogin),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,

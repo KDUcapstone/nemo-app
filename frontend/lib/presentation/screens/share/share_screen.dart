@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 
 class ShareScreen extends StatelessWidget {
@@ -7,20 +8,30 @@ class ShareScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            _TopRow(),
-            SizedBox(height: 12),
-            _ShareAndInviteRow(),
-            SizedBox(height: 20),
-            _FriendsTagSection(),
-            SizedBox(height: 20),
-            _CollaborativeAlbumSection(),
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: _TopRow(),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  _ShareAndInviteRow(),
+                  SizedBox(height: 20),
+                  _FriendsTagSection(),
+                  SizedBox(height: 20),
+                  _CollaborativeAlbumSection(),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -34,13 +45,9 @@ class _TopRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
+        Text(
           'nemo',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
+          style: GoogleFonts.jua(fontSize: 24, color: AppColors.textPrimary),
         ),
         Row(
           children: [
