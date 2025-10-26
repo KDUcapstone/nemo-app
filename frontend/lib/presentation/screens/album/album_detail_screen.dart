@@ -4,12 +4,19 @@ import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/providers/photo_provider.dart';
 import 'package:frontend/services/album_api.dart';
 import 'select_album_photos_screen.dart';
+import 'package:frontend/services/friend_api.dart';
+import 'package:flutter/services.dart';
 // removed unused imports after refactor
 import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
-  const AlbumDetailScreen({super.key, required this.albumId});
+  final String? autoOpenAction; // 'share' | 'edit'
+  const AlbumDetailScreen({
+    super.key,
+    required this.albumId,
+    this.autoOpenAction,
+  });
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -17,6 +24,29 @@ class AlbumDetailScreen extends StatefulWidget {
 
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   bool _working = false;
+  bool _autoHandled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (_autoHandled || !mounted) return;
+      if (widget.autoOpenAction == 'share') {
+        _autoHandled = true;
+        await _showShareSheet(context);
+      } else if (widget.autoOpenAction == 'edit') {
+        _autoHandled = true;
+        // 열자마자 수정 시트 오픈
+        // ignore: use_build_context_synchronously
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
+        );
+      }
+    });
+  }
 
   Future<void> _addPhotos() async {
     final selected = await Navigator.push<List<int>>(
@@ -60,6 +90,216 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     } finally {
       if (mounted) setState(() => _working = false);
     }
+  }
+
+  Future<void> _showShareSheet(BuildContext context) async {
+    final searchCtrl = TextEditingController();
+    final selectedIds = <int>{};
+    List<Map<String, dynamic>> friends = await FriendApi.list();
+    List<Map<String, dynamic>> shareTargets = [];
+    try {
+      shareTargets = await AlbumApi.getShareTargets(widget.albumId);
+    } catch (_) {}
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (_, scrollCtrl) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '앨범 공유',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  if (shareTargets.isNotEmpty) ...[
+                    const Text(
+                      '현재 공유 대상',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    ...shareTargets.map(
+                      (s) => ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.person_outline),
+                        ),
+                        title: Text(
+                          s['nickname'] ?? 'user${s['userId'] ?? ''}',
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            try {
+                              await AlbumApi.unshareTarget(
+                                albumId: widget.albumId,
+                                userId: s['userId'],
+                              );
+                              shareTargets.removeWhere(
+                                (e) => e['userId'] == s['userId'],
+                              );
+                              (ctx as Element).markNeedsBuild();
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('공유 해제되었습니다.')),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('공유 해제 실패: $e')),
+                              );
+                            }
+                          },
+                          child: const Text('제거'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: '친구 검색 (닉네임/이메일)',
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onChanged: (q) async {
+                      friends = await FriendApi.list(search: q);
+                      // ignore: use_build_context_synchronously
+                      (ctx as Element).markNeedsBuild();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  ...friends.map((f) {
+                    final id = f['userId'] as int;
+                    final nick = f['nickname'] as String? ?? '친구$id';
+                    final checked = selectedIds.contains(id);
+                    return ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.person_outline),
+                      ),
+                      title: Text(nick),
+                      trailing: Checkbox(
+                        value: checked,
+                        onChanged: (v) {
+                          if (v == true) {
+                            selectedIds.add(id);
+                          } else {
+                            selectedIds.remove(id);
+                          }
+                          (ctx as Element).markNeedsBuild();
+                        },
+                      ),
+                      onTap: () {
+                        if (checked) {
+                          selectedIds.remove(id);
+                        } else {
+                          selectedIds.add(id);
+                        }
+                        (ctx as Element).markNeedsBuild();
+                      },
+                    );
+                  }).toList(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            try {
+                              final url = await AlbumApi.createShareLink(
+                                widget.albumId,
+                                expiryHours: 48,
+                                permission: 'view',
+                              );
+                              await Clipboard.setData(ClipboardData(text: url));
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('공유 링크가 복사되었습니다.'),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('링크 생성 실패: $e')),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.link),
+                          label: const Text('링크 생성/복사'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: selectedIds.isEmpty
+                              ? null
+                              : () => Navigator.pop(ctx, selectedIds.toList()),
+                          icon: const Icon(Icons.check),
+                          label: Text('${selectedIds.length}명에게 공유'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((value) async {
+      final list = (value as List<int>?) ?? [];
+      if (list.isEmpty) return;
+      try {
+        final res = await AlbumApi.shareAlbum(
+          albumId: widget.albumId,
+          friendIdList: list,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(res['message'] ?? '공유 완료')));
+      } catch (e) {
+        if (!mounted) return;
+        final msg = _mapShareError(e.toString());
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    });
+  }
+
+  String _mapShareError(String raw) {
+    if (raw.contains('NOT_FRIEND')) return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    if (raw.contains('FORBIDDEN')) return '이 앨범을 공유할 권한이 없습니다.';
+    if (raw.contains('ALBUM_NOT_FOUND')) return '앨범을 찾을 수 없습니다.';
+    return '공유 중 오류가 발생했습니다.';
   }
 
   // _showPhotoActions (미사용) 제거
@@ -119,9 +359,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             onSelected: (v) async {
               switch (v) {
                 case 'share':
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('공유는 추후 지원 예정입니다.')),
-                  );
+                  await _showShareSheet(context);
                   break;
                 case 'add':
                   if (!_working) await _addPhotos();
@@ -572,6 +810,16 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                       coverPhotoId: _coverId,
                                     );
                                     if (!mounted) return;
+                                    // 목록 카드 즉시 반영
+                                    context.read<AlbumProvider>().updateMeta(
+                                      albumId: widget.albumId,
+                                      title: _titleCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _titleCtrl.text.trim(),
+                                      description: _descCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _descCtrl.text.trim(),
+                                    );
                                     if (_titleCtrl.text.trim().isNotEmpty ||
                                         _descCtrl.text.trim().isNotEmpty) {
                                       // 간단히 닫고 상위에서 새로고침은 유지

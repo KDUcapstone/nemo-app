@@ -313,4 +313,114 @@ class AlbumApi {
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to delete album (${res.statusCode})');
   }
+
+  // POST /api/albums/{albumId}/share
+  static Future<Map<String, dynamic>> shareAlbum({
+    required int albumId,
+    required List<int> friendIdList,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'albumId': albumId,
+        'sharedTo': friendIdList
+            .map((id) => {'userId': id, 'nickname': '친구$id'})
+            .toList(),
+        'message': '앨범이 선택한 친구들에게 성공적으로 공유되었습니다.',
+      };
+    }
+    final res = await http.post(
+      _uri('/api/albums/$albumId/share'),
+      headers: _headersJson(),
+      body: jsonEncode({'friendIdList': friendIdList}),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 400) throw Exception('NOT_FRIEND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to share album (${res.statusCode})');
+  }
+
+  // POST /api/albums/{albumId}/share/link  -> { shareUrl }
+  static Future<String> createShareLink(
+    int albumId, {
+    int? expiryHours,
+    String permission = 'view',
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      final q = <String, String>{'perm': permission};
+      if (expiryHours != null) q['exp'] = '$expiryHours';
+      final query = q.entries.map((e) => '${e.key}=${e.value}').join('&');
+      return 'https://nemo.app/share/albums/$albumId?token=mockToken&$query';
+    }
+    final res = await http.post(
+      _uri('/api/albums/$albumId/share/link'),
+      headers: _headersJson(),
+      body: jsonEncode({
+        if (expiryHours != null) 'expiryHours': expiryHours,
+        'permission': permission,
+      }),
+    );
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return body['shareUrl'] as String;
+    }
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to create share link (${res.statusCode})');
+  }
+
+  // GET /api/albums/{albumId}/share/targets
+  static Future<List<Map<String, dynamic>>> getShareTargets(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      // 더미: 2명 공유 중
+      return [
+        {'userId': 3, 'nickname': '네컷러버'},
+        {'userId': 5, 'nickname': '사진장인'},
+      ];
+    }
+    final res = await http.get(
+      _uri('/api/albums/$albumId/share/targets'),
+      headers: _headersJson(),
+    );
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final List list = body['sharedTo'] ?? [];
+      return list.cast<Map<String, dynamic>>();
+    }
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to fetch share targets (${res.statusCode})');
+  }
+
+  // DELETE /api/albums/{albumId}/share/{userId}
+  static Future<void> unshareTarget({
+    required int albumId,
+    required int userId,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return;
+    }
+    final res = await http.delete(
+      _uri('/api/albums/$albumId/share/$userId'),
+      headers: _headersJson(),
+    );
+    if (res.statusCode == 200 || res.statusCode == 204) return;
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to unshare (${res.statusCode})');
+  }
 }

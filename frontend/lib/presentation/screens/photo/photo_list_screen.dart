@@ -10,6 +10,7 @@ import 'package:frontend/presentation/screens/album/create_album_screen.dart';
 import 'package:frontend/presentation/screens/album/select_album_photos_screen.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
+import 'package:frontend/services/album_api.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 
 class PhotoListScreen extends StatefulWidget {
@@ -444,8 +445,15 @@ class _DeleteButtonState extends State<_DeleteButton> {
   }
 }
 
-class _AlbumListGrid extends StatelessWidget {
+class _AlbumListGrid extends StatefulWidget {
   const _AlbumListGrid();
+
+  @override
+  State<_AlbumListGrid> createState() => _AlbumListGridState();
+}
+
+class _AlbumListGridState extends State<_AlbumListGrid> {
+  int? _pressedIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -477,55 +485,124 @@ class _AlbumListGrid extends StatelessWidget {
         itemCount: provider.albums.length,
         itemBuilder: (_, i) {
           final a = provider.albums[i];
+          final scale = _pressedIndex == i ? 0.96 : 1.0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: Material(
-                  elevation: 2,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
+                child: AnimatedScale(
+                  scale: scale,
+                  duration: const Duration(milliseconds: 120),
+                  curve: Curves.easeOut,
+                  child: Material(
+                    elevation: 2,
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AlbumDetailScreen(albumId: a.albumId),
-                        ),
-                      );
-                    },
-                    child: ClipRRect(
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: a.coverPhotoUrl != null
-                                ? Image.network(
-                                    a.coverPhotoUrl!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const ColoredBox(
-                                          color: Color(0xFFE0E0E0),
-                                        ),
-                                  )
-                                : const ColoredBox(color: Color(0xFFE0E0E0)),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                AlbumDetailScreen(albumId: a.albumId),
                           ),
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            height: 56,
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.transparent, Colors.black26],
+                        );
+                      },
+                      onLongPress: () async {
+                        setState(() => _pressedIndex = i);
+                        await Future.delayed(const Duration(milliseconds: 90));
+                        final action = await showModalBottomSheet<String>(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          builder: (ctx) => _AlbumQuickActions(album: a),
+                        );
+                        if (!mounted) return;
+                        setState(() => _pressedIndex = null);
+                        if (action == null) return;
+                        if (action == 'share' || action == 'edit') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AlbumDetailScreen(
+                                albumId: a.albumId,
+                                autoOpenAction: action,
+                              ),
+                            ),
+                          );
+                        } else if (action == 'delete') {
+                          final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('앨범 삭제'),
+                              content: const Text('이 앨범을 삭제하시겠습니까?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('취소'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('삭제'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (ok == true) {
+                            try {
+                              await AlbumApi.deleteAlbum(a.albumId);
+                              if (!context.mounted) return;
+                              context.read<AlbumProvider>().removeAlbum(
+                                a.albumId,
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('앨범이 삭제되었습니다.')),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('삭제 실패: $e')),
+                              );
+                            }
+                          }
+                        }
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: a.coverPhotoUrl != null
+                                  ? Image.network(
+                                      a.coverPhotoUrl!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          const ColoredBox(
+                                            color: Color(0xFFE0E0E0),
+                                          ),
+                                    )
+                                  : const ColoredBox(color: Color(0xFFE0E0E0)),
+                            ),
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              height: 56,
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black26,
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -547,6 +624,56 @@ class _AlbumListGrid extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _AlbumQuickActions extends StatelessWidget {
+  final AlbumItem album;
+  const _AlbumQuickActions({required this.album});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.share_outlined),
+                title: const Text('공유'),
+                onTap: () => Navigator.pop(context, 'share'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('수정'),
+                onTap: () => Navigator.pop(context, 'edit'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('삭제'),
+                onTap: () => Navigator.pop(context, 'delete'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
