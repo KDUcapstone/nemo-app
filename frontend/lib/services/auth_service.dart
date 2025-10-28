@@ -9,7 +9,7 @@ import 'api_client.dart';
 class AuthService {
   // ✅ 서버 URL 설정 (로컬 or 배포 서버로 교체해야 함)
   static const String baseUrl =
-      'https://nemo-backend.onrender.com'; // ← TODO: 실제 주소로 바꿔!
+      'http://10.0.2.2:8080'; // ← TODO: 실제 주소로 바꿔!
 
   // JWT 토큰 저장소
   static String? _accessToken;
@@ -55,21 +55,23 @@ class AuthService {
     }
     try {
       final response = await ApiClient.post(
-        '/api/auth/login',
+        '/api/users/login',
         body: {'email': email, 'password': password},
         includeAuth: false,
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
         // 로그인 성공 시 토큰 저장
-        setAccessToken(data['accessToken']);
+        final access = data['accessToken'] as String;
+        setAccessToken(access);
         return {
           'success': true,
-          'accessToken': data['accessToken'],
-          'userId': data['userId'],
-          'nickname': data['nickname'],
-          'profileImageUrl': data['profileImageUrl'],
+          'accessToken': access,
+          'refreshToken': data['refreshToken'] as String?,   // 있으면 저장에 사용
+          'userId': (data['id'] as num).toInt(),             // ← 안전 파싱
+          'nickname': data['nickname'] as String? ?? '',
+          'profileImageUrl': data['profileImageUrl'],        // null 허용
         };
       } else if (response.statusCode == 401) {
         throw Exception('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -236,21 +238,25 @@ class AuthService {
   /// 로그아웃 (JWT 토큰 무효화)
   Future<bool> logout() async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       clearAccessToken();
       return true;
     }
     try {
       final response = await ApiClient.post('/api/users/logout');
 
-      if (response.statusCode == 200) {
-        // 로컬 토큰 제거
+      // 200 OK, 204 No Content, 401 Unauthorized 모두 성공 처리
+      if (response.statusCode == 200 ||
+          response.statusCode == 204 ||
+          response.statusCode == 401) {
         clearAccessToken();
         return true;
       } else {
-        throw Exception('로그아웃 실패 (${response.statusCode})');
+        // 서버에서 다른 응답을 보낸 경우 메시지를 포함하여 예외 발생
+        final message = response.body.isNotEmpty
+            ? jsonDecode(response.body)['message']
+            : null;
+        throw Exception(message ?? '로그아웃 실패 (${response.statusCode})');
       }
     } catch (e) {
       throw Exception('네트워크 오류: $e');

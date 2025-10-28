@@ -2,6 +2,7 @@ package com.nemo.backend.domain.user.entity;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import lombok.*;
 
 /**
  * User entity representing an account within the system.  It lives in the
@@ -9,6 +10,11 @@ import java.time.LocalDateTime;
  * authentication concerns.
  */
 @Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder   // ✅ 이거 추가
 @Table(name = "users")
 public class User {
     @Id
