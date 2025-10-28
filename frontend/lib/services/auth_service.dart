@@ -238,21 +238,25 @@ class AuthService {
   /// 로그아웃 (JWT 토큰 무효화)
   Future<bool> logout() async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       clearAccessToken();
       return true;
     }
     try {
       final response = await ApiClient.post('/api/users/logout');
 
-      if (response.statusCode == 200) {
-        // 로컬 토큰 제거
+      // 200 OK, 204 No Content, 401 Unauthorized 모두 성공 처리
+      if (response.statusCode == 200 ||
+          response.statusCode == 204 ||
+          response.statusCode == 401) {
         clearAccessToken();
         return true;
       } else {
-        throw Exception('로그아웃 실패 (${response.statusCode})');
+        // 서버에서 다른 응답을 보낸 경우 메시지를 포함하여 예외 발생
+        final message = response.body.isNotEmpty
+            ? jsonDecode(response.body)['message']
+            : null;
+        throw Exception(message ?? '로그아웃 실패 (${response.statusCode})');
       }
     } catch (e) {
       throw Exception('네트워크 오류: $e');

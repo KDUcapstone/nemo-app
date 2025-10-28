@@ -36,5 +36,6 @@ out/
 ### VS Code ###
 .vscode/
 
-### Custum ###
+### Custom ###
+# 환경 변수 파일
 .env
