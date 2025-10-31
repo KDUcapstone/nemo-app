@@ -1,9 +1,6 @@
 package com.nemo.backend.domain.auth.service;
 
-import com.nemo.backend.domain.auth.dto.LoginRequest;
-import com.nemo.backend.domain.auth.dto.LoginResponse;
-import com.nemo.backend.domain.auth.dto.SignUpRequest;
-import com.nemo.backend.domain.auth.dto.SignUpResponse;
+import com.nemo.backend.domain.auth.dto.*;
 import com.nemo.backend.domain.auth.token.RefreshToken;
 import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
 import com.nemo.backend.domain.user.entity.User;
@@ -11,10 +8,12 @@ import com.nemo.backend.domain.user.repository.UserRepository;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -78,6 +77,69 @@ public class AuthService {
                 .orElseThrow(() -> new ApiException(ErrorCode.USER_ALREADY_DELETED));
         refreshTokenRepository.deleteByUserId(userId);
         userRepository.delete(user);
+    }
+
+    // 액세스 만료(초). JwtTokenProvider가 만료 시간을 외부로 안 주면 yml에서 주입.
+    @Value("${jwt.access-exp-seconds:3600}")
+    private long accessExpSeconds;
+
+    // 리프레시 총 유효기간(일) — 기존 createAndSaveRefreshToken과 동일하게 맞춤
+    @Value("${jwt.refresh-exp-days:14}")
+    private long refreshExpDays;
+
+    // 리프레시 회전 임계(초) — 남은 시간이 이 값 이하이면 새 리프레시로 교체
+    @Value("${jwt.refresh-rotate-threshold-sec:259200}") // 기본 3일
+    private long rotateThresholdSec;
+
+    /**
+     * 리프레시 토큰으로 새 액세스 토큰을 발급한다.
+     * - 전달된 refreshToken이 DB에 있고 만료되지 않았어야 함
+     * - 만료 임박(rotateThresholdSec 이하)이면 리프레시도 교체(회전)
+     */
+    @Transactional
+    public RefreshResponse refresh(RefreshRequest request) {
+        if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED); // 혹은 ErrorCode.INVALID_INPUT
+        }
+
+        RefreshToken stored = refreshTokenRepository.findByToken(request.refreshToken())
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED)); // INVALID_REFRESH_TOKEN
+
+        // 만료 체크 (DB 기준)
+        LocalDateTime now = LocalDateTime.now();
+        if (stored.getExpiry() == null || !stored.getExpiry().isAfter(now)) {
+            // 만료/이상 상태면 즉시 폐기
+            refreshTokenRepository.deleteByToken(stored.getToken());
+            throw new ApiException(ErrorCode.UNAUTHORIZED); // REFRESH_TOKEN_EXPIRED
+        }
+
+        // 사용자 확인
+        User user = userRepository.findById(stored.getUserId())
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+
+        // 1) 새 액세스 토큰 발급
+        String newAccess = jwtTokenProvider.generateAccessToken(user);
+
+        // 2) 리프레시 회전 여부 판단 (DB의 expiry 기준)
+        long remainSec = Duration.between(now, stored.getExpiry()).getSeconds();
+        String outRefresh = stored.getToken();
+
+        if (remainSec <= rotateThresholdSec) {
+            // 안전하게 기존 토큰 교체
+            outRefresh = rotateRefreshToken(stored);
+        }
+
+        return new RefreshResponse(newAccess, outRefresh, accessExpSeconds);
+    }
+
+    /** 기존 createAndSaveRefreshToken은 로그인 때만 쓰니 유지하고,
+     *  회전은 "해당 엔티티 교체"로 처리하면 DB에 한 줄만 유지됨. */
+    private String rotateRefreshToken(RefreshToken entity) {
+        String newToken = UUID.randomUUID().toString();
+        entity.setToken(newToken);
+        entity.setExpiry(LocalDateTime.now().plusDays(refreshExpDays));
+        refreshTokenRepository.save(entity);
+        return newToken;
     }
 
     private String createAndSaveRefreshToken(Long userId) {

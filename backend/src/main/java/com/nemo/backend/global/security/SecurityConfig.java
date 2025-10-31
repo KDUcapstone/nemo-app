@@ -19,7 +19,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/h2-console/**",
                                 "/api/users/signup",
-                                "/api/users/login"
+                                "/api/users/login",
+                                "/api/auth/refresh",
+                                "/api/auth/dev/**"
                         ).permitAll()
                         // 나머지는 컨트롤러 단에서 인증/인가 검증 (JWT + refresh 존재)
                         .anyRequest().permitAll()

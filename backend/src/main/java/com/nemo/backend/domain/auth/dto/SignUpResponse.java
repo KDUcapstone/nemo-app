@@ -1,9 +1,12 @@
 package com.nemo.backend.domain.auth.dto;
 
+import lombok.Getter;
+
 /**
  * Response returned after a successful sign‑up.  Contains only public
  * user details.
  */
+@Getter
 public class SignUpResponse {
     private Long id;
     private String email;
@@ -17,19 +20,4 @@ public class SignUpResponse {
         this.profileImageUrl = profileImageUrl;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getNickname() {
-        return nickname;
-    }
-
-    public String getProfileImageUrl() {
-        return profileImageUrl;
-    }
 }
