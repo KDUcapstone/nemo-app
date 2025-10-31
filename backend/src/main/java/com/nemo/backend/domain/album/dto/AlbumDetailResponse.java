@@ -5,6 +5,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import com.nemo.backend.domain.photo.dto.PhotoResponse;
 
+/**
+ * 앨범 상세 응답 DTO. 프론트 명세에 맞춰 필드를 구성한다.
+ */
 public class AlbumDetailResponse {
     private Long albumId;
     private String title;

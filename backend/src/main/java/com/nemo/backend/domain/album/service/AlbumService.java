@@ -3,14 +3,9 @@ package com.nemo.backend.domain.album.service;
 
 import java.util.List;
 import java.util.stream.Collectors;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import com.nemo.backend.domain.album.dto.AlbumDetailResponse;
-import com.nemo.backend.domain.album.dto.AlbumSummaryResponse;
-import com.nemo.backend.domain.album.dto.CreateAlbumRequest;
-import com.nemo.backend.domain.album.dto.UpdateAlbumRequest;
+import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.entity.Album;
 import com.nemo.backend.domain.album.repository.AlbumRepository;
 import com.nemo.backend.domain.photo.dto.PhotoResponse;
@@ -42,7 +37,7 @@ public class AlbumService {
     @Transactional
     public AlbumDetailResponse createAlbum(CreateAlbumRequest req) {
         Album a = new Album();
-        a.setName(req.getTitle());          // 엔티티의 name <- 프론트의 title
+        a.setName(req.getTitle());          // 엔티티의 name ← 프론트의 title
         a.setDescription(req.getDescription());
         Album saved = albumRepository.save(a);
 
@@ -77,7 +72,7 @@ public class AlbumService {
                 .orElseThrow(() -> new IllegalArgumentException("ALBUM_NOT_FOUND"));
         if (req.getTitle() != null) a.setName(req.getTitle());
         if (req.getDescription() != null) a.setDescription(req.getDescription());
-        // coverPhotoId -> coverPhotoUrl 매핑은 저장 방식에 맞춰 추가 구현
+        // coverPhotoId → coverPhotoUrl 매핑은 추가 구현 필요
         return toDetail(a);
     }
 
@@ -94,20 +89,20 @@ public class AlbumService {
     }
 
     private AlbumDetailResponse toDetail(Album a) {
-        List<Long> idList = (a.getPhotos() == null) ? List.of()
-                : a.getPhotos().stream().map(Photo::getId).collect(Collectors.toList());
+        List<Long> idList = (a.getPhotos() == null) ? List.of() :
+                a.getPhotos().stream().map(Photo::getId).collect(Collectors.toList());
 
-        List<PhotoResponse> list = (a.getPhotos() == null) ? List.of()
-                : a.getPhotos().stream().map(p ->
-                new PhotoResponse(
-                        p.getId(),
-                        p.getImageUrl(),
-                        p.getTakenAt(),
-                        // ★ 여기 수정: getLocation() 대신 locationId를 문자열로 변환
-                        (p.getLocationId() != null ? p.getLocationId().toString() : null),
-                        p.getBrand()
-                )
-        ).collect(Collectors.toList());
+        List<PhotoResponse> list = (a.getPhotos() == null) ? List.of() :
+                a.getPhotos().stream().map(p ->
+                        new PhotoResponse(
+                                p.getId(),
+                                p.getImageUrl(),
+                                p.getTakenAt(),
+                                // ✅ 수정: getLocation() 대신 locationId를 문자열로 변환하여 전달
+                                (p.getLocationId() != null ? p.getLocationId().toString() : null),
+                                p.getBrand()
+                        )
+                ).collect(Collectors.toList());
 
         String coverUrl = list.isEmpty() ? null : list.get(0).getImageUrl();
         int count = list.size();

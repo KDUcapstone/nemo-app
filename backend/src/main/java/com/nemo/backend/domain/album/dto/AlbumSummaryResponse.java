@@ -3,10 +3,13 @@ package com.nemo.backend.domain.album.dto;
 
 import java.time.LocalDateTime;
 
+/**
+ * 앨범 목록 응답 DTO. 프론트는 albumId, title, coverPhotoUrl, photoCount, createdAt 를 사용한다.
+ */
 public class AlbumSummaryResponse {
     private Long albumId;
     private String title;
-    private String coverPhotoUrl; // 첫 사진 등에서 유도
+    private String coverPhotoUrl;
     private int photoCount;
     private LocalDateTime createdAt;
 

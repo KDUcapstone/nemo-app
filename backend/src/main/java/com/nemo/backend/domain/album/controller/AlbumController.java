@@ -15,7 +15,7 @@ public class AlbumController {
     private final AlbumService albumService;
     public AlbumController(AlbumService albumService) { this.albumService = albumService; }
 
-    // GET /api/albums
+    // GET /api/albums : 페이지네이션 구조로 응답
     @GetMapping
     public ResponseEntity<?> getAlbums() {
         List<AlbumSummaryResponse> content = albumService.getAlbums();
@@ -51,7 +51,7 @@ public class AlbumController {
         return ResponseEntity.ok(albumService.updateAlbum(albumId, req));
     }
 
-    // POST /api/albums/{albumId}/photos
+    // POST /api/albums/{albumId}/photos (여러 장 추가)
     @PostMapping("/{albumId}/photos")
     public ResponseEntity<Void> addPhotos(@PathVariable Long albumId,
                                           @Valid @RequestBody PhotoIdListRequest req) {
@@ -59,7 +59,7 @@ public class AlbumController {
         return ResponseEntity.noContent().build();
     }
 
-    // DELETE /api/albums/{albumId}/photos
+    // DELETE /api/albums/{albumId}/photos (여러 장 삭제)
     @DeleteMapping("/{albumId}/photos")
     public ResponseEntity<Void> removePhotos(@PathVariable Long albumId,
                                              @Valid @RequestBody PhotoIdListRequest req) {

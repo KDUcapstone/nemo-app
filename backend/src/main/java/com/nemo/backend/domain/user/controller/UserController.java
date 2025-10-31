@@ -23,6 +23,11 @@ public class UserController {
         this.jwtTokenProvider = jwtTokenProvider;
     }
 
+    /**
+     * 현재 로그인한 사용자의 계정을 삭제한다.
+     * 프론트는 JSON body로 { "password": "..." } 형태를 보내며,
+     * 백엔드는 토큰에서 사용자 ID를 추출하고 비밀번호를 검증한다.
+     */
     @DeleteMapping("/me")
     public ResponseEntity<?> deleteMe(@Valid @RequestBody DeleteAccountRequest body,
                                       HttpServletRequest httpRequest) {

@@ -53,7 +53,10 @@ public class JwtTokenProvider {
         }
     }
 
-    /** Extracts Bearer token from Authorization header ("Bearer xxx"). Returns null if missing/invalid. */
+    /**
+     * ✅ 추가: Authorization 헤더에서 Bearer 토큰을 추출한다.
+     * 헤더가 없거나 Bearer 접두사가 없으면 null 반환.
+     */
     public String resolveToken(HttpServletRequest request) {
         String auth = request.getHeader("Authorization");
         if (auth == null) return null;

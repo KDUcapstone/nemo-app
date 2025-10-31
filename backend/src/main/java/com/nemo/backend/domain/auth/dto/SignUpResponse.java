@@ -1,8 +1,8 @@
+// backend/src/main/java/com/nemo/backend/domain/auth/dto/SignUpResponse.java
 package com.nemo.backend.domain.auth.dto;
 
 /**
- * Response returned after a successful sign‑up.  Contains only public
- * user details.
+ * 회원 가입 성공 시 반환 DTO. 공개 가능한 사용자 정보만 포함한다.
  */
 public class SignUpResponse {
     private Long id;
@@ -17,19 +17,8 @@ public class SignUpResponse {
         this.profileImageUrl = profileImageUrl;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getNickname() {
-        return nickname;
-    }
-
-    public String getProfileImageUrl() {
-        return profileImageUrl;
-    }
+    public Long getId() { return id; }
+    public String getEmail() { return email; }
+    public String getNickname() { return nickname; }
+    public String getProfileImageUrl() { return profileImageUrl; }
 }

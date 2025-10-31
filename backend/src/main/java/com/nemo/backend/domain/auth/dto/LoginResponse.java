@@ -1,8 +1,8 @@
+// backend/src/main/java/com/nemo/backend/domain/auth/dto/LoginResponse.java
 package com.nemo.backend.domain.auth.dto;
 
 /**
- * Response returned upon successful login.  Contains basic user details and
- * both access and refresh tokens.
+ * 로그인 성공 시 반환 DTO. 사용자 기본 정보와 액세스/리프레시 토큰을 포함한다.
  */
 public class LoginResponse {
     private Long id;
@@ -22,27 +22,10 @@ public class LoginResponse {
         this.refreshToken = refreshToken;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getNickname() {
-        return nickname;
-    }
-
-    public String getProfileImageUrl() {
-        return profileImageUrl;
-    }
-
-    public String getAccessToken() {
-        return accessToken;
-    }
-
-    public String getRefreshToken() {
-        return refreshToken;
-    }
+    public Long getId() { return id; }
+    public String getEmail() { return email; }
+    public String getNickname() { return nickname; }
+    public String getProfileImageUrl() { return profileImageUrl; }
+    public String getAccessToken() { return accessToken; }
+    public String getRefreshToken() { return refreshToken; }
 }

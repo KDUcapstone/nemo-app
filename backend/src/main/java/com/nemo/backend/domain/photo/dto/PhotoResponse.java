@@ -3,6 +3,9 @@ package com.nemo.backend.domain.photo.dto;
 
 import java.time.LocalDateTime;
 
+/**
+ * 앨범 상세 응답에서 사용할 간단한 사진 DTO. locationId를 문자열로 변환해 전달한다.
+ */
 public class PhotoResponse {
     private Long photoId;
     private String imageUrl;
