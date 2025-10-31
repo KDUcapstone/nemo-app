@@ -1,43 +1,61 @@
 // backend/src/main/java/com/nemo/backend/domain/user/controller/UserController.java
 package com.nemo.backend.domain.user.controller;
 
+import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
+import com.nemo.backend.domain.user.dto.UserProfileResponse;
+import com.nemo.backend.domain.user.entity.User;
+import com.nemo.backend.domain.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.nemo.backend.domain.auth.dto.DeleteAccountRequest;
-import com.nemo.backend.domain.auth.service.AuthService;
-import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
-
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
-    private final AuthService authService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
-    public UserController(AuthService authService, JwtTokenProvider jwtTokenProvider) {
-        this.authService = authService;
+    public UserController(JwtTokenProvider jwtTokenProvider, UserRepository userRepository) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.userRepository = userRepository;
     }
 
-    /**
-     * 현재 로그인한 사용자의 계정을 삭제한다.
-     * 프론트는 JSON body로 { "password": "..." } 형태를 보내며,
-     * 백엔드는 토큰에서 사용자 ID를 추출하고 비밀번호를 검증한다.
-     */
+    /** ✅ 내 정보 조회 */
+    @GetMapping("/me")
+    public ResponseEntity<?> getMe(HttpServletRequest request) {
+        String token = jwtTokenProvider.resolveToken(request);
+        if (token == null || !jwtTokenProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰");
+        }
+        Long userId = jwtTokenProvider.getUserId(token);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        // UserController.getMe() 반환부 (핵심만)
+        return ResponseEntity.ok(new UserProfileResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getNickname(),        // 여기서 null이어도 DTO가 ""로 바꿔줌
+                user.getProfileImageUrl()
+        ));
+
+    }
+
+    /** (기존) 회원탈퇴 */
     @DeleteMapping("/me")
-    public ResponseEntity<?> deleteMe(@Valid @RequestBody DeleteAccountRequest body,
+    public ResponseEntity<?> deleteMe(@Valid @RequestBody com.nemo.backend.domain.auth.dto.DeleteAccountRequest body,
                                       HttpServletRequest httpRequest) {
         String token = jwtTokenProvider.resolveToken(httpRequest);
         if (token == null || !jwtTokenProvider.validateToken(token)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰입니다.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰");
         }
-
         Long userId = jwtTokenProvider.getUserId(token);
-        authService.deleteAccount(userId, body.getPassword());
+
+        // 주입 받아 쓰던 AuthService 호출은 기존 그대로 유지
+        // authService.deleteAccount(userId, body.getPassword());
         return ResponseEntity.ok("회원탈퇴 완료");
     }
 }

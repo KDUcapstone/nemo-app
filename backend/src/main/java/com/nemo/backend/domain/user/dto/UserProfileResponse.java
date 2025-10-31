@@ -1,35 +1,21 @@
+// backend/src/main/java/com/nemo/backend/domain/user/dto/UserProfileResponse.java
 package com.nemo.backend.domain.user.dto;
 
-import java.time.LocalDateTime;
-
-/**
- * Profile response DTO that omits sensitive fields such as password.
- */
 public class UserProfileResponse {
-    private Long id;
+    private Long userId;
     private String email;
-    private String nickname;
-    private String profileImageUrl;
-    private String provider;
-    private String socialId;
-    private LocalDateTime createdAt;
+    private String nickname;        // 절대 null 안 내려가게
+    private String profileImageUrl; // 절대 null 안 내려가게
 
-    public UserProfileResponse(Long id, String email, String nickname, String profileImageUrl,
-                               String provider, String socialId, LocalDateTime createdAt) {
-        this.id = id;
+    public UserProfileResponse(Long userId, String email, String nickname, String profileImageUrl) {
+        this.userId = userId;
         this.email = email;
-        this.nickname = nickname;
-        this.profileImageUrl = profileImageUrl;
-        this.provider = provider;
-        this.socialId = socialId;
-        this.createdAt = createdAt;
+        this.nickname = nickname != null ? nickname : "";
+        this.profileImageUrl = profileImageUrl != null ? profileImageUrl : "";
     }
 
-    public Long getId() { return id; }
+    public Long getUserId() { return userId; }
     public String getEmail() { return email; }
     public String getNickname() { return nickname; }
     public String getProfileImageUrl() { return profileImageUrl; }
-    public String getProvider() { return provider; }
-    public String getSocialId() { return socialId; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
 }

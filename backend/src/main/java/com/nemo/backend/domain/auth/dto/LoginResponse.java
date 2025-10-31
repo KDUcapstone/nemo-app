@@ -5,27 +5,22 @@ package com.nemo.backend.domain.auth.dto;
  * 로그인 성공 시 반환 DTO. 사용자 기본 정보와 액세스/리프레시 토큰을 포함한다.
  */
 public class LoginResponse {
-    private Long id;
+    private Long userId;
     private String email;
-    private String nickname;
-    private String profileImageUrl;
+    private String nickname;        // null 금지
+    private String profileImageUrl; // null 금지
     private String accessToken;
     private String refreshToken;
 
-    public LoginResponse(Long id, String email, String nickname, String profileImageUrl,
-                         String accessToken, String refreshToken) {
-        this.id = id;
+    public LoginResponse(Long userId, String email, String nickname,
+                         String profileImageUrl, String accessToken, String refreshToken) {
+        this.userId = userId;
         this.email = email;
-        this.nickname = nickname;
-        this.profileImageUrl = profileImageUrl;
+        this.nickname = nickname != null ? nickname : "";
+        this.profileImageUrl = profileImageUrl != null ? profileImageUrl : "";
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
     }
 
-    public Long getId() { return id; }
-    public String getEmail() { return email; }
-    public String getNickname() { return nickname; }
-    public String getProfileImageUrl() { return profileImageUrl; }
-    public String getAccessToken() { return accessToken; }
-    public String getRefreshToken() { return refreshToken; }
+    // getters...
 }
