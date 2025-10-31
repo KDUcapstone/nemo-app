@@ -1,114 +1,126 @@
+// backend/src/main/java/com/nemo/backend/domain/album/service/AlbumService.java
 package com.nemo.backend.domain.album.service;
-
-import com.nemo.backend.domain.album.dto.*;
-import com.nemo.backend.domain.album.entity.Album;
-import com.nemo.backend.domain.album.repository.AlbumRepository;
-import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
-import com.nemo.backend.domain.photo.entity.Photo;                 // ✅ 추가
-import com.nemo.backend.domain.photo.repository.PhotoRepository;   // ✅ 추가
-import com.nemo.backend.domain.user.entity.User;
-import com.nemo.backend.domain.user.repository.UserRepository;
-// import jakarta.transaction.Transactional;                      // ❌ 제거
-import org.springframework.transaction.annotation.Transactional;    // ✅ 교체
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.nemo.backend.domain.album.dto.AlbumDetailResponse;
+import com.nemo.backend.domain.album.dto.AlbumSummaryResponse;
+import com.nemo.backend.domain.album.dto.CreateAlbumRequest;
+import com.nemo.backend.domain.album.dto.UpdateAlbumRequest;
+import com.nemo.backend.domain.album.entity.Album;
+import com.nemo.backend.domain.album.repository.AlbumRepository;
+import com.nemo.backend.domain.photo.dto.PhotoResponse;
+import com.nemo.backend.domain.photo.entity.Photo;
+import com.nemo.backend.domain.photo.repository.PhotoRepository;
+
 @Service
-@RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class AlbumService {
 
     private final AlbumRepository albumRepository;
-    private final UserRepository userRepository;
-    private final PhotoRepository photoRepository;                  // ✅ 주입
+    private final PhotoRepository photoRepository;
 
-    public AlbumResponse createAlbum(AlbumCreateRequest req) {
-        User user = userRepository.findById(req.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        Album album = Album.builder()
-                .name(req.getName())
-                .description(req.getDescription())
-                .user(user)
-                .build();
-
-        return AlbumResponse.fromEntity(albumRepository.save(album));
+    public AlbumService(AlbumRepository albumRepository, PhotoRepository photoRepository) {
+        this.albumRepository = albumRepository;
+        this.photoRepository = photoRepository;
     }
 
-    public List<AlbumResponse> getAlbumsByUser(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        return albumRepository.findByUser(user)
-                .stream()
-                .map(AlbumResponse::fromEntity)
-                .collect(Collectors.toList());
+    public List<AlbumSummaryResponse> getAlbums() {
+        return albumRepository.findAll().stream().map(this::toSummary).collect(Collectors.toList());
     }
 
-    public AlbumResponse getAlbum(Long id) {
-        Album album = albumRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
-        return AlbumResponse.fromEntity(album);
-    }
-
-    public AlbumResponse updateAlbum(Long id, AlbumUpdateRequest req) {
-        Album album = albumRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
-
-        if (req.getName() != null) album.setName(req.getName());
-        if (req.getDescription() != null) album.setDescription(req.getDescription());
-
-        return AlbumResponse.fromEntity(albumRepository.save(album));
-    }
-
-    public void deleteAlbum(Long id) {
-        albumRepository.deleteById(id);
+    public AlbumDetailResponse getAlbum(Long albumId) {
+        Album a = albumRepository.findById(albumId)
+                .orElseThrow(() -> new IllegalArgumentException("ALBUM_NOT_FOUND"));
+        return toDetail(a);
     }
 
     @Transactional
-    public void addPhoto(Long albumId, Long photoId, Long userId) {
-        Album album = albumRepository.findById(albumId)
-                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
-        if (!album.getUser().getId().equals(userId)) {
-            throw new IllegalStateException("앨범 소유자가 아닙니다.");
-        }
-        Photo photo = photoRepository.findById(photoId)
-                .orElseThrow(() -> new IllegalArgumentException("Photo not found"));
-        if (!photo.getUserId().equals(userId)) {
-            throw new IllegalStateException("본인 사진이 아닙니다.");
-        }
-        photo.setAlbum(album);
-        photoRepository.save(photo);
-    }
+    public AlbumDetailResponse createAlbum(CreateAlbumRequest req) {
+        Album a = new Album();
+        a.setName(req.getTitle());          // 엔티티의 name <- 프론트의 title
+        a.setDescription(req.getDescription());
+        Album saved = albumRepository.save(a);
 
-    @Transactional(readOnly = true) // ✅ spring-tx 사용하므로 readOnly OK
-    public List<PhotoResponseDto> getPhotos(Long albumId, Long userId) {
-        Album album = albumRepository.findById(albumId)
-                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
-        if (!album.getUser().getId().equals(userId)) {
-            throw new IllegalStateException("앨범 소유자가 아닙니다.");
+        if (req.getPhotoIdList() != null && !req.getPhotoIdList().isEmpty()) {
+            List<Photo> photos = photoRepository.findAllById(req.getPhotoIdList());
+            for (Photo p : photos) { p.setAlbum(saved); }
         }
-        return photoRepository
-                .findByAlbumAndDeletedIsFalseOrderByCreatedAtDesc(album) // ✅ 리포지토리 메서드 필요
-                .stream()
-                .map(PhotoResponseDto::new)
-                .collect(Collectors.toList());
+        return toDetail(saved);
     }
 
     @Transactional
-    public void removePhoto(Long albumId, Long photoId, Long userId) {
-        Album album = albumRepository.findById(albumId)
-                .orElseThrow(() -> new IllegalArgumentException("Album not found"));
-        Photo photo = photoRepository.findById(photoId)
-                .orElseThrow(() -> new IllegalArgumentException("Photo not found"));
-        if (!album.getUser().getId().equals(userId) || !photo.getUserId().equals(userId)) {
-            throw new IllegalStateException("권한이 없습니다.");
+    public void addPhotos(Long albumId, List<Long> photoIds) {
+        Album a = albumRepository.findById(albumId)
+                .orElseThrow(() -> new IllegalArgumentException("ALBUM_NOT_FOUND"));
+        List<Photo> photos = photoRepository.findAllById(photoIds);
+        for (Photo p : photos) { p.setAlbum(a); }
+    }
+
+    @Transactional
+    public void removePhotos(Long albumId, List<Long> photoIds) {
+        List<Photo> photos = photoRepository.findAllById(photoIds);
+        for (Photo p : photos) {
+            if (p.getAlbum() != null && albumId.equals(p.getAlbum().getId())) {
+                p.setAlbum(null);
+            }
         }
-        if (photo.getAlbum() != null && photo.getAlbum().getId().equals(albumId)) {
-            photo.setAlbum(null);
-            photoRepository.save(photo);
-        }
+    }
+
+    @Transactional
+    public AlbumDetailResponse updateAlbum(Long albumId, UpdateAlbumRequest req) {
+        Album a = albumRepository.findById(albumId)
+                .orElseThrow(() -> new IllegalArgumentException("ALBUM_NOT_FOUND"));
+        if (req.getTitle() != null) a.setName(req.getTitle());
+        if (req.getDescription() != null) a.setDescription(req.getDescription());
+        // coverPhotoId -> coverPhotoUrl 매핑은 저장 방식에 맞춰 추가 구현
+        return toDetail(a);
+    }
+
+    @Transactional
+    public void deleteAlbum(Long albumId) {
+        albumRepository.deleteById(albumId);
+    }
+
+    private AlbumSummaryResponse toSummary(Album a) {
+        String coverUrl = (a.getPhotos() != null && !a.getPhotos().isEmpty())
+                ? a.getPhotos().get(0).getImageUrl() : null;
+        int count = (a.getPhotos() == null) ? 0 : a.getPhotos().size();
+        return new AlbumSummaryResponse(a.getId(), a.getName(), coverUrl, count, a.getCreatedAt());
+    }
+
+    private AlbumDetailResponse toDetail(Album a) {
+        List<Long> idList = (a.getPhotos() == null) ? List.of()
+                : a.getPhotos().stream().map(Photo::getId).collect(Collectors.toList());
+
+        List<PhotoResponse> list = (a.getPhotos() == null) ? List.of()
+                : a.getPhotos().stream().map(p ->
+                new PhotoResponse(
+                        p.getId(),
+                        p.getImageUrl(),
+                        p.getTakenAt(),
+                        // ★ 여기 수정: getLocation() 대신 locationId를 문자열로 변환
+                        (p.getLocationId() != null ? p.getLocationId().toString() : null),
+                        p.getBrand()
+                )
+        ).collect(Collectors.toList());
+
+        String coverUrl = list.isEmpty() ? null : list.get(0).getImageUrl();
+        int count = list.size();
+
+        return new AlbumDetailResponse(
+                a.getId(),
+                a.getName(),
+                a.getDescription(),
+                coverUrl,
+                count,
+                a.getCreatedAt(),
+                idList,
+                list
+        );
     }
 }

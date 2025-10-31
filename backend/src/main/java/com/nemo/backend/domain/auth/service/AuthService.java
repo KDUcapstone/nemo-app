@@ -1,92 +1,49 @@
+// backend/src/main/java/com/nemo/backend/domain/auth/service/AuthService.java
 package com.nemo.backend.domain.auth.service;
 
-import com.nemo.backend.domain.auth.dto.LoginRequest;
-import com.nemo.backend.domain.auth.dto.LoginResponse;
-import com.nemo.backend.domain.auth.dto.SignUpRequest;
-import com.nemo.backend.domain.auth.dto.SignUpResponse;
-import com.nemo.backend.domain.auth.token.RefreshToken;
-import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
-import com.nemo.backend.domain.user.entity.User;
-import com.nemo.backend.domain.user.repository.UserRepository;
-import com.nemo.backend.global.exception.ApiException;
-import com.nemo.backend.global.exception.ErrorCode;
-import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.UUID;
+import com.nemo.backend.domain.user.entity.User;
+import com.nemo.backend.domain.user.repository.UserRepository;
+import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
 
-/**
- * Service layer encapsulating authentication and account lifecycle logic.
- */
 @Service
+@Transactional
 public class AuthService {
+
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final JwtTokenProvider jwtTokenProvider;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final PasswordEncoder passwordEncoder;
 
     public AuthService(UserRepository userRepository,
                        RefreshTokenRepository refreshTokenRepository,
-                       JwtTokenProvider jwtTokenProvider) {
+                       PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
-        this.jwtTokenProvider = jwtTokenProvider;
+        this.passwordEncoder = passwordEncoder;
     }
 
-    @Transactional
-    public SignUpResponse signUp(SignUpRequest request) {
-        userRepository.findByEmail(request.getEmail()).ifPresent(u -> {
-            throw new ApiException(ErrorCode.DUPLICATE_EMAIL);
-        });
-        User user = new User();
-        user.setEmail(request.getEmail());
-        user.setNickname(request.getNickname());
-        user.setProvider("LOCAL");
-        if (request.getPassword() != null && !request.getPassword().isEmpty()) {
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
-        }
-        userRepository.save(user);
-        return new SignUpResponse(user.getId(), user.getEmail(), user.getNickname(), user.getProfileImageUrl());
-    }
-
-    @Transactional
-    public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CREDENTIALS));
-        if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
-        }
-        refreshTokenRepository.deleteByUserId(user.getId());
-        String accessToken = jwtTokenProvider.generateAccessToken(user);
-        String refreshToken = createAndSaveRefreshToken(user.getId());
-        return new LoginResponse(user.getId(), user.getEmail(), user.getNickname(), user.getProfileImageUrl(),
-                accessToken, refreshToken);
-    }
-
-    @Transactional
-    public void logout(Long userId) {
-        userRepository.findById(userId).orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
-        refreshTokenRepository.deleteByUserId(userId);
-    }
-
-    @Transactional
+    /** (유지) 기존 시그니처 – 내부적으로 비밀번호 null 위임 */
     public void deleteAccount(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ApiException(ErrorCode.USER_ALREADY_DELETED));
-        refreshTokenRepository.deleteByUserId(userId);
-        userRepository.delete(user);
+        deleteAccount(userId, null);
     }
 
-    private String createAndSaveRefreshToken(Long userId) {
-        String token = UUID.randomUUID().toString();
-        RefreshToken refreshToken = new RefreshToken();
-        refreshToken.setUserId(userId);
-        refreshToken.setToken(token);
-        refreshToken.setExpiry(LocalDateTime.now().plusDays(14));
-        refreshTokenRepository.save(refreshToken);
-        return token;
+    /** (신규) 비밀번호 검증 포함 탈퇴 */
+    public void deleteAccount(Long userId, String rawPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 사용자를 찾을 수 없습니다."));
+
+        if (rawPassword == null || rawPassword.isBlank()
+                || !passwordEncoder.matches(rawPassword, user.getPassword())) {
+            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+        }
+
+        // 사용자 토큰 정리
+        refreshTokenRepository.deleteByUserId(userId);
+
+        // 사용자 삭제
+        userRepository.delete(user);
     }
 }
