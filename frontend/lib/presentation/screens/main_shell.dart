@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'user/mypage_screen.dart';
+import 'home/home_screen.dart';
+import 'share/share_screen.dart';
 import 'qr/qr_scanner_screen.dart';
 import 'package:frontend/utils/qr_import.dart';
 import 'photo/photo_list_screen.dart';
@@ -16,10 +18,10 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0; // 0: 홈, 1: 앨범, 2: QR, 3: 공유, 4: 마이페이지
 
   final List<Widget> _pages = const [
-    _PlaceholderScreen(title: '홈'),
+    HomeScreen(),
     PhotoListScreen(),
     _PlaceholderScreen(title: 'QR 스캔'), // 눌렀을 때 별도 화면 push
-    _PlaceholderScreen(title: '공유 및 친구'),
+    ShareScreen(),
     MyPageScreen(),
   ];
 

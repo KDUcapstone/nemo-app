@@ -2,6 +2,7 @@ package com.nemo.backend.domain.user.controller;
 
 import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
 import com.nemo.backend.domain.auth.service.AuthService;
+import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
 import com.nemo.backend.domain.user.dto.UpdateUserRequest;
 import com.nemo.backend.domain.user.dto.UserProfileResponse;
 import com.nemo.backend.domain.user.entity.User;
@@ -16,6 +17,7 @@ import java.util.Collections;
 
 /**
  * Controller for retrieving, updating and deleting the current user's profile.
+ * 로그아웃 이후에는 refresh 토큰이 존재하지 않으므로 모든 보호 API는 401을 응답한다.
  */
 @RestController
 @RequestMapping("/api/users")
@@ -23,11 +25,16 @@ public class UserController {
     private final UserService userService;
     private final AuthService authService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenRepository refreshTokenRepository;
 
-    public UserController(UserService userService, AuthService authService, JwtTokenProvider jwtTokenProvider) {
+    public UserController(UserService userService,
+                          AuthService authService,
+                          JwtTokenProvider jwtTokenProvider,
+                          RefreshTokenRepository refreshTokenRepository) {
         this.userService = userService;
         this.authService = authService;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @GetMapping("/me")
@@ -78,6 +85,13 @@ public class UserController {
         if (!jwtTokenProvider.validateToken(token)) {
             throw new ApiException(ErrorCode.UNAUTHORIZED);
         }
-        return jwtTokenProvider.getUserId(token);
+        Long userId = jwtTokenProvider.getUserId(token);
+
+        // ★ 로그아웃된 사용자는 refresh 토큰이 존재하지 않으므로 401
+        boolean hasRefresh = refreshTokenRepository.findFirstByUserId(userId).isPresent();
+        if (!hasRefresh) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED);
+        }
+        return userId;
     }
 }
