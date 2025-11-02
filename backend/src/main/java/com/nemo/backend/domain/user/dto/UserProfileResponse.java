@@ -4,14 +4,16 @@ package com.nemo.backend.domain.user.dto;
 public class UserProfileResponse {
     private Long userId;
     private String email;
-    private String nickname;        // 절대 null 안 내려가게
-    private String profileImageUrl; // 절대 null 안 내려가게
+    private String nickname;
+    private String profileImageUrl;
+
+    public UserProfileResponse() {}
 
     public UserProfileResponse(Long userId, String email, String nickname, String profileImageUrl) {
-        this.userId = userId;
-        this.email = email;
-        this.nickname = nickname != null ? nickname : "";
-        this.profileImageUrl = profileImageUrl != null ? profileImageUrl : "";
+        this.userId = (userId == null ? 0L : userId);
+        this.email = (email == null ? "" : email);
+        this.nickname = (nickname == null ? "" : nickname);
+        this.profileImageUrl = (profileImageUrl == null ? "" : profileImageUrl);
     }
 
     public Long getUserId() { return userId; }
