@@ -14,29 +14,17 @@ import java.net.URI;
 @Configuration
 public class S3Config {
 
-    @Value("${app.s3.region}")
-    private String region;
-
-    @Value("${app.s3.bucket}")
-    private String bucket;
-
-    @Value("${app.s3.endpoint:}") // local에서만 존재
-    private String endpoint;
-
-    @Value("${app.s3.accessKey}")
-    private String accessKey;
-
-    @Value("${app.s3.secretKey}")
-    private String secretKey;
-
-    @Value("${app.s3.pathStyle}")
-    private boolean pathStyle;
+    @Value("${app.s3.region}")     private String region;
+    @Value("${app.s3.endpoint:}")  private String endpoint;  // LocalStack일 때만 설정
+    @Value("${app.s3.accessKey}")  private String accessKey;
+    @Value("${app.s3.secretKey}")  private String secretKey;
+    @Value("${app.s3.pathStyle:true}") private boolean pathStyle;
 
     @Bean
     public S3Client s3Client() {
         var creds = StaticCredentialsProvider.create(
-                AwsBasicCredentials.create(accessKey, secretKey));
-
+                AwsBasicCredentials.create(accessKey, secretKey)
+        );
         var s3Conf = S3Configuration.builder()
                 .pathStyleAccessEnabled(pathStyle)
                 .build();
@@ -47,7 +35,7 @@ public class S3Config {
                 .serviceConfiguration(s3Conf);
 
         if (endpoint != null && !endpoint.isBlank()) {
-            builder = builder.endpointOverride(URI.create(endpoint));
+            builder.endpointOverride(URI.create(endpoint));
         }
         return builder.build();
     }
