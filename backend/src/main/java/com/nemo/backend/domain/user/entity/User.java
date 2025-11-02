@@ -1,4 +1,3 @@
-// backend/src/main/java/com/nemo/backend/domain/user/entity/User.java
 package com.nemo.backend.domain.user.entity;
 
 import com.nemo.backend.global.entity.BaseEntity;
@@ -8,7 +7,8 @@ import jakarta.persistence.*;
 @Table(name = "users")
 public class User extends BaseEntity {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, unique = true, length = 191)
@@ -17,7 +17,8 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String password;
 
-    @Column(name = "nickname")  // null 허용이면 nullable=true 기본값
+    // 닉네임은 DB에서 null 허용이라도, 응답 DTO에서 빈 문자열로 보정됨
+    @Column(name = "nickname")
     private String nickname;
 
     @Column(name = "profile_image_url")
@@ -26,7 +27,6 @@ public class User extends BaseEntity {
     private String provider;
     private String socialId;
 
-    // 게터/세터 …
     public Long getId() { return id; }
     public String getEmail() { return email; }
     public String getPassword() { return password; }

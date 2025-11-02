@@ -1,4 +1,3 @@
-// backend/src/main/java/com/nemo/backend/domain/user/controller/UserController.java
 package com.nemo.backend.domain.user.controller;
 
 import com.nemo.backend.domain.auth.dto.DeleteAccountRequest;
@@ -12,7 +11,9 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import java.time.LocalDateTime;
 
 import java.util.Map;
 
@@ -47,12 +48,11 @@ public class UserController {
         UserProfileResponse body = new UserProfileResponse(
                 user.getId(),
                 user.getEmail(),
-                user.getNickname(),        // null -> "" 로 DTO에서 정규화
-                user.getProfileImageUrl()  // null -> "" 로 DTO에서 정규화
+                user.getNickname(),
+                user.getProfileImageUrl(),
+                user.getCreatedAt()   // BaseEntity에서 상속받음
         );
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body);
+        return ResponseEntity.ok().body(body);
     }
 
 
