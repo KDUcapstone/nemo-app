@@ -6,13 +6,17 @@ import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 import com.nemo.backend.domain.photo.service.PhotoService;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
+
+import com.nemo.backend.domain.photo.dto.PhotoListItemDto;        // ★ 추가
+import com.nemo.backend.web.PagedResponse;                 // ★ 추가
+import com.nemo.backend.web.PageMetaDto;                   // ★ 추가
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.*;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -21,6 +25,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @SecurityRequirement(name = "BearerAuth")
 @RestController
@@ -67,15 +73,66 @@ public class PhotoController {
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId, qrCode, image, brand, location, takenAt, tagListJson, friendIdListJson, memo
         );
-        return ResponseEntity.status(HttpStatus.OK).body(dto); // 필요 시 CREATED로 변경 가능
+        return ResponseEntity.status(HttpStatus.OK).body(dto);
     }
 
+    /**
+     * ✅ 사용자 사진 목록 조회 (프론트 명세 스키마로 변환)
+     * 쿼리 파라미터: favorite, tag, sort, page, size
+     * sort 예: takenAt,desc | takenAt,asc (기본: takenAt,desc)
+     */
     @GetMapping
-    public ResponseEntity<Page<PhotoResponseDto>> list(
+    public ResponseEntity<PagedResponse<PhotoListItemDto>> list(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-            Pageable pageable) {
+            @RequestParam(value = "favorite", required = false) Boolean favorite,
+            @RequestParam(value = "tag", required = false) String tag,
+            @RequestParam(value = "sort", required = false, defaultValue = "takenAt,desc") String sortBy,
+            @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
+            @RequestParam(value = "size", required = false, defaultValue = "20") Integer size
+    ) {
         Long userId = extractUserId(authorizationHeader);
-        return ResponseEntity.ok(photoService.list(userId, pageable));
+
+        // sort 파싱
+        Sort sort = Sort.by(Sort.Direction.DESC, "takenAt");
+        if (sortBy != null && !sortBy.isBlank()) {
+            String[] parts = sortBy.split(",");
+            String field = parts[0].trim();
+            Sort.Direction dir = (parts.length > 1 && "asc".equalsIgnoreCase(parts[1].trim()))
+                    ? Sort.Direction.ASC : Sort.Direction.DESC;
+
+            // 허용 필드만 매핑
+            switch (field) {
+                case "takenAt" -> sort = Sort.by(dir, "takenAt");
+                case "createdAt" -> sort = Sort.by(dir, "createdAt");
+                case "photoId", "id" -> sort = Sort.by(dir, "id");
+                default -> sort = Sort.by(Sort.Direction.DESC, "takenAt");
+            }
+        }
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        // 기존 서비스 결과(Page<PhotoResponseDto>)를 프론트 스키마로 변환
+        var pageDto = photoService.list(userId, pageable);
+        DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
+        List<PhotoListItemDto> items = pageDto.map(p -> PhotoListItemDto.builder()
+                .photoId(p.getId())
+                .imageUrl(p.getImageUrl())
+                .takenAt(p.getTakenAt() != null ? p.getTakenAt().format(ISO) : null)
+                .location(null)      // 위치명 컬럼 없으면 null/"" 유지. 추후 엔티티에 locationName 추가 후 매핑.
+                .brand(p.getBrand())
+                .isFavorite(false)   // 즐겨찾기 미구현이면 false
+                .build()
+        ).getContent();
+
+        PageMetaDto meta = new PageMetaDto(
+                pageDto.getSize(),
+                pageDto.getTotalElements(),
+                pageDto.getTotalPages(),
+                pageDto.getNumber()
+        );
+
+        return ResponseEntity.ok(new PagedResponse<>(items, meta));
     }
 
     @DeleteMapping("/{id}")

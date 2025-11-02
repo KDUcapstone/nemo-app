@@ -8,7 +8,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;   // ✅ 이 import가 꼭 필요
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -18,21 +18,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.CookieHandler;
-import java.net.CookieManager;
-import java.net.CookiePolicy;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Service
 @Transactional
@@ -48,7 +39,7 @@ public class PhotoServiceImpl implements PhotoService {
     private final PhotoRepository photoRepository;
     private final PhotoStorage storage;
 
-    // ✅ 앱이 외부에서 접근할 때 사용할 베이스 URL (에뮬레이터면 10.0.2.2:8080)
+    /** 프론트가 접근할 절대 베이스 URL (예: http://10.0.2.2:8080) */
     private final String publicBaseUrl;
 
     @Autowired
@@ -57,16 +48,12 @@ public class PhotoServiceImpl implements PhotoService {
                             @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl) {
         this.photoRepository = photoRepository;
         this.storage = storage;
-        this.publicBaseUrl = stripTrailingSlash(publicBaseUrl);
+        this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
-    private static String stripTrailingSlash(String s) {
-        return (s != null && s.endsWith("/")) ? s.substring(0, s.length() - 1) : s;
-    }
-
+    /** storage 키 -> 프론트가 접근 가능한 절대 URL */
     private String toPublicUrl(String key) {
-        // /files/{key}를 절대 URL로 변환
-        return publicBaseUrl + "/files/" + key;
+        return String.format("%s/files/%s", publicBaseUrl, key);
     }
 
     @Override
@@ -83,6 +70,7 @@ public class PhotoServiceImpl implements PhotoService {
             throw new IllegalArgumentException("qrCode is required.");
         }
 
+        // QR 해시 중복 방지
         String qrHash = sha256Hex(qrCode);
         photoRepository.findByQrHash(qrHash)
                 .ifPresent(p -> { throw new DuplicateQrException("이미 업로드된 QR입니다."); });
@@ -93,15 +81,16 @@ public class PhotoServiceImpl implements PhotoService {
 
         try {
             if (image != null && !image.isEmpty()) {
-                String key = storage.store(image);     // S3 key
-                String url = toPublicUrl(key);         // /files/{key}
+                // S3 업로드 → 키 반환 → 외부 절대 URL 로 변환
+                String key = storage.store(image);
+                String url = toPublicUrl(key);
                 storedImage = url;
                 storedThumb = url;
             } else {
                 if (looksLikeUrl(qrCode)) {
                     AssetPair ap = fetchAssetsFromQrPayload(qrCode);
                     storedImage = ap.imageUrl;
-                    storedThumb = (ap.thumbnailUrl != null) ? ap.thumbnailUrl : ap.imageUrl;
+                    storedThumb = ap.thumbnailUrl != null ? ap.thumbnailUrl : ap.imageUrl;
                     storedVideo = ap.videoUrl;
                     if (takenAt == null) takenAt = ap.takenAt;
                 } else {
@@ -114,8 +103,13 @@ public class PhotoServiceImpl implements PhotoService {
             throw new ExpiredQrException("QR 자원을 가져오는 데 실패했습니다.", e);
         }
 
-        if (brand == null || brand.isBlank()) brand = inferBrand(qrCode);
-        if (takenAt == null) takenAt = LocalDateTime.now();
+        // 기본값 보정
+        if (brand == null || brand.isBlank()) {
+            brand = inferBrand(qrCode);
+        }
+        if (takenAt == null) {
+            takenAt = LocalDateTime.now();
+        }
 
         Photo photo = new Photo(
                 userId,
@@ -132,7 +126,7 @@ public class PhotoServiceImpl implements PhotoService {
         return new PhotoResponseDto(saved);
     }
 
-    // 목록/삭제(인터페이스 미구현 오류 해결)
+    // ===================== 목록/삭제 =====================
     @Override
     @Transactional(readOnly = true)
     public Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
@@ -150,14 +144,16 @@ public class PhotoServiceImpl implements PhotoService {
         photoRepository.save(photo);
     }
 
-    // ---------- QR/네트워크 처리 ----------
+    // ===================== 네트워크 및 QR 파싱 =====================
     private AssetPair fetchAssetsFromQrPayload(String startUrl) throws IOException {
         CookieManager cm = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         CookieHandler.setDefault(cm);
 
         String current = startUrl;
         int htmlFollow = 0;
-        String foundImage = null, foundVideo = null, foundThumb = null;
+        String foundImage = null;
+        String foundVideo = null;
+        String foundThumb = null;
 
         for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
             URL url = new URL(current);
@@ -190,14 +186,14 @@ public class PhotoServiceImpl implements PhotoService {
                         if (foundVideo == null) foundVideo = urlStr;
                     }
                 } catch (Exception e) {
-                    throw new IOException(e);
+                    throw new IOException("S3 업로드 실패", e);
                 }
                 break;
             }
 
             if (contentType != null && contentType.startsWith("text/html")) {
                 if (htmlFollow >= MAX_HTML_FOLLOW) break;
-                String html = readAll(conn.getInputStream()); // ← 유틸 복구
+                String html = readAll(conn.getInputStream());
                 HtmlExtracted he = extractFromHtml(html, current);
                 if (he.imageUrl != null && foundImage == null) foundImage = downloadToStorage(he.imageUrl, startUrl);
                 if (he.thumbnailUrl != null && foundThumb == null) foundThumb = downloadToStorage(he.thumbnailUrl, startUrl);
@@ -212,7 +208,9 @@ public class PhotoServiceImpl implements PhotoService {
             break;
         }
 
-        if (foundImage == null && foundVideo == null) throw new IOException("이미지/영상 URL을 찾지 못했습니다.");
+        if (foundImage == null && foundVideo == null) {
+            throw new IOException("이미지/영상 URL을 찾지 못했습니다.");
+        }
         if (foundThumb == null) foundThumb = foundImage;
         return new AssetPair(foundImage, foundThumb, foundVideo, null);
     }
@@ -252,9 +250,15 @@ public class PhotoServiceImpl implements PhotoService {
         return conn;
     }
 
-    private record AssetPair(String imageUrl, String thumbnailUrl, String videoUrl, LocalDateTime takenAt) {}
+    // ======= 유틸 =======
+    private static class AssetPair {
+        final String imageUrl, thumbnailUrl, videoUrl;
+        final LocalDateTime takenAt;
+        AssetPair(String i, String t, String v, LocalDateTime ta) {
+            this.imageUrl = i; this.thumbnailUrl = t; this.videoUrl = v; this.takenAt = ta;
+        }
+    }
 
-    // ---------- 유틸 ----------
     private String extractExtensionFromContentType(String contentType) {
         if (contentType == null) return ".bin";
         int slash = contentType.indexOf('/');
@@ -276,7 +280,7 @@ public class PhotoServiceImpl implements PhotoService {
 
     private String sha256Hex(String input) {
         try {
-            var md = java.security.MessageDigest.getInstance("SHA-256");
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(md.digest(input.getBytes()));
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -286,14 +290,6 @@ public class PhotoServiceImpl implements PhotoService {
     private boolean looksLikeUrl(String s) {
         String t = s.trim().toLowerCase(Locale.ROOT);
         return t.startsWith("http://") || t.startsWith("https://");
-    }
-
-    // ★ 누락돼서 에러 나던 부분
-    private String readAll(InputStream in) throws IOException {
-        try (in) {
-            byte[] buf = in.readAllBytes();
-            return new String(buf, StandardCharsets.UTF_8);
-        }
     }
 
     private HtmlExtracted extractFromHtml(String html, String baseUrl) {
@@ -393,5 +389,17 @@ public class PhotoServiceImpl implements PhotoService {
             if (n > 0) remaining -= n;
             return n;
         }
+    }
+
+    private String readAll(InputStream in) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        try (InputStream is = in) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = is.read(buffer)) != -1) {
+                sb.append(new String(buffer, 0, n, StandardCharsets.UTF_8));
+            }
+        }
+        return sb.toString();
     }
 }
