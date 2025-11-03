@@ -33,6 +33,7 @@ class NemoApp extends StatelessWidget {
           ),
           appBarTheme: const AppBarTheme(
             backgroundColor: AppColors.secondary,
+            surfaceTintColor: Colors.transparent,
             elevation: 0,
             foregroundColor: AppColors.textPrimary,
             centerTitle: true,

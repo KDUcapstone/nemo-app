@@ -9,6 +9,7 @@ class PhotoApi {
   Future<List<Map<String, dynamic>>> getPhotos({
     bool? favorite,
     String? tag,
+    String? brand,
     String? sort,
     int? page,
     int? size,
@@ -20,6 +21,7 @@ class PhotoApi {
     final qp = <String, String>{};
     if (favorite != null) qp['favorite'] = favorite.toString();
     if (tag != null && tag.isNotEmpty) qp['tag'] = tag;
+    if (brand != null && brand.isNotEmpty) qp['brand'] = brand;
     if (sort != null && sort.isNotEmpty) qp['sort'] = sort;
     if (page != null) qp['page'] = page.toString();
     if (size != null) qp['size'] = size.toString();
