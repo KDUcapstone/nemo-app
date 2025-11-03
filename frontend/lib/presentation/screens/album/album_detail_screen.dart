@@ -11,12 +11,8 @@ import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
-  final String? autoOpenAction; // 'share' | 'edit'
-  const AlbumDetailScreen({
-    super.key,
-    required this.albumId,
-    this.autoOpenAction,
-  });
+  final String? autoOpenAction; // 'edit' | 'share' 등 선택적 자동 실행 액션
+  const AlbumDetailScreen({super.key, required this.albumId, this.autoOpenAction});
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -29,20 +25,22 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   @override
   void initState() {
     super.initState();
+    // 첫 프레임 이후 자동 액션 실행 (모달/스낵바 등 UI 안전 호출)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (_autoHandled || !mounted) return;
-      if (widget.autoOpenAction == 'share') {
-        _autoHandled = true;
-        await _showShareSheet(context);
-      } else if (widget.autoOpenAction == 'edit') {
-        _autoHandled = true;
-        // 열자마자 수정 시트 오픈
-        // ignore: use_build_context_synchronously
+      if (!mounted || _autoHandled) return;
+      final action = widget.autoOpenAction;
+      if (action == null) return;
+      _autoHandled = true;
+      if (action == 'edit') {
         await showModalBottomSheet(
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
           builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
+        );
+      } else if (action == 'share') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('공유는 추후 지원 예정입니다.')),
         );
       }
     });
