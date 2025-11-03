@@ -182,7 +182,11 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
 
           // 로그인 성공 시 화면 이동
           if (mounted) {
-            Navigator.pop(context);
+            Navigator.pop(context); // 로그인 바텀시트 닫기
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const MainShell()),
+            );
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('로그인되었습니다!'),

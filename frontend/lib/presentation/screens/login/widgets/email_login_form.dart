@@ -30,7 +30,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
     if (value == null || value.isEmpty) {
       return '이메일을 입력해주세요';
     }
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}\$');
+    // 간단하고 관용적인 이메일 패턴: 공백/@ 제외한 문자열 + @ + 도메인 + 점 + TLD
+    // 종료 앵커($)가 리터럴로 매칭되던 문제(\$)를 수정하고, TLD 길이를 제한하지 않음
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     if (!emailRegex.hasMatch(value)) {
       return '올바른 이메일 형식을 입력해주세요';
     }
