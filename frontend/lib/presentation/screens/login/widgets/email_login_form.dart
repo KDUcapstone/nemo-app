@@ -156,6 +156,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                     strongBorder: true,
                     controller: _emailController,
                     validator: _validateEmail,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                   ),
                   const SizedBox(height: 12),
                   _IconInputField(
@@ -165,6 +167,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                     strongBorder: true,
                     controller: _passwordController,
                     validator: _validatePassword,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _handleLogin(),
                   ),
                   if (_errorText != null) ...[
                     const SizedBox(height: 10),
@@ -260,10 +264,12 @@ class _IconInputField extends StatefulWidget {
   final String hintText;
   final bool obscureText;
   final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
   final IconData icon;
   final bool strongBorder;
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
+  final void Function(String)? onSubmitted;
   final TextEditingController? controller;
 
   const _IconInputField({
@@ -271,9 +277,11 @@ class _IconInputField extends StatefulWidget {
     required this.icon,
     this.obscureText = false,
     this.keyboardType,
+    this.textInputAction,
     this.strongBorder = false,
     this.validator,
     this.onChanged,
+    this.onSubmitted,
     this.controller,
   });
 
@@ -305,6 +313,8 @@ class _IconInputFieldState extends State<_IconInputField> {
       focusNode: _focusNode,
       obscureText: widget.obscureText,
       keyboardType: widget.keyboardType,
+      textInputAction: widget.textInputAction,
+      onFieldSubmitted: widget.onSubmitted,
       validator: widget.validator,
       onChanged: widget.onChanged,
       decoration: InputDecoration(
