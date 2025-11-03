@@ -460,7 +460,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
     final provider = context.watch<AlbumProvider>();
     if (provider.albums.isEmpty && !provider.isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
+        if (mounted) {
           context.read<AlbumProvider>().resetAndLoad();
         }
       });
@@ -551,7 +551,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                           if (ok == true) {
                             try {
                               await AlbumApi.deleteAlbum(a.albumId);
-                              if (!context.mounted) return;
+                              if (!mounted) return;
                               context.read<AlbumProvider>().removeAlbum(
                                 a.albumId,
                               );
@@ -559,7 +559,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                 const SnackBar(content: Text('앨범이 삭제되었습니다.')),
                               );
                             } catch (e) {
-                              if (!context.mounted) return;
+                              if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('삭제 실패: $e')),
                               );

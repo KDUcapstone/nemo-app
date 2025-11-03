@@ -9,7 +9,8 @@ import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
-  const AlbumDetailScreen({super.key, required this.albumId});
+  final String? autoOpenAction; // 'edit' | 'share' 등 선택적 자동 실행 액션
+  const AlbumDetailScreen({super.key, required this.albumId, this.autoOpenAction});
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -17,6 +18,31 @@ class AlbumDetailScreen extends StatefulWidget {
 
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   bool _working = false;
+  bool _autoHandled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 첫 프레임 이후 자동 액션 실행 (모달/스낵바 등 UI 안전 호출)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _autoHandled) return;
+      final action = widget.autoOpenAction;
+      if (action == null) return;
+      _autoHandled = true;
+      if (action == 'edit') {
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
+        );
+      } else if (action == 'share') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('공유는 추후 지원 예정입니다.')),
+        );
+      }
+    });
+  }
 
   Future<void> _addPhotos() async {
     final selected = await Navigator.push<List<int>>(
