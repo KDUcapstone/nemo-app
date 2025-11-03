@@ -4,7 +4,8 @@ package com.nemo.backend.domain.album.dto;
 import java.time.LocalDateTime;
 
 /**
- * 앨범 목록 응답 DTO. 프론트는 albumId, title, coverPhotoUrl, photoCount, createdAt 를 사용한다.
+ * 앨범 목록 아이템 DTO.
+ * 프론트 사용 필드: albumId, title, coverPhotoUrl, photoCount, createdAt
  */
 public class AlbumSummaryResponse {
     private Long albumId;
@@ -14,6 +15,7 @@ public class AlbumSummaryResponse {
     private LocalDateTime createdAt;
 
     public AlbumSummaryResponse() {}
+
     public AlbumSummaryResponse(Long albumId, String title, String coverPhotoUrl, int photoCount, LocalDateTime createdAt) {
         this.albumId = albumId;
         this.title = title;
@@ -21,6 +23,7 @@ public class AlbumSummaryResponse {
         this.photoCount = photoCount;
         this.createdAt = createdAt;
     }
+
     public Long getAlbumId() { return albumId; }
     public String getTitle() { return title; }
     public String getCoverPhotoUrl() { return coverPhotoUrl; }

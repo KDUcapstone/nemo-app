@@ -3,11 +3,9 @@ package com.nemo.backend.domain.album.dto;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import com.nemo.backend.domain.photo.dto.PhotoResponse;
+import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 
-/**
- * 앨범 상세 응답 DTO. 프론트 명세에 맞춰 필드를 구성한다.
- */
+/** 앨범 상세 응답 DTO (프론트 호환) */
 public class AlbumDetailResponse {
     private Long albumId;
     private String title;
@@ -16,13 +14,13 @@ public class AlbumDetailResponse {
     private int photoCount;
     private LocalDateTime createdAt;
     private List<Long> photoIdList;
-    private List<PhotoResponse> photoList;
+    private List<PhotoResponseDto> photoList;   // ← PhotoResponseDto 로 통일
 
     public AlbumDetailResponse() {}
 
     public AlbumDetailResponse(Long albumId, String title, String description,
                                String coverPhotoUrl, int photoCount, LocalDateTime createdAt,
-                               List<Long> photoIdList, List<PhotoResponse> photoList) {
+                               List<Long> photoIdList, List<PhotoResponseDto> photoList) {
         this.albumId = albumId;
         this.title = title;
         this.description = description;
@@ -32,6 +30,7 @@ public class AlbumDetailResponse {
         this.photoIdList = photoIdList;
         this.photoList = photoList;
     }
+
     public Long getAlbumId() { return albumId; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
@@ -39,5 +38,5 @@ public class AlbumDetailResponse {
     public int getPhotoCount() { return photoCount; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public List<Long> getPhotoIdList() { return photoIdList; }
-    public List<PhotoResponse> getPhotoList() { return photoList; }
+    public List<PhotoResponseDto> getPhotoList() { return photoList; }
 }

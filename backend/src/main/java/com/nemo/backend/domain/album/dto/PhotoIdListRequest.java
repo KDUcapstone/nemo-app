@@ -1,15 +1,20 @@
 // backend/src/main/java/com/nemo/backend/domain/album/dto/PhotoIdListRequest.java
 package com.nemo.backend.domain.album.dto;
 
-import java.util.List;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotEmpty;
 
-/**
- * 사진 ID 목록을 요청 바디로 받을 때 사용.
- */
+import java.util.List;
+
 public class PhotoIdListRequest {
     @NotEmpty
-    private List<Long> photoIdList;
+    @JsonProperty("photoIds")
+    @JsonAlias({"photoIdList"})
+    private List<Long> photoIds;
 
-    public List<Long> getPhotoIdList() { return photoIdList; }
+    public PhotoIdListRequest() {}
+
+    public List<Long> getPhotoIds() { return photoIds; }
+    public void setPhotoIds(List<Long> photoIds) { this.photoIds = photoIds; }
 }
