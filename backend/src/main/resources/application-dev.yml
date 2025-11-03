@@ -1,0 +1,26 @@
+# ============================================
+# 🧪 application-dev.yml
+# - H2 메모리 DB를 사용하는 개발용 설정
+# - 빠른 테스트 및 단위 테스트에 사용
+# ============================================
+
+spring:
+  # 🗄️ H2 콘솔 설정
+  h2:
+    console:
+      enabled: true       # 콘솔 접속 허용
+      path: /h2-console   # 접속 경로 (http://localhost:8080/h2-console)
+
+  datasource:
+    url: jdbc:h2:mem:nemodb               # 메모리 DB (프로그램 종료 시 초기화됨)
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update        # 엔티티 변경 시 자동 반영 (개발 편의용)
+    show-sql: true            # SQL 로그 출력
+    properties:
+      hibernate.format_sql: true

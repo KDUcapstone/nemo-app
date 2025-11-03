@@ -1,0 +1,12 @@
+# ============================================
+# 🗄️ nemo.yaml
+# - CloudType에서 MariaDB(DB)만 배포할 때 사용
+# - 아래 rootpassword는 테스트용, 실제로는 시크릿 권장
+# ============================================
+
+name: nemo                 # CloudType에서의 DB 서비스 이름
+app: mariadb@11.2              # MariaDB 버전
+options:
+  rootpassword: ${DB_PASSWORD}       # DB 루트 비밀번호 (직접 넣거나, 시크릿으로 대체 가능)
+context:
+  preset: mariadb              # CloudType 기본 설정 템플릿
