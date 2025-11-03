@@ -31,6 +31,7 @@ class PhotoProvider extends ChangeNotifier {
   // Filters and pagination
   bool _favoriteOnly = false;
   String? _tagFilter;
+  String? _brandFilter;
   String _sort = 'takenAt,desc';
   int _page = 0;
   final int _size = 20;
@@ -39,6 +40,7 @@ class PhotoProvider extends ChangeNotifier {
 
   bool get favoriteOnly => _favoriteOnly;
   String? get tagFilter => _tagFilter;
+  String? get brandFilter => _brandFilter;
   String get sort => _sort;
   bool get isLoading => _isLoading;
   bool get hasMore => _hasMore;
@@ -174,13 +176,19 @@ class PhotoProvider extends ChangeNotifier {
     await resetAndLoad();
   }
 
-  Future<void> resetAndLoad({bool? favorite, String? tag, String? sort}) async {
+  Future<void> resetAndLoad({
+    bool? favorite,
+    String? tag,
+    String? brand,
+    String? sort,
+  }) async {
     if (AppConstants.useMockApi) {
       // 모킹에선 초기 더미만 유지
       return;
     }
     _favoriteOnly = favorite ?? _favoriteOnly;
     _tagFilter = tag ?? _tagFilter;
+    _brandFilter = brand ?? _brandFilter;
     if (sort != null && sort.isNotEmpty) _sort = sort;
     _page = 0;
     _hasMore = true;
@@ -199,6 +207,7 @@ class PhotoProvider extends ChangeNotifier {
       final list = await api.getPhotos(
         favorite: _favoriteOnly ? true : null,
         tag: _tagFilter,
+        brand: _brandFilter,
         sort: _sort,
         page: _page,
         size: _size,
