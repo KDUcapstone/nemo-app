@@ -1,10 +1,12 @@
 package com.nemo.backend.domain.friend.controller;
 
+import com.nemo.backend.domain.friend.dto.FriendSearchResponse;
 import com.nemo.backend.domain.friend.service.FriendService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,6 +16,7 @@ import java.util.Map;
  * (요청 → Service → Repository 순으로 동작)
  *
  * 엔드포인트 예시:
+ *  - GET    /api/friends/search    → 친구 검색
  *  - POST   /api/friends           → 친구 요청 보내기
  *  - GET    /api/friends           → 친구 목록 조회
  *  - PUT    /api/friends/accept    → 친구 요청 수락
@@ -27,9 +30,28 @@ public class FriendController {
     private final FriendService friendService;
 
     /**
+     * ✅ 친구 검색
+     * ------------------------------
+     * [GET] /api/friends/search?meId=1&keyword=네컷
+     *
+     * - 닉네임 또는 이메일 일부로 사용자 검색
+     * - 자기 자신은 제외됨
+     * - 이미 친구 상태면 isFriend = true
+     */
+    @GetMapping("/search")
+    public ResponseEntity<List<FriendSearchResponse>> searchFriends(
+            @RequestParam Long meId,
+            @RequestParam String keyword
+    ) {
+        List<FriendSearchResponse> result = friendService.searchFriends(meId, keyword);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * ✅ 친구 요청 보내기
      * ------------------------------
      * [POST] /api/friends
+     *
      * Body 또는 Query로 meId, targetId를 전달받음
      * ex) /api/friends?meId=1&targetId=2
      */
@@ -49,8 +71,8 @@ public class FriendController {
      * ✅ 친구 목록 조회
      * ------------------------------
      * [GET] /api/friends
-     * ex) /api/friends?meId=1
      *
+     * ex) /api/friends?meId=1
      * 나(meId)의 친구 중 상태가 ACCEPTED인 친구 리스트 반환
      */
     @GetMapping
@@ -64,8 +86,8 @@ public class FriendController {
      * ✅ 친구 요청 수락
      * ------------------------------
      * [PUT] /api/friends/accept
-     * ex) /api/friends/accept?userId=2&requesterId=1
      *
+     * ex) /api/friends/accept?userId=2&requesterId=1
      * userId: 수락하는 사람
      * requesterId: 친구 요청을 보낸 사람
      */
@@ -85,8 +107,8 @@ public class FriendController {
      * ✅ 친구 삭제
      * ------------------------------
      * [DELETE] /api/friends/{friendId}
-     * ex) /api/friends/5?meId=1
      *
+     * ex) /api/friends/5?meId=1
      * 나(meId)가 특정 친구(friendId) 관계를 삭제
      */
     @DeleteMapping("/{friendId}")

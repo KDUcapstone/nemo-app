@@ -1,5 +1,7 @@
 package com.nemo.backend.domain.friend.service;
 
+import com.nemo.backend.domain.friend.dto.FriendListResponse;
+import com.nemo.backend.domain.friend.dto.FriendSearchResponse;
 import com.nemo.backend.domain.friend.entity.Friend;
 import com.nemo.backend.domain.friend.entity.FriendStatus;
 import com.nemo.backend.domain.friend.repository.FriendRepository;
@@ -61,11 +63,17 @@ public class FriendService {
      * - 반환 값은 User 엔티티 리스트 (친구들의 정보)
      */
     @Transactional(readOnly = true)
-    public List<User> getFriendList(Long meId) {
+    public List<FriendListResponse> getFriendList(Long meId) {
         return friendRepository.findAllByUserIdAndStatus(meId, FriendStatus.ACCEPTED)
                 .stream()
-                .map(Friend::getFriend) // Friend → User(friend)
-                .collect(Collectors.toList());
+                .map(Friend::getFriend) // User
+                .map(u -> FriendListResponse.builder()
+                        .userId(u.getId())
+                        .email(u.getEmail())
+                        .nickname(u.getNickname())
+                        .profileImageUrl(u.getProfileImageUrl())
+                        .build())
+                .toList();
     }
 
     /**
@@ -105,5 +113,29 @@ public class FriendService {
     public void deleteFriend(Long userId, Long friendId) {
         friendRepository.findByUserIdAndFriendId(userId, friendId)
                 .ifPresent(friendRepository::delete);
+    }
+
+    /**
+     * ✅ 친구 검색
+     * --------------------------------
+     * - 닉네임 또는 이메일 일부로 사용자 검색
+     * - 자기 자신 제외
+     * - 이미 친구인 경우 isFriend = true 반환
+     */
+    @Transactional(readOnly = true)
+    public List<FriendSearchResponse> searchFriends(Long meId, String keyword) {
+        List<User> candidates = userRepository.searchByNicknameOrEmail(keyword);
+
+        return candidates.stream()
+                .filter(u -> !u.getId().equals(meId)) // 자기 자신 제외
+                .map(u -> FriendSearchResponse.builder()
+                        .userId(u.getId())
+                        .nickname(u.getNickname())
+                        .email(u.getEmail())
+                        .profileImageUrl(u.getProfileImageUrl())
+                        .isFriend(friendRepository.existsByUserIdAndFriendId(meId, u.getId()))
+                        .build()
+                )
+                .toList();
     }
 }
