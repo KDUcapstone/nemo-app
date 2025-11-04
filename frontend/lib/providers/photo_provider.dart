@@ -26,6 +26,8 @@ class PhotoItem {
 
 class PhotoProvider extends ChangeNotifier {
   final List<PhotoItem> _items = [];
+  // 모킹 모드에서 전체 원본 보관
+  final List<PhotoItem> _allMockItems = [];
   List<PhotoItem> get items => List.unmodifiable(_items);
   bool _loadedOnce = false;
   // Filters and pagination
@@ -159,7 +161,12 @@ class PhotoProvider extends ChangeNotifier {
         favorite: false,
       ),
     ];
-    _items.addAll(samples);
+    _allMockItems
+      ..clear()
+      ..addAll(samples);
+    _items
+      ..clear()
+      ..addAll(samples);
     notifyListeners();
   }
 
@@ -176,14 +183,34 @@ class PhotoProvider extends ChangeNotifier {
     await resetAndLoad();
   }
 
-  Future<void> resetAndLoad({
-    bool? favorite,
-    String? tag,
-    String? brand,
-    String? sort,
-  }) async {
+  Future<void> resetAndLoad({bool? favorite, String? tag, String? brand, String? sort}) async {
     if (AppConstants.useMockApi) {
-      // 모킹에선 초기 더미만 유지
+      // 모킹 모드: 로컬 필터/정렬 적용
+      _favoriteOnly = favorite ?? _favoriteOnly;
+      _tagFilter = tag ?? _tagFilter;
+      _brandFilter = brand ?? _brandFilter;
+      if (sort != null && sort.isNotEmpty) _sort = sort;
+
+      Iterable<PhotoItem> view = _allMockItems.isEmpty ? _items : _allMockItems;
+      if (_brandFilter != null && _brandFilter!.isNotEmpty) {
+        view = view.where((e) => e.brand == _brandFilter);
+      }
+      if (_tagFilter != null && _tagFilter!.isNotEmpty) {
+        view = view.where((e) => e.tagList.contains(_tagFilter));
+      }
+      if (_favoriteOnly) {
+        view = view.where((e) => e.favorite);
+      }
+      final list = view.toList();
+      if (_sort == 'takenAt,asc') {
+        list.sort((a, b) => a.takenAt.compareTo(b.takenAt));
+      } else if (_sort == 'takenAt,desc') {
+        list.sort((a, b) => b.takenAt.compareTo(a.takenAt));
+      }
+      _items
+        ..clear()
+        ..addAll(list);
+      notifyListeners();
       return;
     }
     _favoriteOnly = favorite ?? _favoriteOnly;

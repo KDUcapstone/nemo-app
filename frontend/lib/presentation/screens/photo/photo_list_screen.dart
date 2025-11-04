@@ -23,6 +23,7 @@ class PhotoListScreen extends StatefulWidget {
 class _PhotoListScreenState extends State<PhotoListScreen> {
   bool _showAlbums = false;
   String _sort = 'takenAt,desc';
+  String? _brand;
   @override
   void initState() {
     super.initState();
@@ -58,6 +59,19 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
+                    if (!_showAlbums)
+                      Positioned(
+                        left: 0,
+                        child: _BrandFilter(
+                          value: _brand,
+                          onChanged: (v) {
+                            setState(() => _brand = v);
+                            context.read<PhotoProvider>().resetAndLoad(
+                              brand: v,
+                            );
+                          },
+                        ),
+                      ),
                     Center(
                       child: _TopToggle(
                         isAlbums: _showAlbums,
@@ -102,6 +116,18 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                 const SnackBar(content: Text('앨범이 생성되었습니다.')),
                               );
                             }
+                          },
+                        ),
+                      ),
+                    if (!_showAlbums)
+                      Positioned(
+                        right: 0,
+                        child: _SortDropdown(
+                          value: _sort,
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setState(() => _sort = v);
+                            context.read<PhotoProvider>().resetAndLoad(sort: v);
                           },
                         ),
                       ),
@@ -181,18 +207,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                     ),
                                   ),
                                 )),
-                    if (!_showAlbums)
-                      Positioned(
-                        left: 12,
-                        bottom: 12,
-                        child: _FloatingSortButton(
-                          sort: _sort,
-                          onSortSelected: (v) {
-                            setState(() => _sort = v);
-                            context.read<PhotoProvider>().resetAndLoad(sort: v);
-                          },
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -289,6 +303,119 @@ class _TopBar extends StatelessWidget {
   }
 }
 
+class _BrandFilter extends StatelessWidget {
+  final String? value; // null = 전체
+  final ValueChanged<String?> onChanged;
+  const _BrandFilter({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const brands = <String?>[null, '인생네컷', '포토이즘', '포토그레이'];
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        border: Border.all(color: AppColors.divider, width: 1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Center(
+        child: PopupMenuButton<String?>(
+          padding: EdgeInsets.zero,
+          color: AppColors.secondary,
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          onSelected: (v) => onChanged(v),
+          itemBuilder: (ctx) => brands
+              .map(
+                (b) => PopupMenuItem<String?>(
+                  value: b,
+                  child: Text(
+                    b ?? '전체',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+          child: const SizedBox(
+            height: 28,
+            child: Center(
+              child: Text(
+                '🏷️',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortDropdown extends StatelessWidget {
+  final String value; // 'takenAt,desc' | 'takenAt,asc'
+  final ValueChanged<String?> onChanged;
+  const _SortDropdown({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const sorts = <Map<String, String>>[
+      {'value': 'takenAt,desc', 'label': '최신순'},
+      {'value': 'takenAt,asc', 'label': '오래된순'},
+    ];
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        border: Border.all(color: AppColors.divider, width: 1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Center(
+        child: PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          color: AppColors.secondary,
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          onSelected: (v) => onChanged(v),
+          itemBuilder: (ctx) => sorts
+              .map(
+                (m) => PopupMenuItem<String>(
+                  value: m['value']!,
+                  child: Text(
+                    m['label']!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+          child: const SizedBox(
+            height: 28,
+            child: Center(
+              child: Text(
+                '📅',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PhotoCard extends StatelessWidget {
   final PhotoItem item;
   final VoidCallback onTap;
@@ -341,6 +468,7 @@ class _Thumb extends StatelessWidget {
       return Image.file(
         file,
         fit: BoxFit.cover,
+        alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         gaplessPlayback: true,
         filterQuality: FilterQuality.low,
@@ -349,6 +477,7 @@ class _Thumb extends StatelessWidget {
       return Image.network(
         imageUrl,
         fit: BoxFit.cover,
+        alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
@@ -679,79 +808,4 @@ class _AlbumQuickActions extends StatelessWidget {
   }
 }
 
-class _FloatingSortButton extends StatelessWidget {
-  final String sort;
-  final ValueChanged<String> onSortSelected;
-  const _FloatingSortButton({required this.sort, required this.onSortSelected});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.25),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
-          ),
-          child: IconButton(
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            icon: const Icon(Icons.sort_rounded, size: 18, color: Colors.white),
-            onPressed: () async {
-              await showModalBottomSheet(
-                context: context,
-                backgroundColor: Colors.transparent,
-                builder: (_) {
-                  final isLatest = sort == 'takenAt,desc';
-                  final isOldest = sort == 'takenAt,asc';
-                  return Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(16),
-                      ),
-                    ),
-                    child: SafeArea(
-                      top: false,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(height: 8),
-                          const Text(
-                            '정렬 선택',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          CheckboxListTile(
-                            title: const Text('최신순'),
-                            value: isLatest,
-                            onChanged: (v) {
-                              onSortSelected('takenAt,desc');
-                              Navigator.pop(context);
-                            },
-                          ),
-                          CheckboxListTile(
-                            title: const Text('오래된순'),
-                            value: isOldest,
-                            onChanged: (v) {
-                              onSortSelected('takenAt,asc');
-                              Navigator.pop(context);
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-            tooltip: '정렬',
-          ),
-        ),
-      ),
-    );
-  }
-}
+// _FloatingSortButton 제거됨: 상단 우측 드롭다운으로 대체
