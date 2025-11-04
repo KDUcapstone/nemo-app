@@ -19,7 +19,7 @@ public class PhotoResponseDto {
     public PhotoResponseDto(Photo photo) {
         this.id = photo.getId();
         this.userId = photo.getUserId();
-        this.albumId = (photo.getAlbum() != null ? photo.getAlbum().getId() : null);
+        this.albumId = photo.getAlbumId();
         this.imageUrl = photo.getImageUrl();
         this.thumbnailUrl = photo.getThumbnailUrl();
         this.videoUrl = photo.getVideoUrl();
@@ -31,15 +31,47 @@ public class PhotoResponseDto {
     }
 
     // getters
-    public Long getId() { return id; }
-    public Long getUserId() { return userId; }
-    public Long getAlbumId() { return albumId; }
-    public String getImageUrl() { return imageUrl; }
-    public String getThumbnailUrl() { return thumbnailUrl; }
-    public String getVideoUrl() { return videoUrl; }
-    public String getBrand() { return brand; }
-    public LocalDateTime getTakenAt() { return takenAt; }
-    public Long getLocationId() { return locationId; }
-    public String getQrHash() { return qrHash; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
+    public Long getId() {
+        return id;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public Long getAlbumId() {
+        return albumId;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public String getThumbnailUrl() {
+        return thumbnailUrl;
+    }
+
+    public String getVideoUrl() {
+        return videoUrl;
+    }
+
+    public String getBrand() {
+        return brand;
+    }
+
+    public LocalDateTime getTakenAt() {
+        return takenAt;
+    }
+
+    public Long getLocationId() {
+        return locationId;
+    }
+
+    public String getQrHash() {
+        return qrHash;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
