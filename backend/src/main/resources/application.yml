@@ -1,0 +1,26 @@
+# ============================================
+# 📦 application.yml
+# - 공통 설정 및 사용할 프로필 지정
+# - 개발/로컬/운영 환경별 yml 파일을 구분해 관리
+# ============================================
+
+spring:
+  profiles:
+    # 현재 활성화할 프로필 선택 (dev / local / prod)
+    # ✅ 개발 중엔 local (CloudType DB 외부 접속)
+    # ✅ 테스트용 H2는 dev
+    # ✅ 실제 배포는 prod
+    active: local
+
+  # 📧 메일 전송 공통 설정 (모든 환경 공통)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}        # 환경변수로 관리 (보안)
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000

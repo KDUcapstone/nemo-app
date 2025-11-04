@@ -1,0 +1,20 @@
+# ============================================
+# 💻 application-local.yml
+# - 로컬 PC에서 CloudType DB(외부 접속 주소)로 연결
+# - CloudType에서 "외부 TCP 접속 허용"을 켜야 함
+# ============================================
+
+spring:
+  datasource:
+    driver-class-name: org.mariadb.jdbc.Driver
+    # ⛓️ CloudType DB 접속 주소 (도메인 탭에서 확인)
+    url: jdbc:mariadb://svc.sel5.cloudtype.app:30303/nemo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
+    username: ${DB_USER}      # DB 사용자명
+    password: ${DB_PASSWORD}   # DB 비밀번호
+
+  jpa:
+    hibernate:
+      ddl-auto: update        # 개발 중엔 update (운영은 validate 권장)
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
