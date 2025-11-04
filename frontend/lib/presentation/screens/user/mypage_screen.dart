@@ -715,6 +715,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           onLogout: _logout,
                           onDelete: _deleteAccount,
                         ),
+                        SizedBox(height: gap),
                       ],
                     ),
                   ),

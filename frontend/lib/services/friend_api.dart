@@ -5,6 +5,7 @@ import 'package:frontend/services/auth_service.dart';
 
 class FriendApi {
   static Uri _uri(String path) => Uri.parse('${AuthService.baseUrl}$path');
+
   static Map<String, String> _headers() {
     final token = AuthService.accessToken;
     return {
@@ -46,9 +47,7 @@ class FriendApi {
     final res = await http.get(uri, headers: _headers());
     if (res.statusCode == 200) {
       final decoded = jsonDecode(res.body);
-      if (decoded is List) {
-        return decoded.cast<Map<String, dynamic>>();
-      }
+      if (decoded is List) return decoded.cast<Map<String, dynamic>>();
       if (decoded is Map<String, dynamic>) {
         final List list = decoded['content'] ?? decoded['friends'] ?? [];
         return list.cast<Map<String, dynamic>>();
@@ -140,7 +139,7 @@ class FriendApi {
     throw Exception('Failed to add friend (${res.statusCode})');
   }
 
-  // GET /api/friends ??friends array
+  // GET /api/friends → friends array
   static Future<List<Map<String, dynamic>>> getFriends() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
