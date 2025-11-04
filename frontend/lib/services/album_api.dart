@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:frontend/app/constants.dart';
 import 'package:frontend/services/auth_service.dart';
+import 'package:frontend/services/api_client.dart';
 
 class AlbumApi {
   static Uri _uri(String path) => Uri.parse('${AuthService.baseUrl}$path');
