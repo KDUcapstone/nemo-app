@@ -81,11 +81,13 @@ class _CreateAlbumScreenState extends State<CreateAlbumScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('새 앨범 만들기')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
+      body: SafeArea(
+        bottom: true,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               TextFormField(
@@ -235,6 +237,7 @@ class _CreateAlbumScreenState extends State<CreateAlbumScreen> {
                 },
               ),
               const Spacer(),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -252,6 +255,7 @@ class _CreateAlbumScreenState extends State<CreateAlbumScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
