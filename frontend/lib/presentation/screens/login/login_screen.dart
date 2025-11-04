@@ -109,14 +109,20 @@ Future<void> _showEmailLoginSheet(BuildContext context) async {
     barrierColor: Colors.black26,
     backgroundColor: Colors.transparent,
     builder: (ctx) {
-      return DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.55,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        builder: (_, controller) {
-          return const EmailLoginForm();
-        },
+      final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+      return AnimatedPadding(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          builder: (_, controller) {
+            return const EmailLoginForm();
+          },
+        ),
       );
     },
   );
