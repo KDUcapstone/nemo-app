@@ -63,10 +63,7 @@ class AlbumApi {
       'size': '$size',
       if (favoriteOnly != null) 'favoriteOnly': favoriteOnly.toString(),
     };
-    final res = await ApiClient.get(
-      '/api/albums',
-      queryParameters: q,
-    );
+    final res = await ApiClient.get('/api/albums', queryParameters: q);
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -303,5 +300,78 @@ class AlbumApi {
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to delete album (${res.statusCode})');
+  }
+}
+
+extension AlbumSharing on AlbumApi {
+  // POST /api/albums/{albumId}/share
+  static Future<Map<String, dynamic>> shareAlbum({
+    required int albumId,
+    required List<int> friendIdList,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      if (albumId <= 0) {
+        throw Exception('ALBUM_NOT_FOUND');
+      }
+      if (friendIdList.isEmpty) {
+        return {'albumId': albumId, 'sharedTo': [], 'message': '선택된 친구가 없습니다.'};
+      }
+      // 더미: 친구 2명만 유효, 나머지는 NOT_FRIEND로 가정하지 않고 무시
+      final sharedTo = friendIdList
+          .map(
+            (id) => {
+              'userId': id,
+              'nickname': id == 3
+                  ? '네컷러버'
+                  : id == 5
+                  ? '사진장인'
+                  : '친구$id',
+            },
+          )
+          .toList();
+      return {
+        'albumId': albumId,
+        'sharedTo': sharedTo,
+        'message': '앨범이 선택한 친구들에게 성공적으로 공유되었습니다.',
+      };
+    }
+
+    final res = await http.post(
+      AlbumApi._uri('/api/albums/$albumId/share'),
+      headers: AlbumApi._headersJson(),
+      body: jsonEncode({'friendIdList': friendIdList}),
+    );
+
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 400) throw Exception('NOT_FRIEND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to share album (${res.statusCode})');
+  }
+
+  // POST /api/albums/{albumId}/share-url (가정) → 공유 URL 생성
+  static Future<Map<String, dynamic>> generateShareUrl({
+    required int albumId,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      final url =
+          'https://nemo.app/share/$albumId/${DateTime.now().millisecondsSinceEpoch}';
+      return {'albumId': albumId, 'url': url, 'message': '공유 URL이 생성되었습니다.'};
+    }
+    final res = await ApiClient.post('/api/albums/$albumId/share-url');
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to create share url (${res.statusCode})');
   }
 }
