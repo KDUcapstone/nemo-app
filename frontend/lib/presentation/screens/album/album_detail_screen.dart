@@ -10,7 +10,11 @@ import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
   final String? autoOpenAction; // 'edit' | 'share' 등 선택적 자동 실행 액션
-  const AlbumDetailScreen({super.key, required this.albumId, this.autoOpenAction});
+  const AlbumDetailScreen({
+    super.key,
+    required this.albumId,
+    this.autoOpenAction,
+  });
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -37,9 +41,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
         );
       } else if (action == 'share') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('공유는 추후 지원 예정입니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('공유는 추후 지원 예정입니다.')));
       }
     });
   }
@@ -335,6 +339,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                                 Image.network(
                                   p.imageUrl,
                                   fit: BoxFit.cover,
+                                  alignment: Alignment.center,
                                   errorBuilder: (_, __, ___) =>
                                       const ColoredBox(
                                         color: Color(0xFFE0E0E0),

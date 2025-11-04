@@ -341,6 +341,7 @@ class _Thumb extends StatelessWidget {
       return Image.file(
         file,
         fit: BoxFit.cover,
+        alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         gaplessPlayback: true,
         filterQuality: FilterQuality.low,
@@ -349,6 +350,7 @@ class _Thumb extends StatelessWidget {
       return Image.network(
         imageUrl,
         fit: BoxFit.cover,
+        alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
