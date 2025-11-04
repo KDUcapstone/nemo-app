@@ -81,7 +81,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
           );
           // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
           final nick = (result['nickname'] as String?)?.trim();
-          _showToast('환영합니다 ${nick != null && nick.isNotEmpty ? nick : '사용자'}님!');
+          _showToast(
+            '환영합니다 ${nick != null && nick.isNotEmpty ? nick : '사용자'}님!',
+          );
           Navigator.pop(context, true);
         }
       } catch (e) {
@@ -110,14 +112,21 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
               child: Material(
                 color: Colors.transparent,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.8),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     message,
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
