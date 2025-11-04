@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:frontend/app/constants.dart';
 import 'package:frontend/services/auth_service.dart';
@@ -25,7 +25,7 @@ class FriendApi {
           'userId': i + 1,
           'nickname': '친구${i + 1}',
           'email': 'friend${i + 1}@example.com',
-          'avatarUrl': null,
+          'profileImageUrl': null,
         },
       );
       if (search == null || search.trim().isEmpty) return all;
@@ -68,14 +68,14 @@ class FriendApi {
       final data = [
         {
           'userId': 2,
-          'nickname': '네컷매니아',
+          'nickname': '네컷러버',
           'email': 'fourcut@example.com',
           'profileImageUrl': 'https://picsum.photos/seed/user2/200/200',
           'isFriend': true,
         },
         {
           'userId': 3,
-          'nickname': '네컷러버',
+          'nickname': '사진장인',
           'email': 'lover@nemo.com',
           'profileImageUrl': 'https://picsum.photos/seed/user3/200/200',
           'isFriend': false,
@@ -140,7 +140,7 @@ class FriendApi {
     throw Exception('Failed to add friend (${res.statusCode})');
   }
 
-  // GET /api/friends → friends array
+  // GET /api/friends ??friends array
   static Future<List<Map<String, dynamic>>> getFriends() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -149,14 +149,14 @@ class FriendApi {
       return [
         {
           'userId': 3,
-          'nickname': '네컷러버',
+          'nickname': '사진장인',
           'email': 'friend1@example.com',
           'profileImageUrl': 'https://picsum.photos/seed/user3/200/200',
           'addedAt': DateTime.now().toIso8601String(),
         },
         {
           'userId': 5,
-          'nickname': '사진장인',
+          'nickname': '네컷러버',
           'email': 'friend2@nemo.com',
           'profileImageUrl': null,
           'addedAt': DateTime.now()

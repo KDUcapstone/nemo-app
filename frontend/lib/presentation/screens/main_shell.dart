@@ -4,6 +4,7 @@ import 'user/mypage_screen.dart';
 import 'home/home_screen.dart';
 import 'share/share_screen.dart';
 import 'qr/qr_scanner_screen.dart';
+import 'share/share_screen.dart';
 import 'package:frontend/utils/qr_import.dart';
 import 'photo/photo_list_screen.dart';
 

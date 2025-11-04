@@ -1,7 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/services/friend_api.dart';
+import 'package:frontend/services/album_api.dart';
+// import removed: create album screen (공유 앨범 생성 버튼 제거)
+import 'package:flutter/services.dart';
 
 class ShareScreen extends StatelessWidget {
   const ShareScreen({super.key});
@@ -69,7 +72,7 @@ class _TopRow extends StatelessWidget {
               onPressed: () {
                 ScaffoldMessenger.of(
                   context,
-                ).showSnackBar(const SnackBar(content: Text('공유 설정 준비 중입니다.')));
+                ).showSnackBar(const SnackBar(content: Text('설정 준비 중입니다.')));
               },
             ),
           ],
@@ -91,7 +94,7 @@ class _ShareAndInviteRow extends StatelessWidget {
           child: _OpenSheetTile(
             title: '앨범 공유',
             icon: Icons.share_outlined,
-            subtitle: '링크/참여자 관리',
+            subtitle: '링크/초대/권한 설정',
             onTap: () => _showShareAlbumSheet(context),
           ),
         ),
@@ -180,6 +183,7 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
   bool _loading = true;
   String _sort = 'latest'; // latest | nickname
   final Set<int> _inFlight = {};
+  final Set<int> _selected = {};
 
   @override
   void initState() {
@@ -287,7 +291,6 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
               final nick = (f['nickname'] ?? '') as String;
               final email = (f['email'] ?? '') as String;
               final avatar = (f['profileImageUrl'] ?? '') as String?;
-              final pending = _inFlight.contains(id);
               return ListTile(
                 leading: CircleAvatar(
                   backgroundImage: (avatar != null && avatar.isNotEmpty)
@@ -305,49 +308,70 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                     fontSize: 12,
                   ),
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: pending
-                          ? null
-                          : () async {
-                              _inFlight.add(id);
-                              setState(() {});
-                              try {
-                                await FriendApi.deleteFriend(id);
-                                _friends.removeWhere((e) => e['userId'] == id);
-                                _applySort();
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('삭제됨: $nick')),
-                                );
-                              } catch (e) {
-                                if (!mounted) return;
-                                final msg =
-                                    e.toString().contains('USER_NOT_FOUND')
-                                    ? '사용자를 찾을 수 없습니다.'
-                                    : e.toString().contains('UNAUTHORIZED')
-                                    ? '로그인이 필요합니다.'
-                                    : '삭제 실패';
-                                ScaffoldMessenger.of(
-                                  context,
-                                ).showSnackBar(SnackBar(content: Text(msg)));
-                              } finally {
-                                _inFlight.remove(id);
-                                if (mounted) setState(() {});
-                              }
-                            },
-                      tooltip: '친구 삭제',
-                    ),
-                  ],
+                trailing: Checkbox(
+                  value: _selected.contains(id),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _selected.add(id);
+                      } else {
+                        _selected.remove(id);
+                      }
+                    });
+                  },
                 ),
               );
             },
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemCount: _filtered.length,
           ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () async {
+                        final friendIds = _selected.toList();
+                        final albumId = await _pickAlbumId(context);
+                        if (albumId == null) return;
+                        try {
+                          final res = await AlbumSharing.shareAlbum(
+                            albumId: albumId,
+                            friendIdList: friendIds,
+                          );
+                          if (!context.mounted) return;
+                          _showTopToast(
+                            context,
+                            (res['message'] ?? '공유 완료').toString(),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          final msg = e.toString().contains('NOT_FRIEND')
+                              ? '친구로 등록되지 않은 사용자가 포함되어 있습니다.'
+                              : e.toString().contains('FORBIDDEN')
+                              ? '이 앨범을 공유할 권한이 없습니다.'
+                              : e.toString().contains('ALBUM_NOT_FOUND')
+                              ? '해당 앨범을 찾을 수 없습니다.'
+                              : '공유 실패: $e';
+                          _showTopToast(context, msg);
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  '선택한 친구에게 공유',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -434,6 +458,145 @@ class _BottomSheetScaffold extends StatelessWidget {
   }
 }
 
+Future<int?> _pickAlbumId(BuildContext context) async {
+  // 간단 앨범 선택 다이얼로그 (첫 페이지만)
+  List<dynamic> albums = [];
+  try {
+    final resp = await AlbumApi.getAlbums(page: 0, size: 20);
+    albums = (resp['content'] as List?) ?? [];
+  } catch (_) {}
+  if (albums.isEmpty) {
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('앨범 선택'),
+        content: const Text('표시할 앨범이 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  final id = await showDialog<int>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('앨범 선택'),
+      content: SizedBox(
+        width: 360,
+        height: 360,
+        child: ListView.separated(
+          itemCount: albums.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (_, i) {
+            final a = albums[i] as Map<String, dynamic>;
+            final albumId = a['albumId'] as int;
+            final title = (a['title'] ?? '앨범 $albumId') as String;
+            final count = a['photoCount'] ?? 0;
+            return ListTile(
+              title: Text(title),
+              subtitle: Text('사진 $count장'),
+              onTap: () => Navigator.pop(ctx, albumId),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('취소'),
+        ),
+      ],
+    ),
+  );
+  return id;
+}
+
+Future<List<int>?> _pickFriends(BuildContext context) async {
+  List<Map<String, dynamic>> items = [];
+  try {
+    items = await FriendApi.getFriends();
+  } catch (_) {}
+  final selected = <int>{};
+  final controller = TextEditingController();
+  final res = await showDialog<List<int>>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('공유 대상 선택'),
+      content: SizedBox(
+        width: 380,
+        child: StatefulBuilder(
+          builder: (ctx, setSt) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: '친구 검색 (닉네임/이메일)',
+                  prefixIcon: Icon(Icons.search),
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (q) async {
+                  final kw = q.trim();
+                  try {
+                    final list = kw.isEmpty
+                        ? await FriendApi.getFriends()
+                        : await FriendApi.search(kw);
+                    setSt(() => items = list);
+                  } catch (_) {}
+                },
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 320,
+                child: items.isEmpty
+                    ? const Center(child: Text('친구가 없습니다.'))
+                    : ListView.builder(
+                        itemCount: items.length,
+                        itemBuilder: (_, i) {
+                          final f = items[i];
+                          final id = f['userId'] as int;
+                          final nick = (f['nickname'] ?? '') as String;
+                          final checked = selected.contains(id);
+                          return CheckboxListTile(
+                            value: checked,
+                            onChanged: (v) {
+                              setSt(() {
+                                if (v == true) {
+                                  selected.add(id);
+                                } else {
+                                  selected.remove(id);
+                                }
+                              });
+                            },
+                            title: Text(nick),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, selected.toList()),
+          child: const Text('선택'),
+        ),
+      ],
+    ),
+  );
+  return res;
+}
+
 class _ShareAlbumSheet extends StatelessWidget {
   const _ShareAlbumSheet();
 
@@ -465,22 +628,61 @@ class _ShareAlbumSheet extends StatelessWidget {
             const SizedBox(width: 8),
             _CircleIconButton(
               icon: Icons.upload_outlined,
-              onTap: () => _toast(context, '업로드 준비 중'),
+              onTap: () => _toast(context, '공유 URL 생성'),
             ),
           ],
         ),
         const SizedBox(height: 12),
         _ActionButton(
-          label: '공유 앨범 생성',
-          onTap: () => _toast(context, '공유 앨범 생성'),
+          label: '공유 URL 생성',
+          onTap: () async {
+            final albumId = await _pickAlbumId(context);
+            if (albumId == null) return;
+            try {
+              final res = await AlbumSharing.generateShareUrl(albumId: albumId);
+              final url = (res['url'] ?? '').toString();
+              if (url.isNotEmpty) {
+                await Clipboard.setData(ClipboardData(text: url));
+                if (!context.mounted) return;
+                // 성공 안내 생략
+              } else {
+                if (!context.mounted) return;
+                _showTopToast(context, 'URL 생성 실패: 빈 URL');
+              }
+            } catch (e) {
+              _showTopToast(context, 'URL 생성 실패: $e');
+            }
+          },
         ),
         const SizedBox(height: 8),
         _ActionButton(
-          label: '선택 후 URL 생성',
-          onTap: () => _toast(context, '공유 URL 생성'),
+          label: '공유 대상 추가',
+          onTap: () async {
+            // 친구 먼저 선택 → 앨범 선택 → 공유 실행
+            final friendIds = await _pickFriends(context);
+            if (friendIds == null || friendIds.isEmpty) return;
+            final albumId = await _pickAlbumId(context);
+            if (albumId == null) return;
+            try {
+              final res = await AlbumSharing.shareAlbum(
+                albumId: albumId,
+                friendIdList: friendIds,
+              );
+              if (!context.mounted) return;
+              _showTopToast(context, (res['message'] ?? '공유 완료').toString());
+            } catch (e) {
+              final msg = e.toString().contains('NOT_FRIEND')
+                  ? '친구로 등록되지 않은 사용자가 포함되어 있습니다.'
+                  : e.toString().contains('FORBIDDEN')
+                  ? '이 앨범을 공유할 권한이 없습니다.'
+                  : e.toString().contains('ALBUM_NOT_FOUND')
+                  ? '해당 앨범을 찾을 수 없습니다.'
+                  : '공유 실패: $e';
+              if (!context.mounted) return;
+              _showTopToast(context, msg);
+            }
+          },
         ),
-        const SizedBox(height: 8),
-        _ActionButton(label: '참여자 추가', onTap: () => _toast(context, '참여자 추가')),
       ],
     );
   }
@@ -508,7 +710,7 @@ class _InviteStatusSheet extends StatelessWidget {
             children: [
               const Expanded(
                 child: Text(
-                  '친구에게 앨범을 초대하셨습니다.',
+                  '친구들로부터 공유 초대가 있습니다.',
                   style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
                 ),
               ),
@@ -562,10 +764,10 @@ class _CollaborativeAlbumSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: const [
-        _SectionTitle(title: '공동 앨범 관리 >'),
+        _SectionTitle(title: '공유 앨범 관리'),
         SizedBox(height: 8),
         Text(
-          '아직 공동 앨범이 없습니다.',
+          '아직 공유하고있는 앨범이 없습니다.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
         ),
       ],
@@ -695,4 +897,41 @@ class _GlassCard extends StatelessWidget {
 
 void _toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+}
+
+void _showTopToast(BuildContext context, String msg) {
+  final overlay = Overlay.of(context);
+  if (overlay == null) return;
+  final entry = OverlayEntry(
+    builder: (ctx) {
+      final top = MediaQuery.of(ctx).padding.top + 12;
+      return Positioned(
+        top: top,
+        left: 16,
+        right: 16,
+        child: IgnorePointer(
+          ignoring: true,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                msg,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+  overlay.insert(entry);
+  Future.delayed(const Duration(seconds: 2)).then((_) {
+    entry.remove();
+  });
 }
