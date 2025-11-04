@@ -79,7 +79,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             accessToken: result['accessToken'],
             profileImageUrl: result['profileImageUrl'],
           );
-          // 로그인 성공 신호를 상위(LoginScreen)로 전달하여 거기서 네비게이션 처리
+          // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
+          final nick = (result['nickname'] as String?)?.trim();
+          _showToast('환영합니다 ${nick != null && nick.isNotEmpty ? nick : '사용자'}님!');
           Navigator.pop(context, true);
         }
       } catch (e) {
@@ -93,6 +95,42 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         });
       }
     }
+  }
+
+  void _showToast(String message) {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    if (overlay == null) return;
+    final entry = OverlayEntry(
+      builder: (_) => IgnorePointer(
+        child: SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 64),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(seconds: 2), () {
+      // OverlayEntry는 위젯 생명주기와 무관하게 제거 가능
+      entry.remove();
+    });
   }
 
   @override

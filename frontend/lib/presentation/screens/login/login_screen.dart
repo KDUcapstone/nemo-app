@@ -126,12 +126,6 @@ Future<void> _showEmailLoginSheet(BuildContext context) async {
         context,
         MaterialPageRoute(builder: (_) => const MainShell()),
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('로그인되었습니다!'),
-          backgroundColor: Colors.green,
-        ),
-      );
     }
   }
 }
