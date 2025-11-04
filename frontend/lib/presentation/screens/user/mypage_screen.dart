@@ -16,7 +16,6 @@ import 'widgets/info_row.dart';
 // removed unused: menu_button
 import 'widgets/profile_card.dart';
 import 'widgets/account_actions_card.dart';
-import 'friends_list_screen.dart';
 import 'widgets/profile_image_picker_sheet.dart';
 import 'widgets/sky_background.dart';
 import 'package:http/http.dart' as http;
@@ -717,9 +716,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           onDelete: _deleteAccount,
                         ),
                         SizedBox(height: gap),
-
-                        // 친구 관리 진입
-                        GlassCard(child: _FriendsEntryRow()),
                       ],
                     ),
                   ),
