@@ -949,10 +949,10 @@ class _CollaborativeAlbumSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: const [
-        _SectionTitle(title: '협업 앨범 (준비 중)'),
+        _SectionTitle(title: '공유 앨범'),
         SizedBox(height: 8),
         Text(
-          '협업 앨범은 아직 준비 중입니다.',
+          '아직 공유중인 앨범이 없습니다.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
         ),
       ],
