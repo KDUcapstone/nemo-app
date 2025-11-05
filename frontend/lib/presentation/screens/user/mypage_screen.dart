@@ -24,6 +24,7 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:frontend/services/photo_upload_api.dart';
+import '../login/forgot_password_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -707,6 +708,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         AccountActionsCard(
                           onLogout: _logout,
                           onDelete: _deleteAccount,
+                          onResetPassword: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ForgotPasswordScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
