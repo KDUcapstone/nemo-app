@@ -45,12 +45,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class PhotoServiceImpl implements PhotoService {
 
     private static final int CONNECT_TIMEOUT_MS = 5000;
-    private static final int READ_TIMEOUT_MS    = 10000;
-    private static final int MAX_REDIRECTS      = 5;
-    private static final int MAX_HTML_FOLLOW    = 2;
-    private static final long MAX_BYTES         = 50L * 1024 * 1024; // 이미지/영상 공통 업로드 제한
-    private static final String USER_AGENT      = "nemo-app/1.0 (+https://nemo)";
-    private static final String[] ALLOWED_SCHEMES = {"http", "https"};
+    private static final int READ_TIMEOUT_MS = 10000;
+    private static final int MAX_REDIRECTS = 5;
+    private static final int MAX_HTML_FOLLOW = 2;
+    private static final long MAX_BYTES = 50L * 1024 * 1024; // 이미지/영상 공통 업로드 제한
+    private static final String USER_AGENT = "nemo-app/1.0 (+https://nemo)";
+    private static final String[] ALLOWED_SCHEMES = { "http", "https" };
 
     private final PhotoRepository photoRepository;
     private final PhotoStorage storage;
@@ -59,8 +59,8 @@ public class PhotoServiceImpl implements PhotoService {
 
     @Autowired
     public PhotoServiceImpl(PhotoRepository photoRepository,
-                            PhotoStorage storage,
-                            QrDecoder qrDecoder) {
+            PhotoStorage storage,
+            QrDecoder qrDecoder) {
         this.photoRepository = photoRepository;
         this.storage = storage;
         this.qrDecoder = qrDecoder;
@@ -68,11 +68,13 @@ public class PhotoServiceImpl implements PhotoService {
 
     @Override
     public PhotoResponseDto upload(Long userId, MultipartFile qrFile) {
-        if (qrFile == null || qrFile.isEmpty()) throw new IllegalArgumentException("QR 파일이 없습니다.");
+        if (qrFile == null || qrFile.isEmpty())
+            throw new IllegalArgumentException("QR 파일이 없습니다.");
 
         // 1) QR 디코드
         String payload = qrDecoder.decode(qrFile);
-        if (payload == null || payload.isBlank()) throw new InvalidQrException("QR 코드를 해석할 수 없습니다.");
+        if (payload == null || payload.isBlank())
+            throw new InvalidQrException("QR 코드를 해석할 수 없습니다.");
 
         // 2) 만료값(숫자) 방어: 과거면 Expired → 404
         if (payload.chars().allMatch(Character::isDigit)) {
@@ -88,7 +90,9 @@ public class PhotoServiceImpl implements PhotoService {
 
         // 3) 중복 방지 해시
         String qrHash = sha256Hex(payload);
-        photoRepository.findByQrHash(qrHash).ifPresent(p -> { throw new DuplicateQrException("이미 업로드된 QR입니다."); });
+        photoRepository.findByQrHash(qrHash).ifPresent(p -> {
+            throw new DuplicateQrException("이미 업로드된 QR입니다.");
+        });
 
         // 4) 자산 수집
         AssetPair assets;
@@ -118,8 +122,7 @@ public class PhotoServiceImpl implements PhotoService {
                 qrHash,
                 brand,
                 assets.takenAt,
-                null
-        );
+                null);
         Photo saved = photoRepository.save(photo);
         return new PhotoResponseDto(saved);
     }
@@ -151,7 +154,8 @@ public class PhotoServiceImpl implements PhotoService {
 
         for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
             URL url = new URL(current);
-            if (!isAllowedScheme(url)) throw new IOException("Unsupported URL scheme: " + url.getProtocol());
+            if (!isAllowedScheme(url))
+                throw new IOException("Unsupported URL scheme: " + url.getProtocol());
 
             HttpURLConnection conn = open(current, "GET", null, startUrl);
             int code = conn.getResponseCode();
@@ -159,7 +163,8 @@ public class PhotoServiceImpl implements PhotoService {
             // 수동 리다이렉트
             if (code / 100 == 3) {
                 String location = conn.getHeaderField("Location");
-                if (location == null || location.isBlank()) throw new IOException("Redirect without Location");
+                if (location == null || location.isBlank())
+                    throw new IOException("Redirect without Location");
                 current = new URL(url, location).toString();
                 continue;
             }
@@ -169,7 +174,8 @@ public class PhotoServiceImpl implements PhotoService {
             // 파일 스트림 응답 (이미지/영상/첨부)
             String cd = conn.getHeaderField("Content-Disposition");
             boolean isAttachment = cd != null && cd.toLowerCase(Locale.ROOT).contains("attachment");
-            if ((contentType != null && (contentType.startsWith("image/") || contentType.startsWith("video/"))) || isAttachment) {
+            if ((contentType != null && (contentType.startsWith("image/") || contentType.startsWith("video/")))
+                    || isAttachment) {
                 try (InputStream in = boundedStream(conn)) {
                     String ct = (contentType != null) ? contentType : "application/octet-stream";
                     String ext = extractExtensionFromContentType(ct);
@@ -177,10 +183,13 @@ public class PhotoServiceImpl implements PhotoService {
                     String stored = storage.store(mf);
 
                     if (ct.startsWith("image/")) {
-                        if (foundImage == null) foundImage = stored;
-                        if (foundThumb == null)  foundThumb  = stored; // 썸네일 없으면 이미지로 대체
+                        if (foundImage == null)
+                            foundImage = stored;
+                        if (foundThumb == null)
+                            foundThumb = stored; // 썸네일 없으면 이미지로 대체
                     } else if (ct.startsWith("video/")) {
-                        if (foundVideo == null) foundVideo = stored;
+                        if (foundVideo == null)
+                            foundVideo = stored;
                     }
                 }
                 break; // 파일 응답이면 종료
@@ -188,17 +197,22 @@ public class PhotoServiceImpl implements PhotoService {
 
             // HTML 파싱
             if (contentType != null && contentType.startsWith("text/html")) {
-                if (htmlFollow >= MAX_HTML_FOLLOW) break;
+                if (htmlFollow >= MAX_HTML_FOLLOW)
+                    break;
                 String html = readAll(conn.getInputStream());
                 // 1) 메타/태그 기반 추출
                 HtmlExtracted he = extractFromHtml(html, current);
-                if (he.imageUrl != null && foundImage == null) foundImage = downloadToStorage(he.imageUrl, startUrl);
-                if (he.thumbnailUrl != null && foundThumb == null) foundThumb = downloadToStorage(he.thumbnailUrl, startUrl);
-                if (he.videoUrl != null && foundVideo == null) foundVideo = downloadToStorage(he.videoUrl, startUrl);
+                if (he.imageUrl != null && foundImage == null)
+                    foundImage = downloadToStorage(he.imageUrl, startUrl);
+                if (he.thumbnailUrl != null && foundThumb == null)
+                    foundThumb = downloadToStorage(he.thumbnailUrl, startUrl);
+                if (he.videoUrl != null && foundVideo == null)
+                    foundVideo = downloadToStorage(he.videoUrl, startUrl);
 
                 // 2) 폼 기반 다운로드 흐름 (필요 시)
                 if ((foundImage == null || foundVideo == null) && he.postForm != null) {
-                    String actionAbs = new URL(url, he.postForm.action != null ? he.postForm.action : current).toString();
+                    String actionAbs = new URL(url, he.postForm.action != null ? he.postForm.action : current)
+                            .toString();
                     String body = he.postForm.encode();
                     HttpURLConnection post = open(actionAbs, "POST", body, current);
                     String ct2 = safeLower(post.getContentType());
@@ -212,19 +226,25 @@ public class PhotoServiceImpl implements PhotoService {
                             MultipartFile mf = toMultipart(in, realCt, ext);
                             String stored = storage.store(mf);
                             if (realCt.startsWith("image/")) {
-                                if (foundImage == null) foundImage = stored;
-                                if (foundThumb == null)  foundThumb  = stored;
+                                if (foundImage == null)
+                                    foundImage = stored;
+                                if (foundThumb == null)
+                                    foundThumb = stored;
                             } else if (realCt.startsWith("video/")) {
-                                if (foundVideo == null) foundVideo = stored;
+                                if (foundVideo == null)
+                                    foundVideo = stored;
                             }
                         }
                     } else {
                         // POST 결과가 다시 HTML이면 추가 파싱
                         String html2 = readAll(post.getInputStream());
                         HtmlExtracted he2 = extractFromHtml(html2, actionAbs);
-                        if (he2.imageUrl != null && foundImage == null) foundImage = downloadToStorage(he2.imageUrl, startUrl);
-                        if (he2.thumbnailUrl != null && foundThumb == null) foundThumb = downloadToStorage(he2.thumbnailUrl, startUrl);
-                        if (he2.videoUrl != null && foundVideo == null) foundVideo = downloadToStorage(he2.videoUrl, startUrl);
+                        if (he2.imageUrl != null && foundImage == null)
+                            foundImage = downloadToStorage(he2.imageUrl, startUrl);
+                        if (he2.thumbnailUrl != null && foundThumb == null)
+                            foundThumb = downloadToStorage(he2.thumbnailUrl, startUrl);
+                        if (he2.videoUrl != null && foundVideo == null)
+                            foundVideo = downloadToStorage(he2.videoUrl, startUrl);
                     }
                 }
 
@@ -245,9 +265,10 @@ public class PhotoServiceImpl implements PhotoService {
             throw new IOException("이미지/영상 URL을 찾지 못했습니다.");
         }
         // 썸네일 없으면 이미지로 대체
-        if (foundThumb == null) foundThumb = foundImage;
+        if (foundThumb == null)
+            foundThumb = foundImage;
 
-        return new AssetPair(foundImage, foundThumb, foundVideo, /*takenAt*/ null);
+        return new AssetPair(foundImage, foundThumb, foundVideo, /* takenAt */ null);
     }
 
     /**
@@ -268,7 +289,8 @@ public class PhotoServiceImpl implements PhotoService {
         String video = null;
         Matcher mVid = Pattern.compile("(https?://[^\\s\"']+\\.(?:mp4|mov|webm|m4v))",
                 Pattern.CASE_INSENSITIVE).matcher(body);
-        if (mVid.find()) video = mVid.group(1);
+        if (mVid.find())
+            video = mVid.group(1);
 
         String storedImg = null;
         String thumb = null;
@@ -346,17 +368,14 @@ public class PhotoServiceImpl implements PhotoService {
                 "meta[property=og:image]", "meta[name=og:image]",
                 "meta[property=og:image:url]", "meta[property=og:image:secure_url]",
                 "meta[name=twitter:image]", "meta[name=twitter:image:src]",
-                "meta[itemprop=image]"
-        );
+                "meta[itemprop=image]");
         out.thumbnailUrl = firstMeta(doc,
-                "meta[property=og:image:thumbnail]", "meta[name=thumbnail]"
-        );
+                "meta[property=og:image:thumbnail]", "meta[name=thumbnail]");
 
         out.videoUrl = firstMeta(doc,
                 "meta[property=og:video]", "meta[name=og:video]",
                 "meta[property=og:video:url]", "meta[property=og:video:secure_url]",
-                "meta[name=twitter:player]"
-        );
+                "meta[name=twitter:player]");
 
         // 다운로드 링크/버튼에서 image/video 키워드 추출
         Elements links = doc.select("a[download], a#download, a.button, a, button, .btn, .button");
@@ -364,29 +383,35 @@ public class PhotoServiceImpl implements PhotoService {
             String text = (el.hasText() ? el.text() : "").toLowerCase(Locale.ROOT);
             String href = el.attr("href");
             String dataHref = el.attr("data-href");
-            String dataUrl  = el.attr("data-url");
+            String dataUrl = el.attr("data-url");
             String candidate = firstNonBlank(href, dataHref, dataUrl);
 
-            if (candidate == null || candidate.isBlank()) continue;
+            if (candidate == null || candidate.isBlank())
+                continue;
 
             boolean looksImage = text.contains("image") || text.contains("이미지");
             boolean looksVideo = text.contains("video") || text.contains("동영상");
 
-            if (looksImage && out.imageUrl == null) out.imageUrl = candidate;
-            if (looksVideo && out.videoUrl == null) out.videoUrl = candidate;
-            if (out.nextGetUrl == null) out.nextGetUrl = candidate; // 다음 단계 후보
+            if (looksImage && out.imageUrl == null)
+                out.imageUrl = candidate;
+            if (looksVideo && out.videoUrl == null)
+                out.videoUrl = candidate;
+            if (out.nextGetUrl == null)
+                out.nextGetUrl = candidate; // 다음 단계 후보
         }
 
         // <video src> / <source src> 탐색 (직접 링크)
         if (out.videoUrl == null) {
             Element v = doc.selectFirst("video[src], video source[src]");
-            if (v != null) out.videoUrl = v.hasAttr("src") ? v.attr("src") : null;
+            if (v != null)
+                out.videoUrl = v.hasAttr("src") ? v.attr("src") : null;
         }
 
         // 마지막 fallback: 첫 번째 img
         if (out.imageUrl == null) {
             Element img = doc.selectFirst("img[src]");
-            if (img != null) out.imageUrl = img.attr("src");
+            if (img != null)
+                out.imageUrl = img.attr("src");
         }
 
         // script 안의 정규식으로 jpg/mp4 스캔
@@ -395,12 +420,14 @@ public class PhotoServiceImpl implements PhotoService {
             if (out.imageUrl == null) {
                 Matcher m1 = Pattern.compile("(https?://[^\\s\"'>)]+\\.(?:png|jpe?g|gif|webp))",
                         Pattern.CASE_INSENSITIVE).matcher(code);
-                if (m1.find()) out.imageUrl = m1.group(1);
+                if (m1.find())
+                    out.imageUrl = m1.group(1);
             }
             if (out.videoUrl == null) {
                 Matcher m2 = Pattern.compile("(https?://[^\\s\"'>)]+\\.(?:mp4|mov|webm|m4v))",
                         Pattern.CASE_INSENSITIVE).matcher(code);
-                if (m2.find()) out.videoUrl = m2.group(1);
+                if (m2.find())
+                    out.videoUrl = m2.group(1);
             }
         }
 
@@ -410,7 +437,8 @@ public class PhotoServiceImpl implements PhotoService {
             if (refresh != null) {
                 String content = refresh.attr("content"); // "0;url=/path"
                 int p = content.toLowerCase(Locale.ROOT).indexOf("url=");
-                if (p >= 0) out.nextGetUrl = content.substring(p + 4).trim();
+                if (p >= 0)
+                    out.nextGetUrl = content.substring(p + 4).trim();
             }
         }
 
@@ -441,14 +469,17 @@ public class PhotoServiceImpl implements PhotoService {
                 "text/html,application/xhtml+xml,application/xml," +
                         "image/avif,image/webp,image/*;q=0.9,video/*;q=0.9,*/*;q=0.8");
         conn.setRequestProperty("Accept-Language", "ko,ko-KR;q=0.9,en-US;q=0.8,en;q=0.7");
-        if (referer != null) conn.setRequestProperty("Referer", referer);
+        if (referer != null)
+            conn.setRequestProperty("Referer", referer);
         conn.setRequestMethod(method);
         if ("POST".equalsIgnoreCase(method) && body != null) {
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
             conn.setRequestProperty("Content-Length", String.valueOf(bytes.length));
-            try (OutputStream os = conn.getOutputStream()) { os.write(bytes); }
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(bytes);
+            }
         }
         conn.connect();
         // 여기서 바로 상태코드 판독
@@ -464,39 +495,80 @@ public class PhotoServiceImpl implements PhotoService {
 
     private InputStream boundedStream(HttpURLConnection conn) throws IOException {
         long len = conn.getContentLengthLong();
-        if (len > 0 && len > MAX_BYTES) throw new IOException("File too large: " + len);
+        if (len > 0 && len > MAX_BYTES)
+            throw new IOException("File too large: " + len);
         return new LimitedInputStream(conn.getInputStream(), MAX_BYTES);
     }
 
     private MultipartFile toMultipart(InputStream in, String contentType, String ext) throws IOException {
         byte[] data = in.readAllBytes();
-        if (data.length > MAX_BYTES) throw new IOException("File too large after download");
+        if (data.length > MAX_BYTES)
+            throw new IOException("File too large after download");
         return new MultipartFile() {
-            @Override public String getName() { return "file"; }
-            @Override public String getOriginalFilename() { return java.util.UUID.randomUUID() + ext; }
-            @Override public String getContentType() { return contentType; }
-            @Override public boolean isEmpty() { return data.length == 0; }
-            @Override public long getSize() { return data.length; }
-            @Override public byte[] getBytes() { return data; }
-            @Override public InputStream getInputStream() { return new java.io.ByteArrayInputStream(data); }
-            @Override public void transferTo(java.io.File dest) throws IOException {
-                try (var fos = new java.io.FileOutputStream(dest)) { fos.write(data); }
+            @Override
+            public String getName() {
+                return "file";
+            }
+
+            @Override
+            public String getOriginalFilename() {
+                return java.util.UUID.randomUUID() + ext;
+            }
+
+            @Override
+            public String getContentType() {
+                return contentType;
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return data.length == 0;
+            }
+
+            @Override
+            public long getSize() {
+                return data.length;
+            }
+
+            @Override
+            public byte[] getBytes() {
+                return data;
+            }
+
+            @Override
+            public InputStream getInputStream() {
+                return new java.io.ByteArrayInputStream(data);
+            }
+
+            @Override
+            public void transferTo(java.io.File dest) throws IOException {
+                try (var fos = new java.io.FileOutputStream(dest)) {
+                    fos.write(data);
+                }
             }
         };
     }
 
     private String extractExtensionFromContentType(String contentType) {
-        if (contentType == null) return ".bin";
+        if (contentType == null)
+            return ".bin";
         int slash = contentType.indexOf('/');
         if (slash >= 0 && slash + 1 < contentType.length()) {
             String subtype = contentType.substring(slash + 1).toLowerCase(Locale.ROOT);
-            if (subtype.contains("jpeg") || subtype.contains("jpg")) return ".jpg";
-            if (subtype.contains("png"))  return ".png";
-            if (subtype.contains("gif"))  return ".gif";
-            if (subtype.contains("webp")) return ".webp";
-            if (subtype.contains("mp4"))  return ".mp4";
-            if (subtype.contains("webm")) return ".webm";
-            if (subtype.contains("mov"))  return ".mov";
+            if (subtype.contains("jpeg") || subtype.contains("jpg"))
+                return ".jpg";
+            if (subtype.contains("png"))
+                return ".png";
+            if (subtype.contains("gif"))
+                return ".gif";
+            if (subtype.contains("webp"))
+                return ".webp";
+            if (subtype.contains("mp4"))
+                return ".mp4";
+            if (subtype.contains("webm"))
+                return ".webm";
+            if (subtype.contains("mov"))
+                return ".mov";
             return "." + subtype.replaceAll("[^a-z0-9.+-]", "");
         }
         return ".bin";
@@ -509,11 +581,15 @@ public class PhotoServiceImpl implements PhotoService {
 
     private boolean isAllowedScheme(URL url) {
         String p = url.getProtocol().toLowerCase(Locale.ROOT);
-        for (String s : ALLOWED_SCHEMES) if (p.equals(s)) return true;
+        for (String s : ALLOWED_SCHEMES)
+            if (p.equals(s))
+                return true;
         return false;
     }
 
-    private String safeLower(String s) { return (s == null) ? null : s.toLowerCase(Locale.ROOT); }
+    private String safeLower(String s) {
+        return (s == null) ? null : s.toLowerCase(Locale.ROOT);
+    }
 
     private String sha256Hex(String input) {
         try {
@@ -529,27 +605,38 @@ public class PhotoServiceImpl implements PhotoService {
             Element el = doc.selectFirst(sel);
             if (el != null) {
                 String c = el.attr("content");
-                if (c != null && !c.isBlank()) return c;
+                if (c != null && !c.isBlank())
+                    return c;
             }
         }
         return null;
     }
 
     private static String firstNonBlank(String... v) {
-        for (String s : v) if (s != null && !s.isBlank()) return s;
+        for (String s : v)
+            if (s != null && !s.isBlank())
+                return s;
         return null;
     }
 
     private String inferBrand(String urlOrPayload) {
         String s = urlOrPayload.toLowerCase(Locale.ROOT);
-        if (s.contains("인생네컷") || s.contains("life4cut")) return "인생네컷";
-        if (s.contains("하루필름") || s.contains("harufilm")) return "하루필름";
-        if (s.contains("photogray") || s.contains("pgshort")) return "포토그레이";
-        if (s.contains("exit") || s.contains("photoqr3")) return "엑시트";
-        if (s.contains("photoism")) return "포토이즘";
-        if (s.contains("signature")) return "포토시그니쳐";
-        if (s.contains("howdyoudo") || s.contains("하우두유두")) return "하우두유두";
-        if (s.contains("twin") || s.contains("트윈")) return "트윈포토";
+        if (s.contains("인생네컷") || s.contains("life4cut"))
+            return "인생네컷";
+        if (s.contains("하루필름") || s.contains("harufilm"))
+            return "하루필름";
+        if (s.contains("photogray") || s.contains("pgshort"))
+            return "포토그레이";
+        if (s.contains("exit") || s.contains("photoqr3"))
+            return "엑시트";
+        if (s.contains("photoism"))
+            return "포토이즘";
+        if (s.contains("signature"))
+            return "포토시그니쳐";
+        if (s.contains("howdyoudo") || s.contains("하우두유두"))
+            return "하우두유두";
+        if (s.contains("twin") || s.contains("트윈"))
+            return "트윈포토";
         return null;
     }
 
@@ -560,8 +647,12 @@ public class PhotoServiceImpl implements PhotoService {
         final String thumbnailUrl;
         final String videoUrl;
         final LocalDateTime takenAt;
+
         AssetPair(String i, String t, String v, LocalDateTime ta) {
-            this.imageUrl = i; this.thumbnailUrl = t; this.videoUrl = v; this.takenAt = ta;
+            this.imageUrl = i;
+            this.thumbnailUrl = t;
+            this.videoUrl = v;
+            this.takenAt = ta;
         }
     }
 
@@ -576,31 +667,48 @@ public class PhotoServiceImpl implements PhotoService {
     private static class PostForm {
         String action;
         Map<String, String> fields = new LinkedHashMap<>();
+
         String encode() {
             return fields.entrySet().stream()
                     .map(e -> enc(e.getKey()) + "=" + enc(e.getValue()))
                     .collect(Collectors.joining("&"));
         }
+
         private static String enc(String s) {
-            try { return URLEncoder.encode(s, StandardCharsets.UTF_8); }
-            catch (Exception e) { return ""; }
+            try {
+                return URLEncoder.encode(s, StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                return "";
+            }
         }
     }
 
     private static class LimitedInputStream extends java.io.FilterInputStream {
         private long remaining;
+
         protected LimitedInputStream(InputStream in, long maxBytes) {
-            super(in); this.remaining = maxBytes;
+            super(in);
+            this.remaining = maxBytes;
         }
-        @Override public int read() throws IOException {
-            if (remaining <= 0) throw new IOException("Limit exceeded");
-            int b = super.read(); if (b != -1) remaining--; return b;
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0)
+                throw new IOException("Limit exceeded");
+            int b = super.read();
+            if (b != -1)
+                remaining--;
+            return b;
         }
-        @Override public int read(byte[] b, int off, int len) throws IOException {
-            if (remaining <= 0) throw new IOException("Limit exceeded");
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (remaining <= 0)
+                throw new IOException("Limit exceeded");
             len = (int) Math.min(len, remaining);
             int n = super.read(b, off, len);
-            if (n > 0) remaining -= n;
+            if (n > 0)
+                remaining -= n;
             return n;
         }
     }
@@ -622,7 +730,8 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     // 목록/삭제 (기존과 동일)
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
         return photoRepository
                 .findByUserIdAndDeletedIsFalseOrderByCreatedAtDesc(userId, pageable)
@@ -633,7 +742,8 @@ public class PhotoServiceImpl implements PhotoService {
     public void delete(Long userId, Long photoId) {
         Photo photo = photoRepository.findById(photoId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사진입니다."));
-        if (!photo.getUserId().equals(userId)) throw new IllegalStateException("삭제 권한이 없습니다.");
+        if (!photo.getUserId().equals(userId))
+            throw new IllegalStateException("삭제 권한이 없습니다.");
         photo.setDeleted(true);
         photoRepository.save(photo);
     }

@@ -1,0 +1,17 @@
+  backup/split-20251031-234206[m c5712f2 일단 명세서대로 만들어둠
+  backup/split-20251031-234326[m efca250 feat(mypage): migrate pre-split changes
+  feature/album               [m 3b3e121 [[34mKDUcapstone/feature/album[m: ahead 1] 실행 에러
+  feature/friend              [m 101df81 [[34mKDUcapstone/feature/friend[m: ahead 79] 백 에러 고침
+  feature/home                [m 2261435 [[34mKDUcapstone/feature/home[m] feat(home): migrate pre-split changes (frontend only)
+  feature/login               [m de3aae6 [[34mKDUcapstone/feature/login[m] 로그인창 위젯변경
+  feature/my-update           [m 8ab11a9 약간의 오류수정
+  feature/mypage              [m 06960c1 [[34mKDUcapstone/feature/mypage[m] 마이페이지 단장장
+  feature/photo               [m 3e53ce1 [[34mKDUcapstone/feature/photo[m] 앨범 생성 버튼 여백백
+  feature/share-album         [m bdaf9bc [[34mKDUcapstone/feature/share-album[m: ahead 1] 공유 URL 토스트 매새지
+  first                       [m 0880482 [[34morigin/first[m: gone] 로그인, 회원가입 ui 만들었다
+  friend                      [m c5712f2 일단 명세서대로 만들어둠
+  home                        [m 5869bf0 [[34mKDUcapstone/home[m] 로그인 에러 한번 고쳐봄봄
+* [32mintegration/all-features    [m 2bce888 [[34morigin/main[m: ahead 86] Normalize whitespace in share_screen.dart
+  main                        [m 49b9c90 [[34morigin/main[m: behind 27] 풀 리퀘스트 병합 #3
+  second                      [m 1b9a6fd [[34morigin/second[m: gone] 앨범 생성, 앨범 상세 틀만만
+  share                       [m 406c09c album share

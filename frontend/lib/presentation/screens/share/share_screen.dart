@@ -353,12 +353,17 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                             friendIdList: friendIds,
                           );
                           if (!context.mounted) return;
-                          _toast(context, '선택한 ${friendIds.length}명에게 공유되었습니다.');
+                          _toast(
+                            context,
+                            '선택한 ${friendIds.length}명에게 공유되었습니다.',
+                          );
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  AlbumDetailScreen(albumId: albumId, autoOpenAction: 'share'),
+                              builder: (_) => AlbumDetailScreen(
+                                albumId: albumId,
+                                autoOpenAction: 'share',
+                              ),
                             ),
                           );
                         } catch (e) {
@@ -366,10 +371,10 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                           final msg = s.contains('NOT_FRIEND')
                               ? '친구로 등록되지 않은 사용자 포함'
                               : s.contains('ALBUM_NOT_FOUND')
-                                  ? '앨범을 찾을 수 없습니다'
-                                  : s.contains('FORBIDDEN')
-                                      ? '공유 권한이 없습니다'
-                                      : '공유 실패: $e';
+                              ? '앨범을 찾을 수 없습니다'
+                              : s.contains('FORBIDDEN')
+                              ? '공유 권한이 없습니다'
+                              : '공유 실패: $e';
                           _toast(context, msg);
                         }
                       },
