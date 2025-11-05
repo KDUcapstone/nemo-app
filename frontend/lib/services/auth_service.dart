@@ -317,9 +317,7 @@ class AuthService {
         bool hasLetter = RegExp(r'[A-Za-z]').hasMatch(newPassword);
         bool hasDigit = RegExp(r'\d').hasMatch(newPassword);
         bool hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(newPassword);
-        final count = [hasLetter, hasDigit, hasSpecial]
-            .where((e) => e)
-            .length;
+        final count = [hasLetter, hasDigit, hasSpecial].where((e) => e).length;
         return count >= 2;
       }();
       if (!meetsPolicy) {
