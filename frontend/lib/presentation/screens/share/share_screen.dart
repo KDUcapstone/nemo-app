@@ -464,8 +464,6 @@ class _BottomSheetScaffold extends StatelessWidget {
   }
 }
 
- 
-
 class _ShareAlbumSheet extends StatelessWidget {
   const _ShareAlbumSheet();
 
