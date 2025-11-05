@@ -464,63 +464,7 @@ class _BottomSheetScaffold extends StatelessWidget {
   }
 }
 
-Future<int?> _pickAlbumId(BuildContext context) async {
-  List<dynamic> albums = [];
-  try {
-    final resp = await AlbumApi.getAlbums(page: 0, size: 20);
-    albums = (resp['content'] as List?) ?? [];
-  } catch (_) {}
-
-  if (albums.isEmpty) {
-    await showDialog<int>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('앨범 선택'),
-        content: const Text('표시할 앨범이 없습니다.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
-    );
-    return null;
-  }
-
-  final id = await showDialog<int>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('앨범 선택'),
-      content: SizedBox(
-        width: 360,
-        height: 360,
-        child: ListView.separated(
-          itemCount: albums.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) {
-            final a = albums[i] as Map<String, dynamic>;
-            final albumId = a['albumId'] as int;
-            final title = (a['title'] ?? '앨범 $albumId') as String;
-            final count = a['photoCount'] ?? 0;
-            return ListTile(
-              title: Text(title),
-              subtitle: Text('사진 $count장'),
-              onTap: () => Navigator.pop(ctx, albumId),
-            );
-          },
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('취소'),
-        ),
-      ],
-    ),
-  );
-  return id;
-}
+ 
 
 class _ShareAlbumSheet extends StatelessWidget {
   const _ShareAlbumSheet();
