@@ -125,7 +125,35 @@ class _FriendsListScreenState extends State<FriendsListScreen>
 
   Future<void> _accept(int requesterId, String nickname) async {
     try {
-      await FriendApi.acceptFriend(requesterId);
+      final res = await FriendApi.acceptFriend(requesterId);
+      final friend = (res['friend'] is Map<String, dynamic>)
+          ? res['friend'] as Map<String, dynamic>
+          : null;
+      setState(() {
+        // 요청 목록에서 제거
+        _requests.removeWhere((e) => (e['userId'] as int) == requesterId);
+        // 내 친구 목록에 추가(중복 방지)
+        final already = _friends.any((e) => (e['userId'] as int) == requesterId);
+        if (!already) {
+          _friends = [
+            ..._friends,
+            friend ?? {
+              'userId': requesterId,
+              'nickname': nickname,
+              'email': null,
+              'profileImageUrl': null,
+              'addedAt': DateTime.now().toIso8601String(),
+            },
+          ];
+        }
+        // 검색 결과에 반영
+        _results = _results
+            .map((e) => (e['userId'] as int) == requesterId
+                ? {...e, 'isFriend': true}
+                : e)
+            .toList();
+      });
+      // 백엔드 연동 시 실제 상태 동기화를 위해 새로고침
       await _loadFriends();
       await _loadRequests();
       if (!mounted) return;
