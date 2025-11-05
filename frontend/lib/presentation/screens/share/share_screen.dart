@@ -490,7 +490,24 @@ class _ShareAlbumSheet extends StatelessWidget {
         const SizedBox(height: 8),
         _ActionButton(
           label: '공유 URL 생성',
-          onTap: () => _toast(context, '공유 URL 생성'),
+          onTap: () async {
+            final albumId = await _pickAlbumId(context);
+            if (albumId == null) return;
+            try {
+              final res = await AlbumSharing.generateShareUrl(albumId: albumId);
+              final url = (res['url'] ?? '').toString();
+              if (url.isNotEmpty) {
+                await Clipboard.setData(ClipboardData(text: url));
+                if (!context.mounted) return;
+                _showTopToast(context, '공유 URL이 클립보드에 복사되었습니다');
+              } else {
+                if (!context.mounted) return;
+                _showTopToast(context, 'URL 생성 실패: 빈 URL');
+              }
+            } catch (e) {
+              _showTopToast(context, 'URL 생성 실패: $e');
+            }
+          },
         ),
         const SizedBox(height: 8),
         _ActionButton(
