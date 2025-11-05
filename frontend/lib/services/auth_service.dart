@@ -294,4 +294,80 @@ class AuthService {
       throw Exception('네트워크 오류: $e');
     }
   }
+
+  /// 로그인 상태 비밀번호 변경
+  Future<String> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      if (AuthService.accessToken == null) {
+        throw Exception('UNAUTHORIZED');
+      }
+      if (newPassword != confirmPassword) {
+        throw Exception('PASSWORD_CONFIRM_MISMATCH');
+      }
+      if (currentPassword == newPassword) {
+        throw Exception('PASSWORD_POLICY_VIOLATION');
+      }
+      final meetsPolicy = () {
+        if (newPassword.length < 8 || newPassword.length > 64) return false;
+        bool hasLetter = RegExp(r'[A-Za-z]').hasMatch(newPassword);
+        bool hasDigit = RegExp(r'\d').hasMatch(newPassword);
+        bool hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(newPassword);
+        final count = [hasLetter, hasDigit, hasSpecial].where((e) => e).length;
+        return count >= 2;
+      }();
+      if (!meetsPolicy) {
+        throw Exception('PASSWORD_POLICY_VIOLATION');
+      }
+      // 모킹: 현재 비밀번호 불일치 에러 시뮬레이션(특정 값만 실패)
+      if (currentPassword == 'wrong-pass') {
+        throw Exception('INVALID_CURRENT_PASSWORD');
+      }
+      return '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.';
+    }
+    try {
+      final response = await ApiClient.put(
+        '/api/users/me/password',
+        body: {
+          'currentPassword': currentPassword,
+          'newPassword': newPassword,
+          'confirmPassword': confirmPassword,
+        },
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        return (body is Map && body['message'] is String)
+            ? body['message'] as String
+            : '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.';
+      }
+      if (response.statusCode == 401) {
+        throw Exception('UNAUTHORIZED');
+      }
+      if (response.statusCode == 403) {
+        throw Exception('INVALID_CURRENT_PASSWORD');
+      }
+      if (response.statusCode == 400) {
+        final body = response.body.isNotEmpty
+            ? jsonDecode(response.body)
+            : null;
+        final err = body is Map ? (body['error'] as String?) : null;
+        if (err == 'PASSWORD_CONFIRM_MISMATCH') {
+          throw Exception('PASSWORD_CONFIRM_MISMATCH');
+        }
+        if (err == 'PASSWORD_POLICY_VIOLATION') {
+          throw Exception('PASSWORD_POLICY_VIOLATION');
+        }
+        throw Exception('BAD_REQUEST');
+      }
+      throw Exception('CHANGE_PASSWORD_FAILED_${response.statusCode}');
+    } catch (e) {
+      rethrow;
+    }
+  }
 }
