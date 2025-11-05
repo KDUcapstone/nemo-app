@@ -33,7 +33,7 @@ class AccountActionsCard extends StatelessWidget {
           if (onResetPassword != null) ...[
             MenuButton(
               icon: Icons.lock_reset,
-              label: '비밀번호 재설정',
+              label: '비밀번호 변경',
               onTap: onResetPassword!,
               color: AppColors.textSecondary,
             ),

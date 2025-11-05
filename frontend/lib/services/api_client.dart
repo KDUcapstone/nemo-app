@@ -39,5 +39,17 @@ class ApiClient {
       body: body != null ? jsonEncode(body) : null,
     );
   }
+
+  static Future<http.Response> put(
+    String path, {
+    Map<String, dynamic>? body,
+    bool includeAuth = true,
+  }) {
+    return http.put(
+      uri(path),
+      headers: headers(includeAuth: includeAuth),
+      body: body != null ? jsonEncode(body) : null,
+    );
+  }
 }
 

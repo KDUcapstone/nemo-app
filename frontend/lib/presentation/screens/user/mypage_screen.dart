@@ -24,7 +24,7 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:frontend/services/photo_upload_api.dart';
-import '../login/forgot_password_screen.dart';
+import 'change_password_screen.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'friends_list_screen.dart';
 
@@ -719,7 +719,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const ForgotPasswordScreen(),
+                                builder: (_) => const ChangePasswordScreen(),
                               ),
                             );
                           },
