@@ -25,6 +25,8 @@ import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:frontend/services/photo_upload_api.dart';
 import '../login/forgot_password_screen.dart';
+import 'package:frontend/services/friend_api.dart';
+import 'friends_list_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -208,7 +210,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // 닉네임 검증은 ProfileCard 내부에서 처리하므로 이 화면에서는 미사용 상태입니다.
 
   Future<void> _updateUserInfo() async {
-    if (!_formKey.currentState!.validate()) return;
+    final formState = _formKey.currentState;
+    if (formState != null) {
+      if (!formState.validate()) return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -699,6 +704,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                 value: _userInfo['email'],
                                 icon: Icons.email,
                               ),
+                              SizedBox(height: innerGap),
+                              _FriendsEntryRow(),
                             ],
                           ),
                         ),
@@ -717,10 +724,92 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             );
                           },
                         ),
+                        SizedBox(height: gap),
                       ],
                     ),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FriendsEntryRow extends StatefulWidget {
+  @override
+  State<_FriendsEntryRow> createState() => _FriendsEntryRowState();
+}
+
+class _FriendsEntryRowState extends State<_FriendsEntryRow> {
+  int? _friendCount;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCount();
+  }
+
+  Future<void> _fetchCount() async {
+    setState(() => _loading = true);
+    try {
+      final list = await FriendApi.getFriends();
+      if (!mounted) return;
+      setState(() {
+        _friendCount = list.length;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final countText = _loading
+        ? '불러오는 중...'
+        : _friendCount == null
+        ? '친구'
+        : '친구 ${_friendCount}명';
+
+    return InkWell(
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const FriendsListScreen()));
+      },
+      child: Row(
+        children: [
+          const Icon(
+            Icons.group_outlined,
+            size: 20,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '친구',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  countText,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppColors.textSecondary),
         ],
       ),
     );
