@@ -644,7 +644,7 @@ class _ShareAlbumSheet extends StatelessWidget {
               if (url.isNotEmpty) {
                 await Clipboard.setData(ClipboardData(text: url));
                 if (!context.mounted) return;
-                // 성공 안내 생략
+                _showTopToast(context, '공유 URL이 클립보드에 복사되었습니다');
               } else {
                 if (!context.mounted) return;
                 _showTopToast(context, 'URL 생성 실패: 빈 URL');
