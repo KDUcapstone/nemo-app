@@ -183,7 +183,12 @@ class PhotoProvider extends ChangeNotifier {
     await resetAndLoad();
   }
 
-  Future<void> resetAndLoad({bool? favorite, String? tag, String? brand, String? sort}) async {
+  Future<void> resetAndLoad({
+    bool? favorite,
+    String? tag,
+    String? brand,
+    String? sort,
+  }) async {
     if (AppConstants.useMockApi) {
       // 모킹 모드: 로컬 필터/정렬 적용
       _favoriteOnly = favorite ?? _favoriteOnly;

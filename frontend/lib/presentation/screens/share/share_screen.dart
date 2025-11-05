@@ -3,7 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/services/album_api.dart';
+import 'package:frontend/providers/album_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import 'package:frontend/presentation/screens/album/select_album_photos_screen.dart';
+import 'package:frontend/presentation/screens/album/create_album_screen.dart';
+import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
+import 'package:frontend/presentation/screens/share/year_recap_screen.dart';
+import 'package:frontend/presentation/screens/share/timeline_screen.dart';
 
 class ShareScreen extends StatelessWidget {
   const ShareScreen({super.key});
@@ -14,11 +21,19 @@ class ShareScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: _TopRow(),
+          Container(
+            color: AppColors.secondary,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: _TopRow(),
+                ),
+                Divider(height: 1),
+              ],
+            ),
           ),
-          const Divider(height: 1),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -27,14 +42,14 @@ class ShareScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    _ShareAndInviteRow(),
-                    SizedBox(height: 20),
-                    _FriendsListSection(),
-                    SizedBox(height: 20),
-                    _FriendsTagSection(),
-                    SizedBox(height: 20),
-                    _CollaborativeAlbumSection(),
+                  children: [
+                    const _ShareAndInviteRow(),
+                    const SizedBox(height: 20),
+                    const _FriendsListSection(),
+                    const SizedBox(height: 20),
+                    const _CollaborativeAlbumSection(),
+                    const SizedBox(height: 20),
+                    _RecapTimelineSection(),
                   ],
                 ),
               ),
@@ -545,34 +560,17 @@ class _ShareAlbumSheet extends StatelessWidget {
         const SizedBox(height: 12),
         _ActionButton(
           label: '공유 앨범 생성',
-          onTap: () => _toast(context, '공유 앨범 생성'),
+          onTap: () => _handleCreateShareAlbum(context),
         ),
         const SizedBox(height: 8),
         _ActionButton(
-          label: '공유 URL 생성',
-          onTap: () async {
-            final albumId = await _pickAlbumId(context);
-            if (albumId == null) return;
-            try {
-              final res = await AlbumSharing.generateShareUrl(albumId: albumId);
-              final url = (res['url'] ?? '').toString();
-              if (url.isNotEmpty) {
-                await Clipboard.setData(ClipboardData(text: url));
-                if (!context.mounted) return;
-                _showTopToast(context, '공유 URL이 클립보드에 복사되었습니다');
-              } else {
-                if (!context.mounted) return;
-                _showTopToast(context, 'URL 생성 실패: 빈 URL');
-              }
-            } catch (e) {
-              _showTopToast(context, 'URL 생성 실패: $e');
-            }
-          },
+          label: '선택 후 URL 생성',
+          onTap: () => _handleCreateShareLink(context),
         ),
         const SizedBox(height: 8),
         _ActionButton(
-          label: '공유 대상 추가',
-          onTap: () => _toast(context, '공유 대상 추가'),
+          label: '참여자 추가',
+          onTap: () => _handleAddParticipants(context),
         ),
       ],
     );
@@ -621,31 +619,478 @@ class _InviteStatusSheet extends StatelessWidget {
   }
 }
 
-class _FriendsTagSection extends StatelessWidget {
-  const _FriendsTagSection();
+// Handlers for Share actions
+Future<void> _handleCreateShareAlbum(BuildContext context) async {
+  final option = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ActionChoiceSheet(
+      title: '공유 앨범 생성',
+      options: const [
+        _ActionOption(key: 'pick', label: '기존 앨범 선택'),
+        _ActionOption(key: 'new', label: '새 앨범 만들기'),
+      ],
+    ),
+  );
+  if (option == null) return;
+
+  int? albumId;
+  if (option == 'pick') {
+    albumId = await _pickAlbumId(context);
+  } else if (option == 'new') {
+    // 새 앨범 생성 플로우: 사진 선택 -> 메타 입력
+    final selected = await Navigator.push<List<int>>(
+      context,
+      MaterialPageRoute(builder: (_) => const SelectAlbumPhotosScreen()),
+    );
+    if (selected == null || selected.isEmpty) return;
+    final created = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateAlbumScreenInitial(selectedPhotoIds: selected),
+      ),
+    );
+    if (created is int) {
+      albumId = created;
+    } else if (created is Map && created['albumId'] is int) {
+      albumId = created['albumId'] as int;
+    }
+    // 생성 후 목록 새로고침 (안전)
+    if (context.mounted) {
+      await context.read<AlbumProvider>().resetAndLoad();
+    }
+  }
+  if (albumId == null) return;
+  if (!context.mounted) return;
+  // 바로 참여자 추가 UI로 연결
+  await _openFriendPickerAndShare(context, albumId: albumId);
+}
+
+Future<void> _handleCreateShareLink(BuildContext context) async {
+  final albumId = await _pickAlbumId(context);
+  if (albumId == null) return;
+  if (!context.mounted) return;
+  try {
+    final link = await AlbumApi.createShareLink(albumId, expiryHours: 48);
+    if (link.isEmpty) {
+      _toast(context, '링크 생성은 완료되었지만 주소를 받지 못했어요.');
+      return;
+    }
+    if (!context.mounted) return;
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('공유 링크 생성됨'),
+        content: SelectableText(link),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: link));
+              Navigator.pop(context);
+              _toast(context, '링크가 복사되었습니다.');
+            },
+            child: const Text('복사'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  } catch (e) {
+    final s = e.toString();
+    final msg = s.contains('ALBUM_NOT_FOUND')
+        ? '앨범을 찾을 수 없습니다.'
+        : s.contains('FORBIDDEN')
+        ? '해당 앨범을 공유할 권한이 없습니다.'
+        : '링크 생성 실패: $e';
+    if (!context.mounted) return;
+    _toast(context, msg);
+  }
+}
+
+Future<void> _handleAddParticipants(BuildContext context) async {
+  final albumId = await _pickAlbumId(context);
+  if (albumId == null) return;
+  if (!context.mounted) return;
+
+  // 다른 참여자가 있는 앨범일 수 있으므로 승인 요청 안내
+  final proceed = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('참여자 추가'),
+      content: const Text('다른 참여자가 있는 앨범일 경우, 추가에 대한 승인 요청이 전송될 수 있어요. 진행할까요?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('진행'),
+        ),
+      ],
+    ),
+  );
+  if (proceed != true) return;
+
+  await _openFriendPickerAndShare(context, albumId: albumId);
+}
+
+Future<void> _openFriendPickerAndShare(
+  BuildContext context, {
+  required int albumId,
+}) async {
+  // 친구 선택
+  final selected = await showModalBottomSheet<Set<int>>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _FriendPickerSheet(albumId: albumId),
+  );
+  if (selected == null || selected.isEmpty) return;
+  if (!context.mounted) return;
+  try {
+    await AlbumApi.shareAlbum(
+      albumId: albumId,
+      friendIdList: selected.toList(),
+    );
+    _toast(context, '선택한 ${selected.length}명에게 공유되었습니다.');
+    // 공유 후 상세로 이동하여 관리하도록 유도
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            AlbumDetailScreen(albumId: albumId, autoOpenAction: 'share'),
+      ),
+    );
+  } catch (e) {
+    final s = e.toString();
+    final msg = s.contains('NOT_FRIEND')
+        ? '친구로 등록되지 않은 사용자 포함'
+        : s.contains('ALBUM_NOT_FOUND')
+        ? '앨범을 찾을 수 없습니다'
+        : s.contains('FORBIDDEN')
+        ? '공유 권한이 없습니다'
+        : '공유 실패: $e';
+    _toast(context, msg);
+  }
+}
+
+Future<int?> _pickAlbumId(BuildContext context) async {
+  final id = await showModalBottomSheet<int>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const _AlbumPickerSheet(),
+  );
+  return id;
+}
+
+class _ActionOption {
+  final String key;
+  final String label;
+  const _ActionOption({required this.key, required this.label});
+}
+
+class _ActionChoiceSheet extends StatelessWidget {
+  final String title;
+  final List<_ActionOption> options;
+  const _ActionChoiceSheet({required this.title, required this.options});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionTitle(
-          title: '친구 태그 nemo >',
-          onTap: () => _toast(context, '친구 태그로 이동'),
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black12,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final o in options)
+              ListTile(
+                title: Text(o.label),
+                onTap: () => Navigator.pop(context, o.key),
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
-        const SizedBox(height: 10),
-        GridView.count(
-          crossAxisCount: 3,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: List.generate(6, (index) => const _PhotoTilePlaceholder()),
-        ),
-      ],
+      ),
     );
   }
 }
+
+class _AlbumPickerSheet extends StatelessWidget {
+  const _AlbumPickerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AlbumProvider>();
+    if (provider.albums.isEmpty && !provider.isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) context.read<AlbumProvider>().resetAndLoad();
+      });
+    }
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (context, controller) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '앨범 선택',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView.separated(
+                  controller: controller,
+                  itemCount: provider.albums.length,
+                  itemBuilder: (_, i) {
+                    final a = provider.albums[i];
+                    return ListTile(
+                      leading: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: a.coverPhotoUrl != null
+                              ? Image.network(
+                                  a.coverPhotoUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      Container(color: Colors.grey[200]),
+                                )
+                              : Container(color: Colors.grey[200]),
+                        ),
+                      ),
+                      title: Text(a.title),
+                      subtitle: Text('${a.photoCount}장'),
+                      onTap: () => Navigator.pop<int>(context, a.albumId),
+                    );
+                  },
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FriendPickerSheet extends StatefulWidget {
+  final int albumId;
+  const _FriendPickerSheet({required this.albumId});
+
+  @override
+  State<_FriendPickerSheet> createState() => _FriendPickerSheetState();
+}
+
+class _FriendPickerSheetState extends State<_FriendPickerSheet> {
+  final TextEditingController _search = TextEditingController();
+  final Set<int> _selected = {};
+  List<Map<String, dynamic>> _friends = const [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await FriendApi.getFriends();
+      if (!mounted) return;
+      setState(() {
+        _friends = list;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _toast(context, '친구 목록을 불러오지 못했어요');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _search.text.trim().isEmpty
+        ? _friends
+        : _friends
+              .where(
+                (f) =>
+                    (f['nickname'] ?? '').toString().contains(_search.text) ||
+                    (f['email'] ?? '').toString().contains(_search.text),
+              )
+              .toList();
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.8,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, controller) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '참여자 선택',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: TextField(
+                    controller: _search,
+                    decoration: const InputDecoration(
+                      hintText: '친구 검색',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView.separated(
+                          controller: controller,
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final f = filtered[i];
+                            final id = f['userId'] as int;
+                            final nick = (f['nickname'] ?? '') as String;
+                            final avatar =
+                                (f['profileImageUrl'] ?? '') as String?;
+                            final checked = _selected.contains(id);
+                            return CheckboxListTile(
+                              value: checked,
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selected.add(id);
+                                  } else {
+                                    _selected.remove(id);
+                                  }
+                                });
+                              },
+                              title: Text(nick),
+                              secondary: CircleAvatar(
+                                backgroundColor: Colors.grey.shade300,
+                                child: (avatar != null && avatar.isNotEmpty)
+                                    ? ClipOval(
+                                        child: Image.network(
+                                          avatar,
+                                          width: 36,
+                                          height: 36,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                                Icons.person_outline,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.person_outline,
+                                        color: AppColors.textSecondary,
+                                      ),
+                              ),
+                            );
+                          },
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _selected.isEmpty
+                          ? null
+                          : () => Navigator.pop<Set<int>>(context, _selected),
+                      child: Text('선택한 ${_selected.length}명 추가'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Removed unused: _FriendsTagSection
 
 class _CollaborativeAlbumSection extends StatelessWidget {
   const _CollaborativeAlbumSection();
@@ -666,14 +1111,116 @@ class _CollaborativeAlbumSection extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
+class _RecapTimelineSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(title: '타임라인 / 연말 리캡 >'),
+        const SizedBox(height: 10),
+        _NavTile(
+          title: '연말 리캡',
+          subtitle: '올해의 추억 하이라이트',
+          icon: Icons.auto_awesome_outlined,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const YearRecapScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        _NavTile(
+          title: '타임라인',
+          subtitle: '시간순 사진/앨범 보기',
+          icon: Icons.timeline_outlined,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TimelineScreen()),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
   final String title;
-  final VoidCallback? onTap;
-  const _SectionTitle({required this.title, this.onTap});
+  final String? subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _NavTile({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+    this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final text = Text(
+    return _GlassCard(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
       title,
       style: const TextStyle(
         fontSize: 15,
@@ -681,31 +1228,10 @@ class _SectionTitle extends StatelessWidget {
         color: AppColors.textPrimary,
       ),
     );
-    if (onTap == null) return text;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: text,
-    );
   }
 }
 
-class _PhotoTilePlaceholder extends StatelessWidget {
-  const _PhotoTilePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        color: Colors.grey[200],
-        child: const Center(
-          child: Icon(Icons.image, color: AppColors.textSecondary),
-        ),
-      ),
-    );
-  }
-}
+// Removed unused: _PhotoTilePlaceholder
 
 class _CircleIconButton extends StatelessWidget {
   final IconData icon;
