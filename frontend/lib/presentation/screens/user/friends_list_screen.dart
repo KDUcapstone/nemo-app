@@ -16,6 +16,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
   List<Map<String, dynamic>> _friends = const [];
   List<Map<String, dynamic>> _results = const [];
   List<Map<String, dynamic>> _requests = const [];
+  final Set<int> _dismissedRequestIds = {};
 
   @override
   void initState() {
@@ -64,7 +65,11 @@ class _FriendsListScreenState extends State<FriendsListScreen>
     try {
       final list = await FriendApi.getPendingRequests();
       if (!mounted) return;
-      setState(() => _requests = list);
+      setState(() {
+        _requests = list
+            .where((e) => !_dismissedRequestIds.contains(e['userId'] as int))
+            .toList();
+      });
     } catch (_) {
       // 요청이 없거나 API 미구현 시 조용히 무시
     }
@@ -132,6 +137,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       setState(() {
         // 요청 목록에서 제거
         _requests.removeWhere((e) => (e['userId'] as int) == requesterId);
+        _dismissedRequestIds.add(requesterId);
         // 내 친구 목록에 추가(중복 방지)
         final already = _friends.any((e) => (e['userId'] as int) == requesterId);
         if (!already) {
@@ -153,7 +159,8 @@ class _FriendsListScreenState extends State<FriendsListScreen>
                 : e)
             .toList();
       });
-      // 백엔드 연동 시 실제 상태 동기화를 위해 새로고침
+      // 백엔드 연동 시 실제 상태 동기화를 위해 새로고침하되,
+      // 수락된 요청은 로컬 필터로 재등장 방지
       await _loadFriends();
       await _loadRequests();
       if (!mounted) return;
