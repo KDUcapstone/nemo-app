@@ -64,6 +64,10 @@ class PhotoUploadApi {
 
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
+    //임시테스트코드
+    print('[UPLOAD][status]=${response.statusCode}');
+    print('[UPLOAD][raw]=${response.body}');
+    //
     if (response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }

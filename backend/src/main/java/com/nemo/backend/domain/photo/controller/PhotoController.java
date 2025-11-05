@@ -7,9 +7,9 @@ import com.nemo.backend.domain.photo.service.PhotoService;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 
-import com.nemo.backend.domain.photo.dto.PhotoListItemDto;        // ★ 추가
-import com.nemo.backend.web.PagedResponse;                 // ★ 추가
-import com.nemo.backend.web.PageMetaDto;                   // ★ 추가
+import com.nemo.backend.domain.photo.dto.PhotoListItemDto;   // ★ 유지
+import com.nemo.backend.web.PagedResponse;                  // ★ 유지
+import com.nemo.backend.web.PageMetaDto;                    // ★ 유지
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -26,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
 
 @SecurityRequirement(name = "BearerAuth")
@@ -47,17 +48,16 @@ public class PhotoController {
     }
 
     /**
-     * 📸 사진 업로드 (프론트 현재 포맷 완전 호환)
+     * 📸 사진 업로드 (명세 호환)
      * - multipart/form-data
-     *   - file part:   image (선택)
-     *   - form fields: qrCode(필수), brand/location/takenAt/tagList/friendIdList/memo(선택)
-     * - image가 없으면 qrCode(URL)에서 백엔드가 자산 추출
-     * - brand/takenAt 비어오면 백엔드 추론/기본값
+     *   - image(file) [optional]
+     *   - qrCode, takenAt(ISO8601), location, brand (필수로 오는게 명세상 이상적이나, 빈값은 서버에서 보정)
+     *   - tagList(string[], JSON), friendIdList(number[], JSON), memo(optional)
      */
-    @Operation(summary = "QR 업로드(프론트 호환 포맷)",
+    @Operation(summary = "QR 업로드(명세 호환)",
             requestBody = @RequestBody(content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)))
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<PhotoResponseDto> upload(
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<PhotoUploadResponse> upload(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestPart(value = "image", required = false) MultipartFile image,
             @RequestParam("qrCode") String qrCode,
@@ -70,10 +70,31 @@ public class PhotoController {
             @RequestParam(value = "memo", required = false) String memo
     ) {
         Long userId = extractUserId(authorizationHeader);
+
+        // 서비스 호출 (내부 DTO)
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId, qrCode, image, brand, location, takenAt, tagListJson, friendIdListJson, memo
         );
-        return ResponseEntity.status(HttpStatus.OK).body(dto);
+
+        // 명세 스키마로 매핑
+        String isoTakenAt = (dto.getTakenAt() != null)
+                ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                : LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+
+        PhotoUploadResponse resp = new PhotoUploadResponse(
+                dto.getId(),                         // photoId
+                dto.getImageUrl(),                   // imageUrl
+                isoTakenAt,                          // takenAt (ISO 8601)
+                (location != null ? location : ""),  // location: 현재 엔티티에 문자열 위치가 없으므로 입력값 에코
+                (dto.getBrand() != null ? dto.getBrand() : ""),
+                Collections.emptyList(),             // tagList: 아직 서버에서 관리 안 하면 []
+                Collections.emptyList(),             // friendList: 아직 서버에서 관리 안 하면 []
+                (memo != null ? memo : "")
+        );
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .contentType(MediaType.APPLICATION_JSON) // UTF-8로 전송
+                .body(resp);
     }
 
     /**
@@ -81,7 +102,7 @@ public class PhotoController {
      * 쿼리 파라미터: favorite, tag, sort, page, size
      * sort 예: takenAt,desc | takenAt,asc (기본: takenAt,desc)
      */
-    @GetMapping
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<PagedResponse<PhotoListItemDto>> list(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestParam(value = "favorite", required = false) Boolean favorite,
@@ -119,7 +140,7 @@ public class PhotoController {
                 .photoId(p.getId())
                 .imageUrl(p.getImageUrl())
                 .takenAt(p.getTakenAt() != null ? p.getTakenAt().format(ISO) : null)
-                .location(null)      // 위치명 컬럼 없으면 null/"" 유지. 추후 엔티티에 locationName 추가 후 매핑.
+                .location(null)      // 위치명 문자열 컬럼이 아직 없으면 null/"" 유지
                 .brand(p.getBrand())
                 .isFavorite(false)   // 즐겨찾기 미구현이면 false
                 .build()
@@ -160,4 +181,18 @@ public class PhotoController {
         }
         return userId;
     }
+
+    // ===== 명세용 응답 DTO (컨트롤러 내부 정적 타입) =====
+    public static record PhotoUploadResponse(
+            long photoId,
+            String imageUrl,
+            String takenAt,                 // ISO 8601 string
+            String location,
+            String brand,
+            List<String> tagList,
+            List<FriendDto> friendList,
+            String memo
+    ) {}
+
+    public static record FriendDto(long userId, String nickname) {}
 }
