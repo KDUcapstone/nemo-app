@@ -139,6 +139,82 @@ class FriendApi {
     throw Exception('Failed to add friend (${res.statusCode})');
   }
 
+  // PUT /api/friends/accept { requesterUserId }
+  static Future<Map<String, dynamic>> acceptFriend(int requesterUserId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      if (requesterUserId <= 0) throw Exception('USER_NOT_FOUND');
+      return {
+        'message': '친구 요청을 수락했습니다.',
+        'friend': {
+          'userId': requesterUserId,
+          'nickname': '친구$requesterUserId',
+          'email': 'friend$requesterUserId@example.com',
+          'profileImageUrl': null,
+          'addedAt': DateTime.now().toIso8601String(),
+        }
+      };
+    }
+    final res = await http.put(
+      _uri('/api/friends/accept'),
+      headers: _headers(),
+      body: jsonEncode({'requesterUserId': requesterUserId}),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    if (res.statusCode == 404) throw Exception('USER_NOT_FOUND');
+    if (res.statusCode == 409) throw Exception('ALREADY_FRIEND');
+    throw Exception('Failed to accept friend (${res.statusCode})');
+  }
+
+  // GET /api/friends?status=PENDING (가정) → 받은 요청 목록
+  static Future<List<Map<String, dynamic>>> getPendingRequests() async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return [
+        {
+          'userId': 7,
+          'nickname': '신규친구7',
+          'email': 'new7@example.com',
+          'profileImageUrl': null,
+          'requestedAt': DateTime.now()
+              .subtract(const Duration(hours: 2))
+              .toIso8601String(),
+        },
+        {
+          'userId': 8,
+          'nickname': '신규친구8',
+          'email': 'new8@example.com',
+          'profileImageUrl': null,
+          'requestedAt': DateTime.now()
+              .subtract(const Duration(days: 1))
+              .toIso8601String(),
+        },
+      ];
+    }
+    final uri = _uri('/api/friends').replace(
+      queryParameters: {'status': 'PENDING'},
+    );
+    final res = await http.get(uri, headers: _headers());
+    if (res.statusCode == 200) {
+      final decoded = jsonDecode(res.body);
+      if (decoded is List) return decoded.cast<Map<String, dynamic>>();
+      if (decoded is Map<String, dynamic>) {
+        final List list = decoded['content'] ?? decoded['requests'] ?? [];
+        return list.cast<Map<String, dynamic>>();
+      }
+      return const <Map<String, dynamic>>[];
+    }
+    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    throw Exception('Failed to fetch requests (${res.statusCode})');
+  }
+
   // GET /api/friends → friends array
   static Future<List<Map<String, dynamic>>> getFriends() async {
     if (AppConstants.useMockApi) {
