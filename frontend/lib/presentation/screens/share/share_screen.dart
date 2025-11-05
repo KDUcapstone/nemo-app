@@ -6,8 +6,6 @@ import 'package:frontend/services/album_api.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
-import 'package:frontend/presentation/screens/album/select_album_photos_screen.dart';
-import 'package:frontend/presentation/screens/album/create_album_screen.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
 import 'package:frontend/presentation/screens/share/year_recap_screen.dart';
 import 'package:frontend/presentation/screens/share/timeline_screen.dart';
@@ -196,7 +194,6 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
   List<Map<String, dynamic>> _filtered = const [];
   bool _loading = true;
   String _sort = 'latest'; // latest | nickname
-  final Set<int> _inFlight = {};
   final Set<int> _selected = {};
 
   @override
@@ -346,11 +343,35 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
               child: ElevatedButton(
                 onPressed: _selected.isEmpty
                     ? null
-                    : () {
-                        final count = _selected.length;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('선택한 ${count}명에게 공유 초대 전송')),
-                        );
+                    : () async {
+                        final friendIds = _selected.toList();
+                        final albumId = await _pickAlbumId(context);
+                        if (albumId == null) return;
+                        try {
+                          await AlbumApi.shareAlbum(
+                            albumId: albumId,
+                            friendIdList: friendIds,
+                          );
+                          if (!context.mounted) return;
+                          _toast(context, '선택한 ${friendIds.length}명에게 공유되었습니다.');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  AlbumDetailScreen(albumId: albumId, autoOpenAction: 'share'),
+                            ),
+                          );
+                        } catch (e) {
+                          final s = e.toString();
+                          final msg = s.contains('NOT_FRIEND')
+                              ? '친구로 등록되지 않은 사용자 포함'
+                              : s.contains('ALBUM_NOT_FOUND')
+                                  ? '앨범을 찾을 수 없습니다'
+                                  : s.contains('FORBIDDEN')
+                                      ? '공유 권한이 없습니다'
+                                      : '공유 실패: $e';
+                          _toast(context, msg);
+                        }
                       },
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -365,18 +386,6 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('마이페이지 > 친구에서 관리하세요.')),
-              );
-            },
-            child: const Text('친구 관리로 이동'),
-          ),
         ),
       ],
     );
@@ -501,11 +510,6 @@ class _ShareAlbumSheet extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _ActionButton(
-          label: '공유 앨범 생성',
-          onTap: () => _handleCreateShareAlbum(context),
-        ),
-        const SizedBox(height: 8),
-        _ActionButton(
           label: '선택 후 URL 생성',
           onTap: () => _handleCreateShareLink(context),
         ),
@@ -562,52 +566,6 @@ class _InviteStatusSheet extends StatelessWidget {
 }
 
 // Handlers for Share actions
-Future<void> _handleCreateShareAlbum(BuildContext context) async {
-  final option = await showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _ActionChoiceSheet(
-      title: '공유 앨범 생성',
-      options: const [
-        _ActionOption(key: 'pick', label: '기존 앨범 선택'),
-        _ActionOption(key: 'new', label: '새 앨범 만들기'),
-      ],
-    ),
-  );
-  if (option == null) return;
-
-  int? albumId;
-  if (option == 'pick') {
-    albumId = await _pickAlbumId(context);
-  } else if (option == 'new') {
-    // 새 앨범 생성 플로우: 사진 선택 -> 메타 입력
-    final selected = await Navigator.push<List<int>>(
-      context,
-      MaterialPageRoute(builder: (_) => const SelectAlbumPhotosScreen()),
-    );
-    if (selected == null || selected.isEmpty) return;
-    final created = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CreateAlbumScreenInitial(selectedPhotoIds: selected),
-      ),
-    );
-    if (created is int) {
-      albumId = created;
-    } else if (created is Map && created['albumId'] is int) {
-      albumId = created['albumId'] as int;
-    }
-    // 생성 후 목록 새로고침 (안전)
-    if (context.mounted) {
-      await context.read<AlbumProvider>().resetAndLoad();
-    }
-  }
-  if (albumId == null) return;
-  if (!context.mounted) return;
-  // 바로 참여자 추가 UI로 연결
-  await _openFriendPickerAndShare(context, albumId: albumId);
-}
-
 Future<void> _handleCreateShareLink(BuildContext context) async {
   final albumId = await _pickAlbumId(context);
   if (albumId == null) return;
@@ -730,63 +688,7 @@ Future<int?> _pickAlbumId(BuildContext context) async {
   return id;
 }
 
-class _ActionOption {
-  final String key;
-  final String label;
-  const _ActionOption({required this.key, required this.label});
-}
-
-class _ActionChoiceSheet extends StatelessWidget {
-  final String title;
-  final List<_ActionOption> options;
-  const _ActionChoiceSheet({required this.title, required this.options});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.black12,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            for (final o in options)
-              ListTile(
-                title: Text(o.label),
-                onTap: () => Navigator.pop(context, o.key),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// Removed unused: _ActionOption, _ActionChoiceSheet
 
 class _AlbumPickerSheet extends StatelessWidget {
   const _AlbumPickerSheet();
@@ -1258,39 +1160,4 @@ void _toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }
 
-void _showTopToast(BuildContext context, String msg) {
-  final overlay = Overlay.of(context);
-  if (overlay == null) return;
-  final entry = OverlayEntry(
-    builder: (ctx) {
-      final top = MediaQuery.of(ctx).padding.top + 12;
-      return Positioned(
-        top: top,
-        left: 16,
-        right: 16,
-        child: IgnorePointer(
-          ignoring: true,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                msg,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 13.5),
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-  overlay.insert(entry);
-  Future.delayed(const Duration(seconds: 2)).then((_) {
-    entry.remove();
-  });
-}
+// Removed unused: _showTopToast
