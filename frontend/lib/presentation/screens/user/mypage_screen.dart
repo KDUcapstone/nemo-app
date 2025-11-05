@@ -53,6 +53,35 @@ class _MyPageScreenState extends State<MyPageScreen> {
   bool _isLoading = false;
   bool _isEditing = false;
 
+  DateTime? _parseCreatedAt(dynamic value) {
+    try {
+      if (value == null) return null;
+      if (value is DateTime) return value.toLocal();
+      if (value is int) {
+        // epoch seconds or milliseconds
+        final isMillis = value > 100000000000; // ~2001-09-09 in ms
+        final dt = isMillis
+            ? DateTime.fromMillisecondsSinceEpoch(value)
+            : DateTime.fromMillisecondsSinceEpoch(value * 1000);
+        return dt.toLocal();
+      }
+      if (value is String) {
+        // ISO or yyyy-MM-dd
+        final dt = DateTime.parse(value);
+        return dt.toLocal();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatJoinedAt(dynamic value) {
+    final dt = _parseCreatedAt(value);
+    if (dt == null) return '-';
+    return DateFormat('yyyy.MM.dd').format(dt);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -695,7 +724,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               SizedBox(height: isSmallHeight ? 10 : 16),
                               InfoRow(
                                 label: '가입일',
-                                value: _userInfo['createdAt'],
+                                value: _formatJoinedAt(_userInfo['createdAt']),
                                 icon: Icons.calendar_today,
                               ),
                               SizedBox(height: innerGap),
