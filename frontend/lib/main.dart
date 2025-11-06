@@ -10,7 +10,7 @@ import 'providers/provider.dart';
 void main() async {
   // 플러그인 초기화를 보장 (camera 등)
   WidgetsFlutterBinding.ensureInitialized();
-  await NaverMapSdk.instance.initialize(clientId: 'ci1chg0tmz');
+  await NaverMapSdk.instance.initialize(clientId: 'iclhyt3mb3');
   runApp(const NemoApp());
 }
 
