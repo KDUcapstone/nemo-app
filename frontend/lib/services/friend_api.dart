@@ -1,4 +1,4 @@
-import 'dart:math';
+﻿import 'dart:math';
 import 'package:frontend/app/constants.dart';
 
 class FriendApi {
@@ -34,6 +34,11 @@ class FriendApi {
     return _mockUsers
         .where((u) => _friendIds.contains(u['userId'] as int))
         .toList(growable: false);
+  }
+
+  // 기존 코드 호환: getFriends -> list 별칭
+  static Future<List<Map<String, dynamic>>> getFriends() {
+    return list();
   }
 
   static Future<List<Map<String, dynamic>>> search(String q) async {
@@ -90,20 +95,20 @@ class FriendApi {
       ..addAll({1, 2, 3});
     _pending
       ..clear()
-      ..addAll(List.generate(3, (i) {
-        final id = 100 + i;
-        return {
-          'requestId': id,
-          'requester': {
-            'userId': id,
-            'nickname': 'requester_$id',
-            'email': 'requester$id@example.com',
-            'profileImageUrl': null,
-          },
-          'status': 'PENDING',
-        };
-      }));
+      ..addAll(
+        List.generate(3, (i) {
+          final id = 100 + i;
+          return {
+            'requestId': id,
+            'requester': {
+              'userId': id,
+              'nickname': 'requester_$id',
+              'email': 'requester$id@example.com',
+              'profileImageUrl': null,
+            },
+            'status': 'PENDING',
+          };
+        }),
+      );
   }
 }
-
-
