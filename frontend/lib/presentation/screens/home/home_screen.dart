@@ -7,6 +7,7 @@ import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/presentation/screens/photo/favorites_screen.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
+import 'package:frontend/app/constants.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -37,7 +38,9 @@ class HomeScreen extends StatelessWidget {
                     },
                   ),
                   const SizedBox(height: 8),
-                  const _HomeNaverMapCard(),
+                  AppConstants.enableHomeMap
+                      ? const _HomeNaverMapCard()
+                      : const _HomeMapPlaceholderCard(),
                   const SizedBox(height: 20),
                   _SectionHeader(
                     title: '추억 저장소',
@@ -152,6 +155,35 @@ class _HomeNaverMapCard extends StatelessWidget {
           onMapReady: (controller) async {
             // 이후: onCameraIdle 에서 MapApi.getViewport 호출 및 마커 추가
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeMapPlaceholderCard extends StatelessWidget {
+  const _HomeMapPlaceholderCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.black.withOpacity(0.1), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 12,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: const Center(
+        child: Text(
+          '지도 준비 중입니다.',
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
     );
