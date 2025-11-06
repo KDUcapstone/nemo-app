@@ -1,39 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/photo_provider.dart';
+import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 
 class FavoritesScreen extends StatelessWidget {
   const FavoritesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final items = context
-        .watch<PhotoProvider>()
-        .items
-        .where((e) => e.favorite)
-        .toList();
+    final favorites = context.select<PhotoProvider, List<dynamic>>(
+      (p) => p.items.where((e) => e.favorite == true).toList(),
+    );
+
     return Scaffold(
       appBar: AppBar(title: const Text('즐겨찾기')),
-      body: items.isEmpty
+      body: favorites.isEmpty
           ? const Center(child: Text('즐겨찾기한 사진이 없습니다.'))
           : GridView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 20,
-                crossAxisSpacing: 20,
-                childAspectRatio: 0.72,
+                crossAxisCount: 3,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
               ),
-              itemCount: items.length,
-              itemBuilder: (_, i) {
-                final it = items[i];
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    it.imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const ColoredBox(color: Color(0xFFE0E0E0)),
+              itemCount: favorites.length,
+              itemBuilder: (context, index) {
+                final it = favorites[index];
+                final String imageUrl = it.imageUrl ?? '';
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PhotoViewerScreen(
+                          photoId: it.photoId,
+                          imageUrl: imageUrl,
+                        ),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: imageUrl.isEmpty
+                        ? Container(
+                            color: Colors.grey.shade200,
+                            child: const Icon(Icons.image_not_supported),
+                          )
+                        : Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey.shade200,
+                              child: const Icon(Icons.broken_image),
+                            ),
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 );
               },

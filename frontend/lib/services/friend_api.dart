@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:frontend/app/constants.dart';
 import 'package:frontend/services/auth_service.dart';
@@ -154,7 +154,7 @@ class FriendApi {
           'email': 'friend$requesterUserId@example.com',
           'profileImageUrl': null,
           'addedAt': DateTime.now().toIso8601String(),
-        }
+        },
       };
     }
     final res = await http.put(
@@ -198,9 +198,9 @@ class FriendApi {
         },
       ];
     }
-    final uri = _uri('/api/friends').replace(
-      queryParameters: {'status': 'PENDING'},
-    );
+    final uri = _uri(
+      '/api/friends',
+    ).replace(queryParameters: {'status': 'PENDING'});
     final res = await http.get(uri, headers: _headers());
     if (res.statusCode == 200) {
       final decoded = jsonDecode(res.body);

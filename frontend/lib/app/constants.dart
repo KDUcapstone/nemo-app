@@ -4,4 +4,7 @@ class AppConstants {
 
   // 모킹 시 네트워크 지연 흉내(ms)
   static const int simulatedNetworkDelayMs = 500;
+
+  // 홈 화면 네이버 지도 표시 토글(인증 문제 시 크래시 회피용)
+  static const bool enableHomeMap = true;
 }

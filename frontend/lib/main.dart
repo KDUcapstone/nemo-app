@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart'; // ✅ 폰트 적용을 위해 import
+import 'package:flutter_naver_map/flutter_naver_map.dart'; // ✅ 네이버맵 패키지 import
 import 'app/theme/app_colors.dart'; // ✅ 색상 테마 적용을 위해 import
 import 'presentation/screens/login/login_screen.dart';
 import 'providers/provider.dart';
@@ -9,6 +10,15 @@ import 'providers/provider.dart';
 void main() async {
   // 플러그인 초기화를 보장 (camera 등)
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ 네이버맵 초기화 (NaverMap 위젯 사용 전 필수!)
+  await FlutterNaverMap().init(
+    clientId: 'iclhyt3mb3', // 네이버 클라우드 플랫폼에서 발급받은 Client ID
+    onAuthFailed: (ex) {
+      print('네이버맵 인증 실패: $ex');
+    },
+  );
+
   runApp(const NemoApp());
 }
 

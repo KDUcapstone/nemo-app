@@ -5,7 +5,9 @@ import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/providers/photo_provider.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/presentation/screens/photo/favorites_screen.dart';
+import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
+import 'package:frontend/app/constants.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -36,7 +38,9 @@ class HomeScreen extends StatelessWidget {
                     },
                   ),
                   const SizedBox(height: 8),
-                  const _MapPreviewCard(),
+                  AppConstants.enableHomeMap
+                      ? const _HomeNaverMapCard()
+                      : const _HomeMapPlaceholderCard(),
                   const SizedBox(height: 20),
                   _SectionHeader(
                     title: '추억 저장소',
@@ -119,13 +123,13 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _MapPreviewCard extends StatelessWidget {
-  const _MapPreviewCard();
+class _HomeNaverMapCard extends StatelessWidget {
+  const _HomeNaverMapCard();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 160,
+      height: 200,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -140,35 +144,46 @@ class _MapPreviewCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.skyLight, AppColors.skyMid],
-                ),
-              ),
+        child: NaverMap(
+          options: const NaverMapViewOptions(
+            initialCameraPosition: NCameraPosition(
+              target: NLatLng(37.5665, 126.9780), // 서울 시청
+              zoom: 14,
             ),
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.map_outlined, size: 48, color: AppColors.primary),
-                  SizedBox(height: 8),
-                  Text(
-                    '지도 미리보기 (준비 중)',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            locationButtonEnable: true,
+          ),
+          onMapReady: (controller) async {
+            // 이후: onCameraIdle 에서 MapApi.getViewport 호출 및 마커 추가
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeMapPlaceholderCard extends StatelessWidget {
+  const _HomeMapPlaceholderCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.black.withOpacity(0.1), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 12,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: const Center(
+        child: Text(
+          '지도 준비 중입니다.',
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
     );
