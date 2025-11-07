@@ -3,16 +3,19 @@ package com.nemo.backend.global.exception;
 import com.nemo.backend.domain.photo.service.DuplicateQrException;
 import com.nemo.backend.domain.photo.service.ExpiredQrException;
 import com.nemo.backend.domain.photo.service.InvalidQrException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -64,4 +67,34 @@ public class GlobalExceptionHandler {
                 "message", "중복 데이터로 처리할 수 없습니다."
         ));
     }
+
+    // 네이버가 429(Too Many Requests) 보낸 경우 → 503으로 변환
+    @ExceptionHandler(HttpClientErrorException.TooManyRequests.class)
+    public ResponseEntity<Map<String, Object>> handle429(HttpClientErrorException.TooManyRequests e) {
+        log.warn("[EX-429→503] {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "code",  "NAVER_RATE_LIMIT",
+                        "msg",   "잠시 후 자동 재시도 중입니다.",
+                        "detail", cut(e.getResponseBodyAsString(), 300)
+                ));
+    }
+
+    // 나머지 4xx는 그대로 전파하거나, 필요 시 400/404로 변환
+    @ExceptionHandler(HttpClientErrorException.class)
+    public ResponseEntity<Map<String, Object>> handle4xx(HttpClientErrorException e) {
+        log.warn("[EX-4xx] {}", e.getMessage());
+        return ResponseEntity.status(e.getStatusCode())
+                .body(Map.of(
+                        "code",  "NAVER_4XX",
+                        "msg",   "요청이 올바른지 확인해주세요.",
+                        "detail", cut(e.getResponseBodyAsString(), 300)
+                ));
+    }
+
+    private String cut(String s, int n) {
+        if (s == null) return "";
+        return s.length() <= n ? s : s.substring(0, n);
+    }
+
 }

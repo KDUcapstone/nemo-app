@@ -24,3 +24,11 @@ spring:
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
+
+  # 네이버 '개발자센터(오픈API)' - 지역검색(Local Search) 설정
+  naver:
+    openapi:
+      local:
+        endpoint: https://openapi.naver.com/v1/search/local.json
+        client-id: ${NAVER_LOCAL_CLIENT_ID}
+        client-secret: ${NAVER_LOCAL_CLIENT_SECRET}
