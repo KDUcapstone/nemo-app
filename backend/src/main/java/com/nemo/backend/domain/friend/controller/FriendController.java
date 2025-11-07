@@ -1,26 +1,21 @@
+// domain/friend/controller/FriendController.java
 package com.nemo.backend.domain.friend.controller;
 
+import com.nemo.backend.domain.auth.principal.UserPrincipal;
 import com.nemo.backend.domain.friend.dto.FriendSearchResponse;
 import com.nemo.backend.domain.friend.service.FriendService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * FriendController
- * -------------------------------------
- * 친구 관련 API 요청을 처리하는 컨트롤러
- * (요청 → Service → Repository 순으로 동작)
- *
- * 엔드포인트 예시:
- *  - GET    /api/friends/search    → 친구 검색
- *  - POST   /api/friends           → 친구 요청 보내기
- *  - GET    /api/friends           → 친구 목록 조회
- *  - PUT    /api/friends/accept    → 친구 요청 수락
- *  - DELETE /api/friends/{id}      → 친구 삭제
+ * ✅ 친구 API 컨트롤러
+ * - @AuthenticationPrincipal UserPrincipal me 로 "현재 로그인 사용자"를 자동 주입
+ * - 더 이상 @RequestParam meId 필요 없음
  */
 @RestController
 @RequestMapping("/api/friends")
@@ -29,98 +24,57 @@ public class FriendController {
 
     private final FriendService friendService;
 
-    /**
-     * ✅ 친구 검색
-     * ------------------------------
-     * [GET] /api/friends/search?meId=1&keyword=네컷
-     *
-     * - 닉네임 또는 이메일 일부로 사용자 검색
-     * - 자기 자신은 제외됨
-     * - 이미 친구 상태면 isFriend = true
-     */
+    /** 친구 검색: 닉네임/이메일 일부로 검색, 검색 결과에 isFriend 포함 */
     @GetMapping("/search")
     public ResponseEntity<List<FriendSearchResponse>> searchFriends(
-            @RequestParam Long meId,
+            @AuthenticationPrincipal UserPrincipal me,   // ← JWT에서 추출된 나의 정보
             @RequestParam String keyword
     ) {
-        List<FriendSearchResponse> result = friendService.searchFriends(meId, keyword);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(friendService.searchFriends(me.getId(), keyword));
     }
 
-    /**
-     * ✅ 친구 요청 보내기
-     * ------------------------------
-     * [POST] /api/friends
-     *
-     * Body 또는 Query로 meId, targetId를 전달받음
-     * ex) /api/friends?meId=1&targetId=2
-     */
+    /** 친구 요청: 나(me) → targetId */
     @PostMapping
     public ResponseEntity<?> addFriend(
-            @RequestParam Long meId,
+            @AuthenticationPrincipal UserPrincipal me,
             @RequestParam Long targetId
     ) {
-        friendService.sendFriendRequest(meId, targetId);
+        friendService.sendFriendRequest(me.getId(), targetId);
         return ResponseEntity.ok(Map.of(
                 "message", "친구 요청이 성공적으로 전송되었습니다.",
                 "targetUserId", targetId
         ));
     }
 
-    /**
-     * ✅ 친구 목록 조회
-     * ------------------------------
-     * [GET] /api/friends
-     *
-     * ex) /api/friends?meId=1
-     * 나(meId)의 친구 중 상태가 ACCEPTED인 친구 리스트 반환
-     */
+    /** 친구 목록: 이미 친구(ACCEPTED)인 사용자 목록 반환 (DTO 권장) */
     @GetMapping
-    public ResponseEntity<?> getFriends(
-            @RequestParam Long meId
-    ) {
-        return ResponseEntity.ok(friendService.getFriendList(meId));
+    public ResponseEntity<?> getFriends(@AuthenticationPrincipal UserPrincipal me) {
+        return ResponseEntity.ok(friendService.getFriendList(me.getId()));
     }
 
-    /**
-     * ✅ 친구 요청 수락
-     * ------------------------------
-     * [PUT] /api/friends/accept
-     *
-     * ex) /api/friends/accept?userId=2&requesterId=1
-     * userId: 수락하는 사람
-     * requesterId: 친구 요청을 보낸 사람
-     */
+    /** 친구 수락: 요청 보낸 사람(requesterId)을 내가(me) 수락 */
     @PutMapping("/accept")
     public ResponseEntity<?> acceptFriend(
-            @RequestParam Long userId,
+            @AuthenticationPrincipal UserPrincipal me,
             @RequestParam Long requesterId
     ) {
-        friendService.acceptFriend(userId, requesterId);
+        friendService.acceptFriend(me.getId(), requesterId);
         return ResponseEntity.ok(Map.of(
                 "message", "친구 요청이 수락되었습니다.",
                 "acceptedUserId", requesterId
         ));
     }
 
-    /**
-     * ✅ 친구 삭제
-     * ------------------------------
-     * [DELETE] /api/friends/{friendId}
-     *
-     * ex) /api/friends/5?meId=1
-     * 나(meId)가 특정 친구(friendId) 관계를 삭제
-     */
+    /** 친구 삭제: 나(me) 기준으로 특정 friendId와의 관계 끊기 */
     @DeleteMapping("/{friendId}")
     public ResponseEntity<?> deleteFriend(
-            @RequestParam Long meId,
+            @AuthenticationPrincipal UserPrincipal me,
             @PathVariable Long friendId
     ) {
-        friendService.deleteFriend(meId, friendId);
+        friendService.deleteFriend(me.getId(), friendId);
         return ResponseEntity.ok(Map.of(
                 "message", "친구가 성공적으로 삭제되었습니다.",
                 "deletedFriendId", friendId
         ));
     }
 }
-

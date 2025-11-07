@@ -1,7 +1,7 @@
 // backend/src/main/java/com/nemo/backend/domain/auth/controller/DevTokenController.java
 package com.nemo.backend.domain.auth.controller;
 
-import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
+import com.nemo.backend.domain.auth.jwt.JwtUtil;                     // ★ 변경
 import com.nemo.backend.domain.auth.token.RefreshToken;
 import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
 import com.nemo.backend.domain.user.entity.User;
@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 
 @Profile({"local","dev"})
 @RestController
@@ -21,7 +20,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class DevTokenController {
 
-    private final JwtTokenProvider jwtTokenProvider;
+    private final JwtUtil jwtUtil;                                   // ★ 변경
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
 
@@ -46,15 +45,12 @@ public class DevTokenController {
         if (user == null) {
             user = userRepository.findByEmail(email).orElse(null);
         }
-        // 2) 없으면 생성 (id는 자동 채번)
+        // 2) 없으면 생성
         if (user == null) {
             user = new User();
             user.setEmail(email);
-            user.setNickname(email.split("@")[0]); // 간단한 닉네임
-            user.setProvider("LOCAL");             // NOT NULL 컬럼 가정
-            user.setPassword(null);
-            user.setProfileImageUrl(null);
-            user.setSocialId(null);
+            user.setNickname(email.split("@")[0]);
+            user.setProvider("LOCAL");
             user = userRepository.save(user);
         }
 
@@ -66,8 +62,8 @@ public class DevTokenController {
         refresh.setExpiry(LocalDateTime.now().plusDays(7));
         refreshTokenRepository.save(refresh);
 
-        // 4) access 토큰 발급
-        String access = jwtTokenProvider.generateAccessToken(user);
+        // 4) ★ access 토큰 발급을 JwtUtil로 통일
+        String access = jwtUtil.createAccessToken(user.getId(), user.getEmail());
 
         return ResponseEntity.ok(new SeedResponse(
                 user.getId(),
