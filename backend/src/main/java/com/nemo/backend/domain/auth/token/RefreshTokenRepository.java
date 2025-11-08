@@ -1,4 +1,3 @@
-// backend/src/main/java/com/nemo/backend/domain/auth/token/RefreshTokenRepository.java
 package com.nemo.backend.domain.auth.token;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -6,12 +5,17 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+/**
+ * Repository for {@link RefreshToken} persistence.
+ */
 @Repository
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long> {
+    Optional<RefreshToken> findByToken(String token);
+    void deleteByUserId(Long userId);
 
-    /** UserAuthController.extractUserId()에서 사용 */
+    /** userId로 현재 유효한(미삭제) 리프레시 토큰 존재 여부 확인용 */
     Optional<RefreshToken> findFirstByUserId(Long userId);
 
-    /** AuthService.logout(), deleteAccount()에서 사용 */
-    void deleteByUserId(Long userId);
+
+    void deleteByToken(String token);
 }

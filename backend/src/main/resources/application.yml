@@ -8,7 +8,7 @@ spring:
       path: /h2-console
 
   datasource:
-    url: jdbc:h2:mem:nemodb
+    url: jdbc:h2:mem:nemodb              # ???? DB (?? ??? ? ???)
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -16,7 +16,11 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: update                   # update / create / none ? ??
+    properties:
+      hibernate:
+        format_sql: true
+        show_sql: true
 
   # =============================
   # ✉️ 메일(SMTP) 설정
@@ -24,8 +28,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: ${MAIL_USERNAME}           # Gmail ?? (????)
+    password: ${MAIL_PASSWORD}           # ? ???? (????)
     properties:
       mail:
         smtp:
@@ -36,10 +40,34 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
+  # ------------------------------------
+  # ??? ??
+  # ------------------------------------
+  profiles:
+    active: local                        # ?? ?? ???
+
+# ------------------------------------
+# JWT ??
+# ------------------------------------
+jwt:
+  secret: ${JWT_SECRET:change-me-for-local}     # ?? 32??? ?? (ex: Base64 ???)
+  access-exp-seconds: 3600                      # Access Token ?? ?? (1??)
+  refresh-exp-days: 14                          # Refresh Token ?? ?? (14?)
+  refresh-rotate-threshold-sec: 259200          # ?? ?? (3? ??? ? ?? ??)
+
+# ------------------------------------
+# ?? ?? ??
+# ------------------------------------
+server:
+  port: 8080
   # =============================
   # 📸 파일 업로드 / S3 설정
   # =============================
   servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
     multipart:
       max-file-size: 20MB
       max-request-size: 30MB

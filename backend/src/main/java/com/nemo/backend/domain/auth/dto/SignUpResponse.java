@@ -1,23 +1,23 @@
-// backend/src/main/java/com/nemo/backend/domain/auth/dto/SignUpResponse.java
 package com.nemo.backend.domain.auth.dto;
 
+import lombok.Getter;
+
+/**
+ * Response returned after a successful sign‑up.  Contains only public
+ * user details.
+ */
+@Getter
 public class SignUpResponse {
-    private Long userId;
+    private Long id;
     private String email;
     private String nickname;
     private String profileImageUrl;
 
-    public SignUpResponse() { } // ✅ Jackson 기본 생성자
-
-    public SignUpResponse(Long userId, String email, String nickname, String profileImageUrl) {
-        this.userId = userId;
+    public SignUpResponse(Long id, String email, String nickname, String profileImageUrl) {
+        this.id = id;
         this.email = email;
-        this.nickname = nickname == null ? "" : nickname;
-        this.profileImageUrl = profileImageUrl == null ? "" : profileImageUrl;
+        this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
     }
 
-    public Long getUserId() { return userId; }
-    public String getEmail() { return email; }
-    public String getNickname() { return nickname; }
-    public String getProfileImageUrl() { return profileImageUrl; }
 }

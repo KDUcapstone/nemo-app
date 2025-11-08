@@ -35,6 +35,9 @@ public class SecurityConfig {
                                 "/h2-console/**",
                                 "/api/users/signup",
                                 "/api/users/login",
+                                "/api/auth/refresh",
+                                "/api/auth/dev/**"
+                                "/api/users/login",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/api/auth/dev/**"
