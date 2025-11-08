@@ -6,8 +6,6 @@ import org.springframework.http.HttpStatus;
  * Enumeration of error codes with corresponding HTTP status and messages.
  */
 public enum ErrorCode {
-
-    // ===== 기존 사용자 관련 =====
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "DUPLICATE_EMAIL", "이미 사용 중인 이메일입니다."),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "이메일 또는 비밀번호를 확인해주세요."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다."),
@@ -29,8 +27,13 @@ public enum ErrorCode {
         this.code = code;
         this.message = message;
     }
-
-    public HttpStatus getStatus() { return status; }
-    public String getCode() { return code; }
-    public String getMessage() { return message; }
+    public HttpStatus getStatus() {
+        return status;
+    }
+    public String getCode() {
+        return code;
+    }
+    public String getMessage() {
+        return message;
+    }
 }

@@ -1,39 +1,58 @@
 package com.nemo.backend.global.security;
 
+import com.nemo.backend.domain.auth.jwt.JwtAuthenticationFilter;
+import com.nemo.backend.domain.auth.jwt.JwtUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * 개발 단계: 컨트롤러 단에서 JWT/리프레시 토큰을 직접 검사.
- * H2 콘솔/회원가입/로그인/파일 프록시(/files/**) 등은 공개.
- * 그 외 엔드포인트도 일단 permitAll() 후 컨트롤러에서 401 처리.
+ * ✅ 스프링 시큐리티 설정
+ * - 공개 경로: H2 콘솔, 회원가입/로그인, Swagger 문서
+ * - 인증 필요: /api/friends/** (그리고 추후 보호가 필요한 API들)
+ * - 매 요청마다 JWT 필터로 토큰을 검사하고, 성공 시 SecurityContext에 UserPrincipal 저장
  */
 @Configuration
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtUtil jwtUtil; // 🔸 JwtAuthenticationFilter에 주입할 유틸
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                // 세션을 쓰지 않는 완전한 Stateless API 서버 모드
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // 권한 규칙
                 .authorizeHttpRequests(auth -> auth
+                        // 🔓 공개 허용
                         .requestMatchers(
-                                // 공개 엔드포인트
                                 "/h2-console/**",
                                 "/api/users/signup",
                                 "/api/users/login",
-                                "/files/**",            // ← S3 프록시 이미지/영상 공개
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
-                                "/actuator/health"
+                                "/api/auth/dev/**"
                         ).permitAll()
-                        // 개발 단계: 나머지도 일단 열어두고 컨트롤러에서 자체 인증 처리
+
+                        // 🔒 친구 API는 인증 필요(토큰 필수) — 필요 시 여기에 보호 경로 추가
+                        .requestMatchers("/api/friends/**").authenticated()
+
+                        // 나머지는 상황에 맞게: 우선은 허용(필요해지면 authenticated로 변경)
                         .anyRequest().permitAll()
                 )
-                // H2 콘솔/단순 폼 테스트 등을 위해 CSRF 비활성화
+
+                // CSRF/CORS/H2 콘솔 프레임
                 .csrf(csrf -> csrf.disable())
-                // H2 콘솔 iframe 허용
-                .headers(headers -> headers.frameOptions(frame -> frame.disable()));
+                .headers(h -> h.frameOptions(f -> f.disable()));
+
+        // 🔗 JWT 필터 등록: UsernamePasswordAuthenticationFilter 앞에서 토큰 검증
+        http.addFilterBefore(new JwtAuthenticationFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
