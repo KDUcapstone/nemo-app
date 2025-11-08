@@ -1,6 +1,13 @@
 app:
   public-base-url: http://10.0.2.2:8080
 
+  jwt:
+    # 최소 32바이트 이상. 예시는 Base64 32바이트(24 raw bytes)보다 더 긴 랜덤 문자열 권장.
+    secret: "nemo-dev-secret-please-change-this-very-long-32bytes-min!"
+    issuer: "nemo-backend"
+    access-ttl-ms: 900000   # 15분 (밀리초)
+
+
   s3:
     bucket: nemo-dev-photos
     region: ap-northeast-2

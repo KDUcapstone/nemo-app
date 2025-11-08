@@ -7,6 +7,8 @@ import com.nemo.backend.domain.auth.token.RefreshToken;
 import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.domain.user.repository.UserRepository;
+import com.nemo.backend.global.exception.ApiException;
+import com.nemo.backend.global.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
