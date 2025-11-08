@@ -2,7 +2,6 @@ package com.nemo.backend.domain.photo.entity;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
-import com.nemo.backend.domain.album.entity.Album;
 
 /**
  * 사진 1장(레코드) + 연계 동영상 URL을 함께 저장하기 위한 엔티티.
@@ -21,10 +20,9 @@ public class Photo {
     /** 소유자(회원) ID */
     private Long userId;
 
-    /** 앨범 연결 (nullable) */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "album_id")
-    private Album album;
+    /** 앨범 ID 연결 (nullable) */
+    @Column(name = "album_id")
+    private Long albumId;
 
     /** 원본 이미지 URL (필수) */
     @Column(nullable = false)
@@ -57,11 +55,11 @@ public class Photo {
 
     public Photo() {}
 
-    public Photo(Long userId, Album album,
+    public Photo(Long userId, Long albumId,
                  String imageUrl, String thumbnailUrl, String videoUrl,
                  String qrHash, String brand, LocalDateTime takenAt, Long locationId) {
         this.userId = userId;
-        this.album = album;
+        this.albumId = albumId;
         this.imageUrl = imageUrl;
         this.thumbnailUrl = thumbnailUrl;
         this.videoUrl = videoUrl;
@@ -75,8 +73,8 @@ public class Photo {
     public Long getId() { return id; }
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
-    public Album getAlbum() { return album; }
-    public void setAlbum(Album album) { this.album = album; }
+    public Long getAlbumId() { return albumId; }
+    public void setAlbumId(Long albumId) { this.albumId = albumId; }
     public String getImageUrl() { return imageUrl; }
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
     public String getThumbnailUrl() { return thumbnailUrl; }

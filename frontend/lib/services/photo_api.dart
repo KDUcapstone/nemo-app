@@ -1,14 +1,15 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:frontend/app/constants.dart';
-import 'api_client.dart';
+import 'auth_service.dart';
 
 class PhotoApi {
-  static Uri _u(String p) => ApiClient.uri(p);
+  static Uri _u(String p) => Uri.parse('${AuthService.baseUrl}$p');
 
   Future<List<Map<String, dynamic>>> getPhotos({
     bool? favorite,
     String? tag,
+    String? brand,
     String? sort,
     int? page,
     int? size,
@@ -20,14 +21,15 @@ class PhotoApi {
     final qp = <String, String>{};
     if (favorite != null) qp['favorite'] = favorite.toString();
     if (tag != null && tag.isNotEmpty) qp['tag'] = tag;
+    if (brand != null && brand.isNotEmpty) qp['brand'] = brand;
     if (sort != null && sort.isNotEmpty) qp['sort'] = sort;
     if (page != null) qp['page'] = page.toString();
     if (size != null) qp['size'] = size.toString();
 
-    final r = await ApiClient.get(
-      '/api/photos',
-      queryParameters: qp.isEmpty ? null : qp,
-    );
+    final uri = Uri.parse(
+      '${AuthService.baseUrl}/api/photos',
+    ).replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await http.get(uri, headers: _h());
     if (r.statusCode == 200) {
       final body = jsonDecode(r.body);
       if (body is List) {
@@ -73,7 +75,7 @@ class PhotoApi {
         },
       };
     }
-    final r = await ApiClient.get('/api/photos/$photoId');
+    final r = await http.get(_u('/api/photos/$photoId'), headers: _h());
     if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode == 403) {
       throw Exception('접근 권한이 없습니다. (403)');
@@ -154,7 +156,10 @@ class PhotoApi {
       // 모킹: 현재 상태의 반대값을 최종 상태로 반환
       return !currentFavorite;
     }
-    final r = await ApiClient.post('/api/photos/$photoId/favorite');
+    final r = await http.post(
+      _u('/api/photos/$photoId/favorite'),
+      headers: _h(),
+    );
     if (r.statusCode == 200) {
       final body = jsonDecode(r.body);
       // 사양: isFavorite 필드 사용
@@ -178,6 +183,10 @@ class PhotoApi {
   }
 
   Map<String, String> _h({bool json = false}) {
-    return ApiClient.headers(json: json);
+    final h = <String, String>{
+      'Authorization': 'Bearer ${AuthService.accessToken ?? ''}',
+    };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
   }
 }

@@ -24,6 +24,9 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:frontend/services/photo_upload_api.dart';
+import 'change_password_screen.dart';
+import 'package:frontend/services/friend_api.dart';
+import 'friends_list_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -49,6 +52,35 @@ class _MyPageScreenState extends State<MyPageScreen> {
   File? _selectedImage;
   bool _isLoading = false;
   bool _isEditing = false;
+
+  DateTime? _parseCreatedAt(dynamic value) {
+    try {
+      if (value == null) return null;
+      if (value is DateTime) return value.toLocal();
+      if (value is int) {
+        // epoch seconds or milliseconds
+        final isMillis = value > 100000000000; // ~2001-09-09 in ms
+        final dt = isMillis
+            ? DateTime.fromMillisecondsSinceEpoch(value)
+            : DateTime.fromMillisecondsSinceEpoch(value * 1000);
+        return dt.toLocal();
+      }
+      if (value is String) {
+        // ISO or yyyy-MM-dd
+        final dt = DateTime.parse(value);
+        return dt.toLocal();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatJoinedAt(dynamic value) {
+    final dt = _parseCreatedAt(value);
+    if (dt == null) return '-';
+    return DateFormat('yyyy.MM.dd').format(dt);
+  }
 
   @override
   void initState() {
@@ -692,7 +724,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               SizedBox(height: isSmallHeight ? 10 : 16),
                               InfoRow(
                                 label: '가입일',
-                                value: _userInfo['createdAt'],
+                                value: _formatJoinedAt(_userInfo['createdAt']),
                                 icon: Icons.calendar_today,
                               ),
                               SizedBox(height: innerGap),
@@ -701,6 +733,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                 value: _userInfo['email'],
                                 icon: Icons.email,
                               ),
+                              SizedBox(height: innerGap),
+                              _FriendsEntryRow(),
                             ],
                           ),
                         ),
@@ -710,11 +744,101 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         AccountActionsCard(
                           onLogout: _logout,
                           onDelete: _deleteAccount,
+                          onResetPassword: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ChangePasswordScreen(),
+                              ),
+                            );
+                          },
                         ),
+                        SizedBox(height: gap),
                       ],
                     ),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FriendsEntryRow extends StatefulWidget {
+  @override
+  State<_FriendsEntryRow> createState() => _FriendsEntryRowState();
+}
+
+class _FriendsEntryRowState extends State<_FriendsEntryRow> {
+  int? _friendCount;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCount();
+  }
+
+  Future<void> _fetchCount() async {
+    setState(() => _loading = true);
+    try {
+      final list = await FriendApi.getFriends();
+      if (!mounted) return;
+      setState(() {
+        _friendCount = list.length;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final countText = _loading
+        ? '불러오는 중...'
+        : _friendCount == null
+        ? '친구'
+        : '친구 ${_friendCount}명';
+
+    return InkWell(
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const FriendsListScreen()));
+      },
+      child: Row(
+        children: [
+          const Icon(
+            Icons.group_outlined,
+            size: 20,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '친구',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  countText,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppColors.textSecondary),
         ],
       ),
     );

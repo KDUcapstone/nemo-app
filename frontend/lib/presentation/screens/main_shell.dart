@@ -4,6 +4,7 @@ import 'user/mypage_screen.dart';
 import 'home/home_screen.dart';
 import 'share/share_screen.dart';
 import 'qr/qr_scanner_screen.dart';
+import 'share/share_screen.dart';
 import 'package:frontend/utils/qr_import.dart';
 import 'photo/photo_list_screen.dart';
 
@@ -15,7 +16,7 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _currentIndex = 0; // 0: 홈, 1: 앨범, 2: QR, 3: 공유, 4: 마이페이지
+  int _currentIndex = 4; // 개발 편의를 위해 마이페이지부터 표시
 
   final List<Widget> _pages = const [
     HomeScreen(),
