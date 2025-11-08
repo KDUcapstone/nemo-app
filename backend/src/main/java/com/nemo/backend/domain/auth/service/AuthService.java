@@ -1,92 +1,121 @@
 package com.nemo.backend.domain.auth.service;
 
-import com.nemo.backend.domain.auth.dto.LoginRequest;
-import com.nemo.backend.domain.auth.dto.LoginResponse;
-import com.nemo.backend.domain.auth.dto.SignUpRequest;
-import com.nemo.backend.domain.auth.dto.SignUpResponse;
+import com.nemo.backend.domain.auth.dto.*;
+import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
 import com.nemo.backend.domain.auth.token.RefreshToken;
 import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.domain.user.repository.UserRepository;
-import com.nemo.backend.global.exception.ApiException;
-import com.nemo.backend.global.exception.ErrorCode;
-import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Service layer encapsulating authentication and account lifecycle logic.
- */
 @Service
+@Transactional
 public class AuthService {
+
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public AuthService(UserRepository userRepository,
                        RefreshTokenRepository refreshTokenRepository,
+                       PasswordEncoder passwordEncoder,
                        JwtTokenProvider jwtTokenProvider) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
     }
 
-    @Transactional
+    // 회원가입
     public SignUpResponse signUp(SignUpRequest request) {
-        userRepository.findByEmail(request.getEmail()).ifPresent(u -> {
-            throw new ApiException(ErrorCode.DUPLICATE_EMAIL);
-        });
-        User user = new User();
-        user.setEmail(request.getEmail());
-        user.setNickname(request.getNickname());
-        user.setProvider("LOCAL");
-        if (request.getPassword() != null && !request.getPassword().isEmpty()) {
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new IllegalArgumentException("이메일은 필수입니다.");
         }
-        userRepository.save(user);
-        return new SignUpResponse(user.getId(), user.getEmail(), user.getNickname(), user.getProfileImageUrl());
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new IllegalArgumentException("비밀번호는 필수입니다.");
+        }
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("이미 가입된 이메일입니다.");
+        }
+
+        User user = new User();
+        user.setEmail(request.getEmail().trim());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setNickname(request.getNickname() != null ? request.getNickname() : "");
+        user.setProfileImageUrl("");
+        user.setProvider("local");
+        user.setSocialId(null);
+
+        User saved = userRepository.save(user);
+        return new SignUpResponse(
+                saved.getId(),
+                saved.getEmail(),
+                saved.getNickname(),
+                saved.getProfileImageUrl()
+        );
     }
 
-    @Transactional
+    // 로그인
+    // AuthService.login()
+    // 핵심 부분만 발췌
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CREDENTIALS));
-        if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+                .orElseThrow(() -> new IllegalArgumentException("가입되지 않은 이메일입니다."));
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
         }
-        refreshTokenRepository.deleteByUserId(user.getId());
+
         String accessToken = jwtTokenProvider.generateAccessToken(user);
-        String refreshToken = createAndSaveRefreshToken(user.getId());
-        return new LoginResponse(user.getId(), user.getEmail(), user.getNickname(), user.getProfileImageUrl(),
-                accessToken, refreshToken);
+        String refreshTokenStr = java.util.UUID.randomUUID().toString();
+        java.time.LocalDateTime expiry = java.time.LocalDateTime.now().plusDays(14);
+
+        RefreshToken token = refreshTokenRepository.findFirstByUserId(user.getId())
+                .orElseGet(RefreshToken::new);
+        token.setUserId(user.getId());
+        token.setToken(refreshTokenStr);
+        token.setExpiry(expiry);
+        refreshTokenRepository.save(token);
+
+        String nickname = user.getNickname() == null ? "" : user.getNickname();
+        String profile = user.getProfileImageUrl() == null ? "" : user.getProfileImageUrl();
+
+        return new LoginResponse(
+                user.getId(),          // ✅ 절대 null 아님(없으면 0L로 방어)
+                user.getEmail(),
+                nickname,
+                profile,
+                accessToken,
+                refreshTokenStr
+        );
     }
 
-    @Transactional
+
+
+    // 로그아웃
     public void logout(Long userId) {
-        userRepository.findById(userId).orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
         refreshTokenRepository.deleteByUserId(userId);
     }
 
-    @Transactional
+    // 회원탈퇴 (비밀번호 검증 포함)
     public void deleteAccount(Long userId) {
+        deleteAccount(userId, null);
+    }
+    public void deleteAccount(Long userId, String rawPassword) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ApiException(ErrorCode.USER_ALREADY_DELETED));
+                .orElseThrow(() -> new IllegalArgumentException("해당 사용자를 찾을 수 없습니다."));
+
+        if (rawPassword == null || rawPassword.isBlank()
+                || !passwordEncoder.matches(rawPassword, user.getPassword())) {
+            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+        }
         refreshTokenRepository.deleteByUserId(userId);
         userRepository.delete(user);
-    }
-
-    private String createAndSaveRefreshToken(Long userId) {
-        String token = UUID.randomUUID().toString();
-        RefreshToken refreshToken = new RefreshToken();
-        refreshToken.setUserId(userId);
-        refreshToken.setToken(token);
-        refreshToken.setExpiry(LocalDateTime.now().plusDays(14));
-        refreshTokenRepository.save(refreshToken);
-        return token;
     }
 }

@@ -109,6 +109,16 @@ class AlbumProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateMeta({required int albumId, String? title, String? description}) {
+    final idx = _albums.indexWhere((e) => e.albumId == albumId);
+    if (idx == -1) return;
+    _albums[idx] = _albums[idx].copyWith(
+      title: title,
+      description: description,
+    );
+    notifyListeners();
+  }
+
   void removeAlbum(int albumId) {
     _albums.removeWhere((e) => e.albumId == albumId);
     notifyListeners();

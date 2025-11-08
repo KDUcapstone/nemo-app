@@ -1,9 +1,11 @@
 package com.nemo.backend.domain.photo.service;
 
 import org.springframework.web.multipart.MultipartFile;
-import java.io.IOException;
 
-/** 다운로드한 파일을 업로드(예: S3)하고 접근 URL을 반환하는 포트 */
 public interface PhotoStorage {
-    String store(MultipartFile file) throws IOException;
+    /**
+     * 업로드한 파일을 저장하고 외부에서 접근 가능한 **키** 또는 **URL**을 반환한다.
+     * (본 구현에선 "키"를 반환하고, 외부 URL 변환은 Service에서 처리)
+     */
+    String store(MultipartFile file) throws Exception;
 }
