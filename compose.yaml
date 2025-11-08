@@ -1,0 +1,42 @@
+name: nemo
+services:
+  nginx-dev:
+    image: nginx:1.27-alpine
+    container_name: nemo-nginx-dev
+    ports:
+      - "8085:80"                              # http://localhost:8085
+    volumes:
+      - ./infra/nginx/nemo.dev.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"    # Linux 호환 (Win/macOS는 무시되어도 OK)
+    profiles: ["dev"]
+
+  nginx-prod:
+    image: nginx:1.27-alpine
+    container_name: nemo-nginx-prod
+    ports:
+      - "8085:80"
+    volumes:
+      - ./frontend/build/web:/usr/share/nginx/html:ro
+      - ./infra/nginx/nemo.prod.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    profiles: ["prod"]
+
+  # --- Local S3 (LocalStack) ---
+  localstack:
+    image: localstack/localstack:2.3
+    container_name: nemo-localstack
+    ports:
+      - "4566:4566"     # http://localhost:4566
+    environment:
+      - SERVICES=s3
+      - AWS_DEFAULT_REGION=ap-northeast-2
+      - PERSISTENCE=1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./infra/localstack-init:/etc/localstack/init/ready.d
+    profiles: [ "dev","s3" ]   # dev에서 자동 사용하거나 명시적으로 s3 켜기
+
+volumes:
+  localstack_data:

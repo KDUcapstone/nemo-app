@@ -30,7 +30,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
     if (value == null || value.isEmpty) {
       return '이메일을 입력해주세요';
     }
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}\$');
+    // 문자열 끝 앵커는 $ 이어야 합니다. (잘못된 \'\$\' 제거)
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
     if (!emailRegex.hasMatch(value)) {
       return '올바른 이메일 형식을 입력해주세요';
     }
@@ -67,14 +68,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             accessToken: result['accessToken'],
             profileImageUrl: result['profileImageUrl'],
           );
-
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('로그인되었습니다!'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          // 로그인 성공 신호를 상위(LoginScreen)로 전달하여 거기서 네비게이션 처리
+          Navigator.pop(context, true);
         }
       } catch (e) {
         if (!mounted) return;
@@ -87,99 +82,113 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, -8),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
           ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      child: ListView(
-        children: [
-          const SizedBox(height: 20),
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 20,
+              offset: Offset(0, -8),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: ListView(
+          children: [
+            const SizedBox(height: 20),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: SizedBox(
+                height: 24,
+                child: Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '이메일로 로그인',
-            style: GoogleFonts.jua(fontSize: 22, color: AppColors.textPrimary),
-          ),
-          const SizedBox(height: 16),
-          Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                _IconInputField(
-                  hintText: '아이디/이메일 입력',
-                  keyboardType: TextInputType.emailAddress,
-                  icon: Icons.email_outlined,
-                  strongBorder: true,
-                  controller: _emailController,
-                  validator: _validateEmail,
-                ),
-                const SizedBox(height: 12),
-                _IconInputField(
-                  hintText: '비밀번호 입력',
-                  obscureText: true,
-                  icon: Icons.lock_outline,
-                  strongBorder: true,
-                  controller: _passwordController,
-                  validator: _validatePassword,
-                ),
-                const SizedBox(height: 16),
-                _PrimaryButton(text: '로그인', onTap: _handleLogin),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ForgotPasswordScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text('비밀번호 재설정'),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('|'),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SignupScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text('회원가입하기'),
-                    ),
-                  ],
-                ),
-              ],
+            const SizedBox(height: 16),
+            Text(
+              '이메일로 로그인',
+              style: GoogleFonts.jua(
+                fontSize: 22,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  _IconInputField(
+                    hintText: '아이디/이메일 입력',
+                    keyboardType: TextInputType.emailAddress,
+                    icon: Icons.email_outlined,
+                    strongBorder: true,
+                    controller: _emailController,
+                    validator: _validateEmail,
+                  ),
+                  const SizedBox(height: 12),
+                  _IconInputField(
+                    hintText: '비밀번호 입력',
+                    obscureText: true,
+                    icon: Icons.lock_outline,
+                    strongBorder: true,
+                    controller: _passwordController,
+                    validator: _validatePassword,
+                  ),
+                  const SizedBox(height: 16),
+                  _PrimaryButton(text: '로그인', onTap: _handleLogin),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ForgotPasswordScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('비밀번호 재설정'),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('|'),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SignupScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('회원가입하기'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

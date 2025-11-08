@@ -207,7 +207,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // 닉네임 검증은 ProfileCard 내부에서 처리하므로 이 화면에서는 미사용 상태입니다.
 
   Future<void> _updateUserInfo() async {
-    if (!_formKey.currentState!.validate()) return;
+    final formState = _formKey.currentState;
+    if (formState != null) {
+      if (!formState.validate()) return;
+    }
 
     setState(() {
       _isLoading = true;

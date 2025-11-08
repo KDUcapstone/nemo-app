@@ -141,34 +141,32 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       duration: const Duration(milliseconds: 600),
                       curve: Curves.easeOutCubic,
                       child: _GlassCard(
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            children: [
-                              if (!_isResetSent) ...[
-                                const ResetInfoCard(),
-                                const SizedBox(height: 20),
+                        child: Column(
+                          children: [
+                            if (!_isResetSent) ...[
+                              const ResetInfoCard(),
+                              const SizedBox(height: 20),
 
-                                ResetRequestForm(
-                                  formKey: _formKey,
-                                  emailController: _emailController,
-                                  emailValidator: _validateEmail,
-                                  onSubmit: _sendResetEmail,
-                                  isLoading: _isLoading,
-                                ),
-                              ] else ...[
-                                const ResetSuccessCard(),
-                                const SizedBox(height: 20),
+                              // 내부에서 Form(key: _formKey) 을 사용합니다 (중복 방지)
+                              ResetRequestForm(
+                                formKey: _formKey,
+                                emailController: _emailController,
+                                emailValidator: _validateEmail,
+                                onSubmit: _sendResetEmail,
+                                isLoading: _isLoading,
+                              ),
+                            ] else ...[
+                              const ResetSuccessCard(),
+                              const SizedBox(height: 20),
 
-                                // 로그인으로 이동 버튼
-                                _PrimaryButton(
-                                  text: '로그인으로 이동',
-                                  onTap: () => _goToLogin(),
-                                  isLoading: false,
-                                ),
-                              ],
+                              // 로그인으로 이동 버튼
+                              _PrimaryButton(
+                                text: '로그인으로 이동',
+                                onTap: () => _goToLogin(),
+                                isLoading: false,
+                              ),
                             ],
-                          ),
+                          ],
                         ),
                       ),
                       builder: (context, value, child) {
