@@ -1,34 +1,63 @@
-# ============================================
-# 📦 application.yml
-# - 공통 설정 및 사용할 프로필 지정
-# - 개발/로컬/운영 환경별 yml 파일을 구분해 관리
-# ============================================
-
+# =============================
+# 🌱 H2 데이터베이스 설정
+# =============================
 spring:
-  profiles:
-    # 현재 활성화할 프로필 선택 (dev / local / prod)
-    # ✅ 개발 중엔 local (CloudType DB 외부 접속)
-    # ✅ 테스트용 H2는 dev
-    # ✅ 실제 배포는 prod
-    active: local
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
 
-  # 📧 메일 전송 공통 설정 (모든 환경 공통)
+  datasource:
+    url: jdbc:h2:mem:nemodb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+
+  # =============================
+  # ✉️ 메일(SMTP) 설정
+  # =============================
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME}        # 환경변수로 관리 (보안)
+    username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
-      mail.smtp.connectiontimeout: 5000
-      mail.smtp.timeout: 5000
-      mail.smtp.writetimeout: 5000
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
-  # 네이버 '개발자센터(오픈API)' - 지역검색(Local Search) 설정
-  naver:
-    openapi:
-      local:
-        endpoint: https://openapi.naver.com/v1/search/local.json
-        client-id: ${NAVER_LOCAL_CLIENT_ID}
-        client-secret: ${NAVER_LOCAL_CLIENT_SECRET}
+  # =============================
+  # 📸 파일 업로드 / S3 설정
+  # =============================
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 30MB
+  profiles:
+    active: local
+
+# =============================
+# ☁️ S3 버킷 관련 설정
+# =============================
+app:
+  s3:
+    bucket: nemo-dev-photos
+    region: ap-northeast-2
+    endpoint:
+    accessKey: test
+    secretKey: test
+    pathStyle: true
+
+# =============================
+# 🌍 기본 프로필
+# =============================
