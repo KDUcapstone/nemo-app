@@ -2,6 +2,13 @@
 # 🌱 H2 데이터베이스 설정
 # =============================
 spring:
+  profiles:
+    # 현재 활성화할 프로필 선택 (dev / local / prod)
+    # ✅ 개발 중엔 local (CloudType DB 외부 접속)
+    # ✅ 테스트용 H2는 dev
+    # ✅ 실제 배포는 prod
+    active: local
+
   h2:
     console:
       enabled: true
@@ -82,3 +89,11 @@ logging:
   level:
     root: INFO
     com.nemo.backend: DEBUG
+
+  # 네이버 '개발자센터(오픈API)' - 지역검색(Local Search) 설정
+  naver:
+    openapi:
+      local:
+        endpoint: https://openapi.naver.com/v1/search/local.json
+        client-id: ${NAVER_LOCAL_CLIENT_ID}
+        client-secret: ${NAVER_LOCAL_CLIENT_SECRET}
