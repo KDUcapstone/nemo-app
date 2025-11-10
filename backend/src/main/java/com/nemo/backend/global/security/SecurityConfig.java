@@ -40,7 +40,8 @@ public class SecurityConfig {
                                 "/api/users/login",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
-                                "/api/auth/dev/**"
+                                "/api/auth/dev/**",
+                                "/files/**"
                         ).permitAll()
 
                         // 🔒 친구 API는 인증 필요(토큰 필수) — 필요 시 여기에 보호 경로 추가
