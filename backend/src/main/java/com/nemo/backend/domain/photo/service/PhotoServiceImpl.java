@@ -1,8 +1,11 @@
+// com.nemo.backend.domain.photo.service.PhotoServiceImpl
 package com.nemo.backend.domain.photo.service;
 
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.photo.repository.PhotoRepository;
+import com.nemo.backend.global.exception.ApiException;
+import com.nemo.backend.global.exception.ErrorCode;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -26,6 +29,8 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.nemo.backend.domain.photo.service.S3PhotoStorage.StorageException;
+
 @Service
 @Transactional
 public class PhotoServiceImpl implements PhotoService {
@@ -33,7 +38,7 @@ public class PhotoServiceImpl implements PhotoService {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS    = 10000;
     private static final int MAX_REDIRECTS      = 5;
-    private static final int MAX_HTML_FOLLOW    = 2;
+    private static final int MAX_HTML_FOLLOW    = 2;   // 필요 시 4까지 늘릴 수 있음
     private static final long MAX_BYTES         = 50L * 1024 * 1024;
     private static final String USER_AGENT      = "Mozilla/5.0 Nemo/1.0";
     private static final int MIN_IMAGE_BYTES    = 5 * 1024;
@@ -51,14 +56,12 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     private String toPublicUrl(String key) {
-        // S3 presign을 쓰지 않고, 프론트는 S3 URL을 직접 구성할 수도 있음.
-        // 여기선 키를 그대로 반환하지 않고, 서버 베이스 URL로 감싸 외부 접근 가능하게 통일.
         return String.format("%s/files/%s", publicBaseUrl, key);
     }
 
     @Override
     public PhotoResponseDto uploadHybrid(Long userId,
-                                         String qrCode,
+                                         String qrUrlOrPayload,
                                          MultipartFile image,
                                          String brand,
                                          String location,
@@ -67,19 +70,23 @@ public class PhotoServiceImpl implements PhotoService {
                                          String friendIdListJson,
                                          String memo) {
 
-        if (qrCode == null || qrCode.isBlank())
-            throw new InvalidQrException("qrCode is required.");
+        if ((qrUrlOrPayload == null || qrUrlOrPayload.isBlank()) && (image == null || image.isEmpty())) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "image 또는 qrUrl/qrCode 중 하나는 필수입니다.");
+        }
 
-        String qrHash = sha256Hex(qrCode);
-        photoRepository.findByQrHash(qrHash)
-                .ifPresent(p -> { throw new DuplicateQrException("이미 업로드된 QR입니다."); });
+        // 중복 QR 차단: URL/QR 문자열이 있을 때만
+        if (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) {
+            String qrHash = sha256Hex(qrUrlOrPayload);
+            photoRepository.findByQrHash(qrHash)
+                    .ifPresent(p -> { throw new ApiException(ErrorCode.CONFLICT, "이미 업로드된 QR입니다."); });
+        }
 
         String storedImage;
         String storedThumb;
         String storedVideo = null;
 
         if (image != null && !image.isEmpty()) {
-            // 직접 업로드
+            // A) 직접 파일 업로드
             try {
                 String key = storage.store(image);
                 String url = toPublicUrl(key);
@@ -89,17 +96,23 @@ public class PhotoServiceImpl implements PhotoService {
                 throw new StorageException("파일 저장 실패", e);
             }
         } else {
-            // QR이 URL이면 원격 추출
-            if (!looksLikeUrl(qrCode)) throw new InvalidQrException("지원하지 않는 QR 포맷입니다.");
-            AssetPair ap = fetchAssetsFromQrPayload(qrCode); // 내부에서 NetworkFetchException/StorageException 발생 가능
+            // B) URL/QR 경로: 원격 추출
+            if (!looksLikeUrl(qrUrlOrPayload)) {
+                throw new ApiException(ErrorCode.INVALID_ARGUMENT, "지원하지 않는 QR/URL 포맷입니다.");
+            }
+            AssetPair ap = fetchAssetsFromQrPayload(qrUrlOrPayload);
             storedImage = ap.imageUrl;
             storedThumb = ap.thumbnailUrl != null ? ap.thumbnailUrl : ap.imageUrl;
             storedVideo = ap.videoUrl;
             if (takenAt == null) takenAt = ap.takenAt;
         }
 
-        if (brand == null || brand.isBlank()) brand = inferBrand(qrCode);
+        if (brand == null || brand.isBlank()) {
+            brand = (qrUrlOrPayload != null) ? inferBrand(qrUrlOrPayload) : "기타";
+        }
         if (takenAt == null) takenAt = LocalDateTime.now();
+
+        String qrHash = (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) ? sha256Hex(qrUrlOrPayload) : null;
 
         Photo photo = new Photo(userId, null, storedImage, storedThumb, storedVideo, qrHash, brand, takenAt, null);
         Photo saved = photoRepository.save(photo);
@@ -162,16 +175,12 @@ public class PhotoServiceImpl implements PhotoService {
                         if (ct.startsWith("image/")) {
                             ensureValidImageBytes(data);
                             ct = sniffContentType(data, ct);
-                            String ext = extractExtensionFromContentType(ct);
-                            MultipartFile mf = toMultipart(data, ct, ext);
-                            String key = storage.store(mf);
+                            String key = storage.storeBytes(data, filenameFromHeadersOrUrl(url, cd, ct), ct);
                             String urlStr = toPublicUrl(key);
                             if (foundImage == null) foundImage = urlStr;
                             if (foundThumb == null)  foundThumb  = urlStr;
                         } else if (ct.startsWith("video/")) {
-                            String ext = extractExtensionFromContentType(ct);
-                            MultipartFile mf = toMultipart(data, ct, ext);
-                            String key = storage.store(mf);
+                            String key = storage.storeBytes(data, filenameFromHeadersOrUrl(url, cd, ct), ct);
                             String urlStr = toPublicUrl(key);
                             if (foundVideo == null) foundVideo = urlStr;
                         }
@@ -201,8 +210,7 @@ public class PhotoServiceImpl implements PhotoService {
         } catch (StorageException e) {
             throw e;
         } catch (Exception e) {
-            // **네트워크/원격자원 문제는 전용 예외로 분리**
-            throw new NetworkFetchException("원격 자산 추출 실패", e);
+            throw new ApiException(ErrorCode.UPSTREAM_FAILED, "원격 자산 추출 실패: " + e.getMessage(), e);
         }
     }
 
@@ -236,7 +244,8 @@ public class PhotoServiceImpl implements PhotoService {
         // 1) 다운로드 링크 우선
         Element aDownload = doc.selectFirst(
                 "a[download], a[href*='download'], a.btn-download, a#download, a.button, " +
-                        "a[href$='.jpg'], a[href$='.jpeg'], a[href$='.png'], a[href$='.webp']"
+                        "a[href$='.jpg'], a[href$='.jpeg'], a[href$='.png'], a[href$='.webp'], " +
+                        "a[href$='.mp4'], a[href$='.webm'], a[href$='.mov']"
         );
         if (aDownload != null) out.imageUrl = aDownload.absUrl("href");
 
@@ -309,7 +318,8 @@ public class PhotoServiceImpl implements PhotoService {
 
     private String firstUrlFromJsonLd(String json) {
         if (json == null || json.isBlank()) return null;
-        Pattern p = Pattern.compile("(https?:\\\\?/\\\\?/[^\"']+?\\.(?:jpg|jpeg|png|webp))", Pattern.CASE_INSENSITIVE);
+        Pattern p = Pattern.compile("(https?:\\\\?/\\\\?/[^\"']+?\\.(?:jpg|jpeg|png|webp|mp4|webm|mov))",
+                Pattern.CASE_INSENSITIVE);
         Matcher m = p.matcher(json);
         String best = null;
         while (m.find()) {
@@ -317,6 +327,39 @@ public class PhotoServiceImpl implements PhotoService {
             if (best == null || u.length() > best.length()) best = u;
         }
         return best;
+    }
+
+    // 파일명 추출(중복 방지용: 래퍼 + 오버로드 한 쌍만 유지)
+    private String filenameFromHeadersOrUrl(URL base, String cdHeader, String contentType) {
+        return filenameFromHeadersOrUrl(base, cdHeader, contentType, true);
+    }
+    private String filenameFromHeadersOrUrl(URL base, String cdHeader, String contentType, boolean addExtIfMissing) {
+        if (cdHeader != null) {
+            Matcher m1 = Pattern.compile("filename\\*=UTF-8''([^;]+)", Pattern.CASE_INSENSITIVE).matcher(cdHeader);
+            if (m1.find()) return decodeRFC5987(m1.group(1));
+            Matcher m2 = Pattern.compile("filename=\"?([^\";]+)\"?", Pattern.CASE_INSENSITIVE).matcher(cdHeader);
+            if (m2.find()) return m2.group(1);
+        }
+        String path = base.getPath();
+        String last = (path == null || path.isBlank()) ? "file" : path.substring(path.lastIndexOf('/') + 1);
+        if (last.isBlank()) last = "file";
+        if (addExtIfMissing) {
+            String low = last.toLowerCase(Locale.ROOT);
+            if (!low.contains(".")) {
+                if (contentType != null) {
+                    if (contentType.contains("jpeg") || contentType.contains("jpg")) last += ".jpg";
+                    else if (contentType.contains("png"))  last += ".png";
+                    else if (contentType.contains("webp")) last += ".webp";
+                    else if (contentType.contains("mp4"))  last += ".mp4";
+                }
+            }
+        }
+        return last;
+    }
+
+    private String decodeRFC5987(String s) {
+        try { return URLDecoder.decode(s, StandardCharsets.UTF_8); }
+        catch (Exception e) { return s; }
     }
 
     private String normalizeUrl(String u) {
@@ -352,7 +395,7 @@ public class PhotoServiceImpl implements PhotoService {
     private String sha256Hex(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(md.digest(input.getBytes()));
+            return HexFormat.of().formatHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 
@@ -413,23 +456,6 @@ public class PhotoServiceImpl implements PhotoService {
         return (fallback != null) ? fallback : "application/octet-stream";
     }
 
-    private String extractExtensionFromContentType(String contentType) {
-        if (contentType == null) return ".bin";
-        int slash = contentType.indexOf('/');
-        if (slash >= 0 && slash + 1 < contentType.length()) {
-            String subtype = contentType.substring(slash + 1).toLowerCase(Locale.ROOT);
-            if (subtype.contains("jpeg") || subtype.contains("jpg")) return ".jpg";
-            if (subtype.contains("png"))  return ".png";
-            if (subtype.contains("gif"))  return ".gif";
-            if (subtype.contains("webp")) return ".webp";
-            if (subtype.contains("mp4"))  return ".mp4";
-            if (subtype.contains("webm")) return ".webm";
-            if (subtype.contains("mov"))  return ".mov";
-            return "." + subtype.replaceAll("[^a-z0-9.+-]", "");
-        }
-        return ".bin";
-    }
-
     private String inferBrand(String urlOrPayload) {
         String s = urlOrPayload.toLowerCase(Locale.ROOT);
         if (s.contains("life4cut") || s.contains("인생네컷")) return "인생네컷";
@@ -451,26 +477,4 @@ public class PhotoServiceImpl implements PhotoService {
         final LocalDateTime takenAt;
         AssetPair(String i, String t, String v, LocalDateTime ta) { this.imageUrl=i; this.thumbnailUrl=t; this.videoUrl=v; this.takenAt=ta; }
     }
-
-    // ===================== 유틸리티: byte[] → MultipartFile =====================
-    private MultipartFile toMultipart(byte[] data, String contentType, String ext) {
-        if (data == null) throw new IllegalArgumentException("No data for multipart conversion");
-        final byte[] copy = data;
-        final String ct = (contentType != null) ? contentType : "application/octet-stream";
-        final String filename = java.util.UUID.randomUUID() + ((ext != null && !ext.isBlank()) ? ext : ".bin");
-
-        return new MultipartFile() {
-            @Override public String getName() { return "file"; }
-            @Override public String getOriginalFilename() { return filename; }
-            @Override public String getContentType() { return ct; }
-            @Override public boolean isEmpty() { return copy.length == 0; }
-            @Override public long getSize() { return copy.length; }
-            @Override public byte[] getBytes() { return copy; }
-            @Override public java.io.InputStream getInputStream() { return new java.io.ByteArrayInputStream(copy); }
-            @Override public void transferTo(java.io.File dest) throws java.io.IOException {
-                try (var fos = new java.io.FileOutputStream(dest)) { fos.write(copy); }
-            }
-        };
-    }
-
 }

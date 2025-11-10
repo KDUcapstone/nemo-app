@@ -12,6 +12,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Locale;
 import java.util.UUID;
@@ -23,25 +24,36 @@ public class S3PhotoStorage implements PhotoStorage {
     private final S3Client s3Client;
     private final String bucket;
     private final boolean createBucketIfMissing;
+    private final String region; // 실 S3 사용 시 LocationConstraint 용
 
     public S3PhotoStorage(
             S3Client s3Client,
             @Value("${app.s3.bucket}") String bucket,
-            @Value("${app.s3.createBucketIfMissing:false}") boolean createBucketIfMissing
+            @Value("${app.s3.createBucketIfMissing:false}") boolean createBucketIfMissing,
+            @Value("${app.s3.region:}") String region
     ) {
         this.s3Client = s3Client;
         this.bucket = bucket;
         this.createBucketIfMissing = createBucketIfMissing;
+        this.region = region == null ? "" : region.trim();
         ensureBucket();
     }
 
     private void ensureBucket() {
         try {
             s3Client.headBucket(b -> b.bucket(bucket));
-        } catch (S3Exception e) {
+        } catch (S3Exception e) { // 하위 예외(NoSuchBucketException 등)도 여기서 처리
             if (!createBucketIfMissing) return;
             try {
-                s3Client.createBucket(b -> b.bucket(bucket));
+                CreateBucketRequest.Builder builder = CreateBucketRequest.builder().bucket(bucket);
+                if (!region.isBlank()) {
+                    builder = builder.createBucketConfiguration(
+                            CreateBucketConfiguration.builder()
+                                    .locationConstraint(BucketLocationConstraint.fromValue(region))
+                                    .build()
+                    );
+                }
+                s3Client.createBucket(builder.build());
             } catch (S3Exception ce) {
                 throw new ApiException(ErrorCode.STORAGE_FAILED,
                         "S3 버킷 생성 실패: " + ce.awsErrorDetails().errorMessage(), ce);
@@ -53,23 +65,24 @@ public class S3PhotoStorage implements PhotoStorage {
 
     @Override
     public String store(MultipartFile file) throws Exception {
-        byte[] data = file.getBytes();                    // 한 번만 읽어서 재사용
-        String reported = file.getContentType();          // 클라이언트가 보낸 MIME
-        String detected = detectMime(data);               // 시그니처로 감지
+        byte[] data = file.getBytes();
+
+        // HTML/JSON 차단
+        if (looksLikeHtmlOrJson(data)) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "이미지/영상 파일이 아닙니다(HTML/JSON 감지)");
+        }
+
+        String reported = file.getContentType();
+        String detected = detectMime(data);
         String mime = chooseMime(reported, detected, file.getOriginalFilename());
 
-        String ext = extensionForMime(mime, file.getOriginalFilename());
-        String today = LocalDate.now().toString();
-        String key = String.format(
-                "albums/%s/%s-qr_photo_%d.%s",
-                today, UUID.randomUUID(), System.currentTimeMillis(), ext
-        );
+        String key = buildKey(mime, file.getOriginalFilename());
 
         try {
             PutObjectRequest req = PutObjectRequest.builder()
                     .bucket(bucket)
                     .key(key)
-                    .contentType(mime)                    // 정확한 MIME
+                    .contentType(mime)
                     .contentDisposition("inline; filename=\"" + safeFilename(file.getOriginalFilename()) + "\"")
                     .build();
 
@@ -81,16 +94,57 @@ public class S3PhotoStorage implements PhotoStorage {
         } catch (SdkClientException e) {
             throw new StorageException("S3 클라이언트 오류: " + e.getMessage(), e);
         } catch (Exception e) {
-            throw new StorageException("파일 저장 실패", e);
+            throw new StorageException("파일 저장 실패: " + e.getClass().getSimpleName() + " - " + e.getMessage(), e);
         }
     }
 
+    /** URL 크롤링 등으로 확보한 바이트를 직접 저장 */
+    @Override
+    public String storeBytes(byte[] data, String originalFilename, String contentType) throws Exception {
+        if (data == null || data.length == 0) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "빈 데이터는 저장할 수 없습니다.");
+        }
+        if (looksLikeHtmlOrJson(data)) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "이미지/영상 대신 HTML/JSON 응답입니다.");
+        }
+
+        String detected = detectMime(data);
+        String mime = chooseMime(contentType, detected, originalFilename);
+        String key = buildKey(mime, originalFilename);
+
+        try {
+            PutObjectRequest req = PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .contentType(mime)
+                    .contentDisposition("inline; filename=\"" + safeFilename(originalFilename) + "\"")
+                    .build();
+
+            s3Client.putObject(req, RequestBody.fromBytes(data));
+            return key;
+
+        } catch (S3Exception e) {
+            throw new StorageException("S3 업로드 실패: " + e.awsErrorDetails().errorMessage(), e);
+        } catch (SdkClientException e) {
+            throw new StorageException("S3 클라이언트 오류: " + e.getMessage(), e);
+        } catch (Exception e) {
+            throw new StorageException("파일 저장 실패: " + e.getClass().getSimpleName() + " - " + e.getMessage(), e);
+        }
+    }
+
+    private String buildKey(String mime, String originalName) {
+        String ext = extensionForMime(mime, originalName);
+        String today = LocalDate.now().toString();
+        return String.format("albums/%s/%s-qr_photo_%d.%s",
+                today, UUID.randomUUID(), System.currentTimeMillis(), ext);
+    }
+
     private static String safeFilename(String name) {
-        if (name == null) return "file";
+        if (name == null || name.isBlank()) return "file";
         return name.replaceAll("[\\r\\n\\\\/\"<>:*?|]", "_");
     }
 
-    // ── MIME 최종 결정: reported > detected > filename 추정 > 기본값 ──
+    // MIME 최종 결정
     private static String chooseMime(String reported, String detected, String originalName) {
         if (isGood(reported)) return reported;
         if (isGood(detected)) return detected;
@@ -115,7 +169,7 @@ public class S3PhotoStorage implements PhotoStorage {
         return null;
     }
 
-    // ── 시그니처 감지(HEIC/WEBP/PNG/JPEG/MP4) ──
+    // 간단 매직넘버 MIME 감지
     private static String detectMime(byte[] b) {
         if (b == null || b.length < 4) return null;
 
@@ -128,24 +182,33 @@ public class S3PhotoStorage implements PhotoStorage {
                 && b[4]==0x0D && b[5]==0x0A && b[6]==0x1A && b[7]==0x0A)
             return "image/png";
 
-        // WEBP (RIFF....WEBP)
+        // WEBP
         if (b.length >= 12 && b[0]=='R' && b[1]=='I' && b[2]=='F' && b[3]=='F'
                 && b[8]=='W' && b[9]=='E' && b[10]=='B' && b[11]=='P')
             return "image/webp";
 
-        // ISO-BMFF (ftyp)
+        // ISO-BMFF (ftyp) → heic/mp4 등
         if (b.length >= 12 && b[4]=='f' && b[5]=='t' && b[6]=='y' && b[7]=='p') {
-            // major/compatible brands에 heic/heix/heif/heim/avif 등 포함 가능
-            String brand = new String(new byte[]{b[8], b[9], b[10], b[11]});
+            String brand = new String(new byte[]{b[8], b[9], b[10], b[11]}, StandardCharsets.US_ASCII);
             if (brand.startsWith("he") || brand.equals("mif1") || brand.equals("msf1"))
-                return "image/heic";          // HEIC/HEIF
-            return "video/mp4";               // 그 외는 mp4로 간주
+                return "image/heic";
+            return "video/mp4";
         }
+
+        // HTML/JSON 힌트
+        String head = new String(b, 0, Math.min(b.length, 32), StandardCharsets.US_ASCII).trim().toLowerCase();
+        if (head.startsWith("<!doc") || head.startsWith("<html") || head.startsWith("{\""))
+            return "text/html";
 
         return null;
     }
 
-    // ── 확장자 매핑(HEIC/HEIF 지원) ──
+    private static boolean looksLikeHtmlOrJson(byte[] b) {
+        if (b == null || b.length < 5) return false;
+        String head = new String(b, 0, Math.min(b.length, 48), StandardCharsets.US_ASCII).trim().toLowerCase();
+        return head.startsWith("<!doc") || head.startsWith("<html") || head.startsWith("{\"") || head.contains("<body");
+    }
+
     private static String extensionForMime(String mime, String originalName) {
         String m = (mime == null) ? "" : mime.toLowerCase(Locale.ROOT);
         if (m.equals("image/jpeg")) return "jpg";
@@ -153,9 +216,14 @@ public class S3PhotoStorage implements PhotoStorage {
         if (m.equals("image/webp")) return "webp";
         if (m.equals("image/heic")) return "heic";
         if (m.equals("video/mp4"))  return "mp4";
-        // reported/detected가 모두 애매하면 원래 확장자 유지 시도
+        if (m.equals("text/html"))  return "html";
         String guessed = guessFromName(originalName);
         if (guessed != null) return extensionForMime(guessed, null);
         return "bin";
+    }
+
+    public static class StorageException extends RuntimeException {
+        public StorageException(String msg) { super(msg); }
+        public StorageException(String msg, Throwable cause) { super(msg, cause); }
     }
 }

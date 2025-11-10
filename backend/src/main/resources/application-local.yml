@@ -37,3 +37,4 @@ app:
     accessKey: test
     secretKey: test
     pathStyle: true
+    createBucketIfMissing: true

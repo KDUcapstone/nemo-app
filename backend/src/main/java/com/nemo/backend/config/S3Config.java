@@ -6,7 +6,6 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -19,9 +18,9 @@ import java.time.Duration;
 public class S3Config {
 
     @Value("${app.s3.region}")
-    private String region;
+    private String region;                // LocalStack/실AWS 공통 (예: ap-northeast-2)
 
-    @Value("${app.s3.endpoint:}")   // LocalStack: http://localhost:4566 , 실AWS: 빈칸
+    @Value("${app.s3.endpoint:}")         // LocalStack: http://localhost:4566 , 실AWS: 빈칸
     private String endpoint;
 
     @Value("${app.s3.accessKey}")
@@ -30,7 +29,7 @@ public class S3Config {
     @Value("${app.s3.secretKey}")
     private String secretKey;
 
-    @Value("${app.s3.pathStyle:true}")
+    @Value("${app.s3.pathStyle:true}")    // LocalStack=true, 실AWS=false 권장
     private boolean pathStyle;
 
     @Bean
@@ -39,13 +38,25 @@ public class S3Config {
                 AwsBasicCredentials.create(accessKey, secretKey));
 
         var s3Conf = S3Configuration.builder()
-                .pathStyleAccessEnabled(pathStyle) // LocalStack = true, 실AWS = false 권장
+                .pathStyleAccessEnabled(pathStyle)
+                .build();
+
+        var http = ApacheHttpClient.builder()
+                .connectionTimeout(Duration.ofSeconds(5))
+                .socketTimeout(Duration.ofSeconds(30))
+                .maxConnections(64)
+                .build();
+
+        var override = ClientOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(60))
+                .apiCallAttemptTimeout(Duration.ofSeconds(30))
                 .build();
 
         var builder = S3Client.builder()
                 .region(Region.of(region))
                 .credentialsProvider(creds)
-                .httpClientBuilder(ApacheHttpClient.builder())   // ★ 여기만 교체
+                .httpClient(http)
+                .overrideConfiguration(override)
                 .serviceConfiguration(s3Conf);
 
         if (endpoint != null && !endpoint.isBlank()) {
