@@ -2,13 +2,14 @@ package com.nemo.backend.domain.photo.controller;
 
 import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
 import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
+import com.nemo.backend.domain.photo.dto.PhotoListItemDto;
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
+import com.nemo.backend.domain.photo.dto.PhotoUploadRequest;
 import com.nemo.backend.domain.photo.service.PhotoService;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
-import com.nemo.backend.domain.photo.dto.PhotoListItemDto;
-import com.nemo.backend.web.PagedResponse;
 import com.nemo.backend.web.PageMetaDto;
+import com.nemo.backend.web.PagedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
@@ -40,22 +41,54 @@ public class PhotoController {
         this.refreshTokenRepository = refreshTokenRepository;
     }
 
-    @Operation(summary = "QR 업로드(명세 호환)",
-            requestBody = @RequestBody(content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)))
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "QR/파일 업로드(둘 중 하나)", requestBody = @RequestBody(
+            content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)))
+    @PostMapping(consumes = { MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE, MediaType.APPLICATION_JSON_VALUE },
+            produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<PhotoUploadResponse> upload(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+
+            // A) 순수 파일 업로드 경로
             @RequestPart(value = "image", required = false) MultipartFile image,
-            @RequestParam("qrCode") String qrCode,
-            @RequestParam(value = "brand", required = false) String brand,
+
+            // B) URL 업로드 경로 (이전 프론트 호환: qrCode/qrUrl 둘 다 받되, qrUrl 우선)
+            @RequestParam(value = "qrUrl",  required = false) String qrUrl,
+            @RequestParam(value = "qrCode", required = false) String qrCode,
+
+            // 보조 필드들
+            @RequestParam(value = "brand",    required = false) String brand,
             @RequestParam(value = "location", required = false) String location,
-            @RequestParam(value = "takenAt", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime takenAt,
-            @RequestParam(value = "tagList", required = false) String tagListJson,
-            @RequestParam(value = "friendIdList", required = false) String friendIdListJson,
-            @RequestParam(value = "memo", required = false) String memo
+            @RequestParam(value = "takenAt",  required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime takenAt,
+
+            @RequestParam(value = "tagList",       required = false) String tagListJson,
+            @RequestParam(value = "friendIdList",  required = false) String friendIdListJson,
+            @RequestParam(value = "memo",          required = false) String memo
     ) {
         Long userId = extractUserId(authorizationHeader);
-        PhotoResponseDto dto = photoService.uploadHybrid(userId, qrCode, image, brand, location, takenAt, tagListJson, friendIdListJson, memo);
+
+        // 하나의 DTO로 합성해 서비스로 전달
+        PhotoUploadRequest req = new PhotoUploadRequest(
+                image,
+                (qrUrl != null && !qrUrl.isBlank()) ? qrUrl : qrCode, // qrUrl 우선, 없으면 qrCode 사용
+                qrCode,
+                (takenAt != null) ? takenAt.toString() : null,
+                location,
+                brand,
+                memo
+        );
+
+        PhotoResponseDto dto = photoService.uploadHybrid(
+                userId,
+                req.qrUrl(),  // 서비스에서 URL/직접파일 분기
+                req.image(),
+                brand,
+                location,
+                takenAt,
+                tagListJson,
+                friendIdListJson,
+                memo
+        );
 
         String isoTakenAt = (dto.getTakenAt() != null)
                 ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)

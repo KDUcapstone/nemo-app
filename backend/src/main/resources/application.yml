@@ -80,7 +80,7 @@ app:
     createBucketIfMissing: true        # ★ 없으면 자동 생성
 
   # 업로드된 파일을 외부 URL로 만들 때 사용할 백엔드 퍼블릭 베이스 URL
-  public-base-url: http://localhost:8080
+  public-base-url: http://10.0.2.2:8080
 
 # =============================
 # 로깅

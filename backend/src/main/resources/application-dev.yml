@@ -30,3 +30,14 @@ app:
     secret: "dev-very-secret-key-change-me-32bytes-min"   # ★로컬 전용 키 (운영에선 환경변수로)
     issuer: "nemo-backend"
     access-ttl-ms: 3600000    # 1시간
+
+  s3:
+    bucket: nemo-dev-photos
+    region: ap-northeast-2
+    endpoint: http://localhost:4566
+    accessKey: test
+    secretKey: test
+    pathStyle: true
+    createBucketIfMissing: true
+
+  public-base-url: http://10.0.2.2:8080
