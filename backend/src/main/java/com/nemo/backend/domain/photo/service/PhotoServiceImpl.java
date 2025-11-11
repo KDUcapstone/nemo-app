@@ -86,20 +86,30 @@ public class PhotoServiceImpl implements PhotoService {
         String storedVideo = null;
 
         if (image != null && !image.isEmpty()) {
-            // A) 직접 파일 업로드
             try {
-                String key = storage.store(image);
+                String key = storage.store(image);                 // 여기서 INVALID_ARGUMENT 던질 수 있음
                 String url = toPublicUrl(key);
                 storedImage = url;
                 storedThumb = url;
+            } catch (ApiException ae) {
+                // 파일 바이트가 HTML/JSON → url 폴백
+                if (ae.getErrorCode() == ErrorCode.INVALID_ARGUMENT && looksLikeUrl(qrUrlOrPayload)) {
+                    AssetPair ap = fetchAssetsFromQrPayload(qrUrlOrPayload);
+                    storedImage = ap.imageUrl;
+                    storedThumb = ap.thumbnailUrl != null ? ap.thumbnailUrl : ap.imageUrl;
+                    storedVideo = ap.videoUrl;
+                    if (takenAt == null) takenAt = ap.takenAt;
+                } else {
+                    // 그대로 전달 (글로벌 핸들러가 적절한 상태코드로 응답)
+                    throw ae;
+                }
             } catch (Exception e) {
-                throw new StorageException("파일 저장 실패", e);
+                // 진짜 저장 실패만 500/502 계열로
+                throw new ApiException(ErrorCode.STORAGE_FAILED, "파일 저장 실패: " + e.getMessage(), e);
             }
         } else {
-            // B) URL/QR 경로: 원격 추출
-            if (!looksLikeUrl(qrUrlOrPayload)) {
-                throw new ApiException(ErrorCode.INVALID_ARGUMENT, "지원하지 않는 QR/URL 포맷입니다.");
-            }
+            // URL 경로
+            if (!looksLikeUrl(qrUrlOrPayload)) throw new InvalidQrException("지원하지 않는 QR/URL 포맷입니다.");
             AssetPair ap = fetchAssetsFromQrPayload(qrUrlOrPayload);
             storedImage = ap.imageUrl;
             storedThumb = ap.thumbnailUrl != null ? ap.thumbnailUrl : ap.imageUrl;
