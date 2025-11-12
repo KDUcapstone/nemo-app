@@ -37,7 +37,7 @@ class MapApi {
     if (res.statusCode != 200) {
       throw Exception('map init 실패: ${res.statusCode}');
     }
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>> getViewport({
@@ -130,7 +130,7 @@ class MapApi {
     if (res.statusCode != 200) {
       throw Exception('viewport 실패: ${res.statusCode}');
     }
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>> getDelta({
@@ -197,6 +197,6 @@ class MapApi {
     if (res.statusCode != 200) {
       throw Exception('delta 실패: ${res.statusCode}');
     }
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 }
