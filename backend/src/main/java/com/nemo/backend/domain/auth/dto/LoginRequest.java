@@ -1,22 +1,17 @@
 package com.nemo.backend.domain.auth.dto;
 
+import lombok.Getter;
+
 /**
- * Request body used when logging in.  Requires both email and password.
+ * 로그인할 때 사용되는 요청 본문입니다.  이메일과 비밀번호가 모두 필요합니다.
  */
+@Getter
 public class LoginRequest {
     private String email;
     private String password;
 
-    public String getEmail() {
-        return email;
-    }
-
     public void setEmail(String email) {
         this.email = email;
-    }
-
-    public String getPassword() {
-        return password;
     }
 
     public void setPassword(String password) {

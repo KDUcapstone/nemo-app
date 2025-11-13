@@ -22,3 +22,21 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     profiles: ["prod"]
+
+  # --- Local S3 (LocalStack) ---
+  localstack:
+    image: localstack/localstack:2.3
+    container_name: nemo-localstack
+    ports:
+      - "4566:4566"     # http://localhost:4566
+    environment:
+      - SERVICES=s3
+      - AWS_DEFAULT_REGION=ap-northeast-2
+      - PERSISTENCE=1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./infra/localstack-init:/etc/localstack/init/ready.d
+    profiles: [ "dev","s3" ]   # dev에서 자동 사용하거나 명시적으로 s3 켜기
+
+volumes:
+  localstack_data:

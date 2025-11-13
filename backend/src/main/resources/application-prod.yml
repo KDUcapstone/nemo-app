@@ -1,0 +1,27 @@
+# ============================================
+# 🚀 application-prod.yml
+# - CloudType에서 백엔드와 DB를 함께 배포했을 때 사용
+# - 내부 통신 (서비스명:3306)으로 연결
+# - 비밀번호 등 민감정보는 환경변수(시크릿)로 주입
+# ============================================
+
+spring:
+  datasource:
+    driver-class-name: org.mariadb.jdbc.Driver
+    # 🛰️ 내부 통신용 주소 (포트 고정: 3306)
+    url: jdbc:mariadb://svc.sel5.cloudtype.app:30303/nemo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
+    username: ${DB_USER}         # 환경변수로 관리 (CloudType 시크릿)
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate         # 운영 환경은 validate (DB 변경 금지)
+    show-sql: false
+    properties:
+      hibernate.format_sql: true
+
+app:
+  s3:
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}
+    pathStyle: false

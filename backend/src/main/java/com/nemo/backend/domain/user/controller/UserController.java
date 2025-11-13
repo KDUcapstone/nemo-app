@@ -1,97 +1,75 @@
 package com.nemo.backend.domain.user.controller;
 
+import com.nemo.backend.domain.auth.dto.DeleteAccountRequest;
 import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
 import com.nemo.backend.domain.auth.service.AuthService;
-import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
-import com.nemo.backend.domain.user.dto.UpdateUserRequest;
 import com.nemo.backend.domain.user.dto.UserProfileResponse;
 import com.nemo.backend.domain.user.entity.User;
-import com.nemo.backend.domain.user.service.UserService;
-import com.nemo.backend.global.exception.ApiException;
-import com.nemo.backend.global.exception.ErrorCode;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
+import com.nemo.backend.domain.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Collections;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+import java.time.LocalDateTime;
 
-/**
- * Controller for retrieving, updating and deleting the current user's profile.
- * 로그아웃 이후에는 refresh 토큰이 존재하지 않으므로 모든 보호 API는 401을 응답한다.
- */
+import java.util.Map;
+
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping(value = "/api/users", produces = MediaType.APPLICATION_JSON_VALUE)
 public class UserController {
-    private final UserService userService;
-    private final AuthService authService;
-    private final JwtTokenProvider jwtTokenProvider;
-    private final RefreshTokenRepository refreshTokenRepository;
 
-    public UserController(UserService userService,
-                          AuthService authService,
-                          JwtTokenProvider jwtTokenProvider,
-                          RefreshTokenRepository refreshTokenRepository) {
-        this.userService = userService;
-        this.authService = authService;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
+    private final AuthService authService;
+
+    public UserController(JwtTokenProvider jwtTokenProvider,
+                          UserRepository userRepository,
+                          AuthService authService) {
         this.jwtTokenProvider = jwtTokenProvider;
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.userRepository = userRepository;
+        this.authService = authService;
     }
 
-    @GetMapping("/me")
-    public ResponseEntity<UserProfileResponse> me(HttpServletRequest request) {
-        Long userId = extractUserId(request);
-        User user = userService.getProfile(userId);
-        UserProfileResponse response = new UserProfileResponse(
+    // 내 정보 조회
+    @GetMapping(value = "/me", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> getMe(HttpServletRequest request) {
+        String token = jwtTokenProvider.resolveToken(request);
+        if (token == null || !jwtTokenProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "유효하지 않은 토큰"));
+        }
+        Long userId = jwtTokenProvider.getUserId(token);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        UserProfileResponse body = new UserProfileResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getNickname(),
                 user.getProfileImageUrl(),
-                user.getProvider(),
-                user.getSocialId(),
-                user.getCreatedAt()
+                user.getCreatedAt()   // BaseEntity에서 상속받음
         );
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok().body(body);
     }
 
-    @PatchMapping("/me")
-    public ResponseEntity<UserProfileResponse> updateMe(HttpServletRequest request, @RequestBody UpdateUserRequest body) {
-        Long userId = extractUserId(request);
-        User updated = userService.updateProfile(userId, body);
-        UserProfileResponse response = new UserProfileResponse(
-                updated.getId(),
-                updated.getEmail(),
-                updated.getNickname(),
-                updated.getProfileImageUrl(),
-                updated.getProvider(),
-                updated.getSocialId(),
-                updated.getCreatedAt()
-        );
-        return ResponseEntity.ok(response);
-    }
 
-    @DeleteMapping("/me")
-    public ResponseEntity<?> deleteMe(HttpServletRequest request) {
-        Long userId = extractUserId(request);
-        authService.deleteAccount(userId);
-        return ResponseEntity.ok(Collections.singletonMap("message", "회원탈퇴가 정상적으로 처리되었습니다."));
-    }
-
-    private Long extractUserId(HttpServletRequest request) {
-        String authorization = request.getHeader("Authorization");
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
+    // 회원탈퇴 (비밀번호 검증)
+    @DeleteMapping(value = "/me", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> deleteMe(@Valid @RequestBody DeleteAccountRequest body,
+                                      HttpServletRequest httpRequest) {
+        String token = jwtTokenProvider.resolveToken(httpRequest);
+        if (token == null || !jwtTokenProvider.validateToken(token)) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "유효하지 않은 토큰"));
         }
-        String token = authorization.substring(7);
-        if (!jwtTokenProvider.validateToken(token)) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
-        }
+
         Long userId = jwtTokenProvider.getUserId(token);
+        authService.deleteAccount(userId, body.getPassword());
 
-        // ★ 로그아웃된 사용자는 refresh 토큰이 존재하지 않으므로 401
-        boolean hasRefresh = refreshTokenRepository.findFirstByUserId(userId).isPresent();
-        if (!hasRefresh) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
-        }
-        return userId;
+        return ResponseEntity.ok(Map.of("message", "회원탈퇴 완료"));
     }
 }
