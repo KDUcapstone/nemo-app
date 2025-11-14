@@ -29,11 +29,13 @@ class AlbumApi {
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
       // mock content: 6개 고정 더미에서 페이징
+      const names = ['인생네컷', '하루필름', '포토이즘', '포토그레이', '포토랩', '엑시트'];
       final mock = List.generate(6, (i) {
         final id = 20 - i;
+        final title = names[i % names.length];
         return {
           'albumId': id,
-          'title': i == 0 ? '2025 여름방학' : '더미 앨범 $id',
+          'title': title,
           'coverPhotoUrl': i % 2 == 0
               ? 'https://picsum.photos/seed/album$id/600/800'
               : null,

@@ -54,88 +54,109 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             // 사진/앨범 전환 토글(정중앙 고정) + (앨범 모드) 새 앨범 버튼(우측 끝)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                height: 36,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    if (!_showAlbums)
-                      Positioned(
-                        left: 0,
-                        child: _BrandFilter(
-                          value: _brand,
-                          onChanged: (v) {
-                            setState(() => _brand = v);
-                            context.read<PhotoProvider>().resetAndLoad(
-                              brand: v,
-                            );
-                          },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: 40,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: !_showAlbums
+                              ? ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 70,
+                                  ),
+                                  child: _BrandFilter(
+                                    value: _brand,
+                                    onChanged: (v) {
+                                      setState(() => _brand = v);
+                                      context
+                                          .read<PhotoProvider>()
+                                          .resetAndLoad(brand: v);
+                                    },
+                                  ),
+                                )
+                              : const SizedBox(width: 40),
                         ),
-                      ),
-                    Center(
-                      child: _TopToggle(
-                        isAlbums: _showAlbums,
-                        onChanged: (isAlbums) =>
-                            setState(() => _showAlbums = isAlbums),
-                      ),
-                    ),
-                    if (_showAlbums)
-                      Positioned(
-                        right: 0,
-                        child: IconButton(
-                          icon: const Icon(Icons.add),
-                          tooltip: '새 앨범',
-                          padding: const EdgeInsets.all(6),
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
+                        Align(
+                          alignment: Alignment.center,
+                          child: _TopToggle(
+                            isAlbums: _showAlbums,
+                            onChanged: (isAlbums) =>
+                                setState(() => _showAlbums = isAlbums),
                           ),
-                          onPressed: () async {
-                            // 1) 사진 먼저 선택
-                            final selected = await Navigator.push<List<int>>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const SelectAlbumPhotosScreen(),
-                              ),
-                            );
-                            if (!mounted) return;
-                            if (selected == null) return;
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: _showAlbums
+                              ? IconButton(
+                                  icon: const Icon(Icons.add),
+                                  tooltip: '새 앨범',
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 36,
+                                    minHeight: 36,
+                                  ),
+                                  onPressed: () async {
+                                    final selected =
+                                        await Navigator.push<List<int>>(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const SelectAlbumPhotosScreen(),
+                                          ),
+                                        );
+                                    if (!mounted) return;
+                                    if (selected == null) return;
 
-                            // 2) 제목/설명 입력
-                            final created = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CreateAlbumScreenInitial(
-                                  selectedPhotoIds: selected,
+                                    final created = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            CreateAlbumScreenInitial(
+                                              selectedPhotoIds: selected,
+                                            ),
+                                      ),
+                                    );
+                                    if (!mounted) return;
+                                    if (created != null) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('앨범이 생성되었습니다.'),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                )
+                              : ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 30,
+                                  ),
+                                  child: _SortDropdown(
+                                    value: _sort,
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      setState(() => _sort = v);
+                                      context
+                                          .read<PhotoProvider>()
+                                          .resetAndLoad(sort: v);
+                                    },
+                                  ),
                                 ),
-                              ),
-                            );
-                            if (!mounted) return;
-                            if (created != null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('앨범이 생성되었습니다.')),
-                              );
-                            }
-                          },
                         ),
-                      ),
-                    if (!_showAlbums)
-                      Positioned(
-                        right: 0,
-                        child: _SortDropdown(
-                          value: _sort,
-                          onChanged: (v) {
-                            if (v == null) return;
-                            setState(() => _sort = v);
-                            context.read<PhotoProvider>().resetAndLoad(sort: v);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -229,19 +250,19 @@ class _TopToggle extends StatelessWidget {
     return ToggleButtons(
       isSelected: [!isAlbums, isAlbums],
       onPressed: (idx) => onChanged(idx == 1),
-      borderRadius: BorderRadius.circular(20),
-      constraints: const BoxConstraints(minHeight: 36, minWidth: 88),
+      borderRadius: BorderRadius.circular(18),
+      constraints: const BoxConstraints(minHeight: 32, minWidth: 80),
       selectedColor: scheme.onPrimary,
       fillColor: scheme.primary,
       color: scheme.onSurface.withOpacity(0.8),
-      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       children: const [
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: 10),
           child: Text('사진'),
         ),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: 10),
           child: Text('앨범'),
         ),
       ],
@@ -311,30 +332,39 @@ class _BrandFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const brands = <String?>[null, '인생네컷', '포토이즘', '포토그레이'];
+    final dropdownValue = brands.contains(value) ? value : null;
     return Container(
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         color: AppColors.secondary,
         border: Border.all(color: AppColors.divider, width: 1),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(1),
       ),
-      child: Center(
-        child: PopupMenuButton<String?>(
-          padding: EdgeInsets.zero,
-          color: AppColors.secondary,
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          onSelected: (v) => onChanged(v),
-          itemBuilder: (ctx) => brands
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: dropdownValue,
+          isExpanded: true,
+          hint: const Text(
+            '🏷️',
+            style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          ),
+          icon: const Icon(
+            Icons.arrow_drop_down,
+            size: 18,
+            color: AppColors.textPrimary,
+          ),
+          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          onChanged: (selected) {
+            debugPrint('[BrandFilter] dropdown changed value=$selected');
+            onChanged(selected);
+          },
+          selectedItemBuilder: (ctx) => brands
               .map(
-                (b) => PopupMenuItem<String?>(
-                  value: b,
+                (_) => const Center(
                   child: Text(
-                    b ?? '전체',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    '🏷️',
+                    style: TextStyle(
                       fontSize: 14,
                       color: AppColors.textPrimary,
                     ),
@@ -342,16 +372,18 @@ class _BrandFilter extends StatelessWidget {
                 ),
               )
               .toList(),
-          child: const SizedBox(
-            height: 28,
-            child: Center(
-              child: Text(
-                '🏷️',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
-              ),
-            ),
-          ),
+          items: brands
+              .map(
+                (b) => DropdownMenuItem<String?>(
+                  value: b,
+                  child: Text(
+                    b ?? '전체',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
         ),
       ),
     );
