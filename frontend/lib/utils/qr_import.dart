@@ -2,14 +2,10 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-// ignore: depend_on_referenced_packages
-import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
-import 'package:frontend/services/photo_upload_api.dart';
-import 'package:provider/provider.dart';
-import 'package:frontend/providers/photo_provider.dart';
+import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 
-/// QR 페이로드를 받아 사진을 다운로드하고 업로드까지 수행하는 공용 유틸
+/// QR 페이로드를 받아 사진을 다운로드하고 상세정보 입력 화면으로 이동
 Future<void> handleQrImport(BuildContext context, String payload) async {
   final match = RegExp(r'https?://[^\s]+').firstMatch(payload);
   if (match == null) {
@@ -21,7 +17,18 @@ Future<void> handleQrImport(BuildContext context, String payload) async {
   final url = match.group(0)!;
 
   try {
+    // 로딩 표시
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
     final resp = await http.get(Uri.parse(url));
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context); // 로딩 닫기
+    }
+    
     if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
       final Uint8List bytes = resp.bodyBytes;
       final tempDir = Directory.systemTemp;
@@ -29,25 +36,44 @@ Future<void> handleQrImport(BuildContext context, String payload) async {
       final filePath = p.join(tempDir.path, fileName);
       final file = await File(filePath).writeAsBytes(bytes);
 
-      final nowIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(DateTime.now());
-      final api = PhotoUploadApi();
-      final result = await api.uploadPhotoViaQr(
-        qrCode: payload,
-        imageFile: file,
-        takenAtIso: nowIso,
-        location: '포토부스(추정)',
-        brand: '인생네컷',
-        tagList: const ['QR업로드'],
-        friendIdList: const [],
-      );
+      // 파일이 제대로 저장되었는지 확인
+      if (!await file.exists()) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('파일 저장에 실패했습니다.')),
+          );
+        }
+        return;
+      }
+
+      // 파일 크기 확인 (비어있지 않은지)
+      final fileLength = await file.length();
+      if (fileLength == 0) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('이미지 파일이 비어있습니다.')),
+          );
+        }
+        return;
+      }
 
       if (!context.mounted) return;
-      // 상태 반영 (목록 갱신)
-      context.read<PhotoProvider>().addFromResponse(result);
-      // 성공 알림
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('업로드 완료 (ID: ${result['photoId']})')),
+      
+      // 상세정보 입력 화면으로 이동
+      final success = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PhotoAddDetailScreen(
+            imageFile: file,
+            qrCode: payload,
+            defaultTakenAt: DateTime.now(),
+          ),
+        ),
       );
+      
+      if (success == true && context.mounted) {
+        // 성공적으로 추가된 경우 (화면에서 이미 알림 표시)
+      }
     } else {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -57,6 +83,10 @@ Future<void> handleQrImport(BuildContext context, String payload) async {
     }
   } catch (e) {
     if (context.mounted) {
+      // 로딩이 열려있을 수 있으므로 닫기
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('가져오기 실패: $e')));

@@ -78,10 +78,12 @@ class PhotoApi {
     final r = await http.get(_u('/api/photos/$photoId'), headers: _h());
     if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode == 403) {
-      throw Exception('접근 권한이 없습니다. (403)');
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '해당 사진에 접근할 권한이 없습니다.');
     }
     if (r.statusCode == 404) {
-      throw Exception('사진을 찾을 수 없습니다. (404)');
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '해당 사진을 찾을 수 없습니다.');
     }
     throw Exception('상세 조회 실패 (${r.statusCode})');
   }
@@ -121,6 +123,62 @@ class PhotoApi {
     }
     if (r.statusCode == 404) {
       throw Exception('사진이 존재하지 않습니다. (404)');
+    }
+    throw Exception('수정 실패 (${r.statusCode})');
+  }
+
+  /// 사진 상세정보 수정 (PATCH /api/photos/{photoId}/details)
+  /// takenAt, location, brand, tagList, friendIdList, memo를 수정 가능
+  Future<Map<String, dynamic>> updatePhotoDetails(
+    int photoId, {
+    DateTime? takenAt,
+    String? location,
+    String? brand,
+    List<String>? tagList,
+    List<int>? friendIdList,
+    String? memo,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      return {
+        'photoId': photoId,
+        'imageUrl': 'https://picsum.photos/seed/detail$photoId/800/1066',
+        'takenAt':
+            takenAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+        'location': location ?? '모킹 위치',
+        'brand': brand ?? '모킹 브랜드',
+        'tagList': tagList ?? <String>['모킹', '샘플'],
+        'friendList': [
+          {'userId': 3, 'nickname': '네컷러버'},
+        ],
+        'memo': memo ?? '모킹 상세 메모',
+      };
+    }
+    final body = <String, dynamic>{};
+    if (takenAt != null) {
+      body['takenAt'] = takenAt.toIso8601String();
+    }
+    if (location != null) body['location'] = location;
+    if (brand != null) body['brand'] = brand;
+    if (tagList != null) body['tagList'] = tagList;
+    if (friendIdList != null) body['friendIdList'] = friendIdList;
+    if (memo != null) body['memo'] = memo;
+
+    final r = await http.patch(
+      _u('/api/photos/$photoId/details'),
+      headers: _h(json: true),
+      body: jsonEncode(body),
+    );
+    if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    if (r.statusCode == 400) {
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '잘못된 요청 형식입니다. (400)');
+    }
+    if (r.statusCode == 403) {
+      throw Exception('수정 권한이 없습니다. (403)');
+    }
+    if (r.statusCode == 404) {
+      throw Exception('사진을 찾을 수 없습니다. (404)');
     }
     throw Exception('수정 실패 (${r.statusCode})');
   }
