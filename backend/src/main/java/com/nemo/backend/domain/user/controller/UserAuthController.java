@@ -5,12 +5,10 @@ import com.nemo.backend.domain.auth.dto.LoginRequest;
 import com.nemo.backend.domain.auth.dto.LoginResponse;
 import com.nemo.backend.domain.auth.dto.SignUpRequest;
 import com.nemo.backend.domain.auth.dto.SignUpResponse;
-import com.nemo.backend.domain.auth.jwt.JwtTokenProvider;
 import com.nemo.backend.domain.auth.service.AuthService;
-import com.nemo.backend.domain.auth.token.RefreshTokenRepository;
-import com.nemo.backend.global.exception.ApiException;
-import com.nemo.backend.global.exception.ErrorCode;
+import com.nemo.backend.domain.auth.util.AuthExtractor;       // ⭐ 공통 인증 유틸
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -20,69 +18,72 @@ import java.util.Map;
 
 @RestController
 @RequestMapping(value = "/api/users", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor // 🔥 final 필드 자동 생성자
 public class UserAuthController {
+
+    // --------------------------------------------------------
+    // ⭐ 의존성 주입
+    // --------------------------------------------------------
     private final AuthService authService;
-    private final JwtTokenProvider jwtTokenProvider;
-    private final RefreshTokenRepository refreshTokenRepository;
 
-    public UserAuthController(AuthService authService,
-                              JwtTokenProvider jwtTokenProvider,
-                              RefreshTokenRepository refreshTokenRepository) {
-        this.authService = authService;
-        this.jwtTokenProvider = jwtTokenProvider;
-        this.refreshTokenRepository = refreshTokenRepository;
-    }
+    /**
+     * 🔐 AuthExtractor
+     * - Authorization 헤더에서 userId 추출하는 공통 로직 담당
+     *   (JWT 검증 + RefreshToken 존재 여부까지)
+     * - 다른 컨트롤러(Album, Photo 등)에서도 똑같이 사용 가능
+     */
+    private final AuthExtractor authExtractor;
 
-    @PostMapping(value = "/signup",
+    // ========================================================
+    // 1) 회원가입
+    // ========================================================
+    @PostMapping(
+            value = "/signup",
             consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public ResponseEntity<SignUpResponse> signUp(@RequestBody SignUpRequest request) {
         SignUpResponse response = authService.signUp(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .contentType(MediaType.APPLICATION_JSON)  // ✅ Content-Type 강제
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
     }
 
-
+    // ========================================================
+    // 2) 로그인
+    //    - 실제 토큰 발급은 AuthService.login() 내부에서 처리
+    // ========================================================
     @PostMapping(
             value = "/login",
-            consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE,
-            produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
     )
-    public org.springframework.http.ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         LoginResponse body = authService.login(request);
-        return org.springframework.http.ResponseEntity
+        return ResponseEntity
                 .ok()
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(body);
     }
 
-
-
+    // ========================================================
+    // 3) 로그아웃
+    //    - AccessToken에서 userId 추출 → 해당 유저의 RefreshToken 삭제
+    //    - 인증 체크(토큰 유효 + RefreshToken 존재 여부)는 AuthExtractor가 담당
+    // ========================================================
     @PostMapping(value = "/logout", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String,String>> logout(HttpServletRequest request) {
-        Long userId = extractUserId(request);
-        authService.logout(userId);
-        // 204는 JSON과 충돌 날 수 있어 200으로 통일
-        return ResponseEntity.ok(Map.of("message", "logged out"));
-    }
-
-    private Long extractUserId(HttpServletRequest request) {
+        // 1) 헤더에서 Authorization 꺼내기
         String authorization = request.getHeader("Authorization");
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
-        }
-        String token = authorization.substring(7);
-        if (!jwtTokenProvider.validateToken(token)) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
-        }
-        Long userId = jwtTokenProvider.getUserId(token);
 
-        boolean hasRefresh = refreshTokenRepository.findFirstByUserId(userId).isPresent();
-        if (!hasRefresh) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
-        }
-        return userId;
+        // 2) 공통 유틸로 userId 추출 (JWT + RefreshToken 검증 포함)
+        Long userId = authExtractor.extractUserId(authorization);
+
+        // 3) 실제 로그아웃 처리 (RefreshToken 삭제)
+        authService.logout(userId);
+
+        // 4) JSON 메시지로 응답 (204 대신 200 OK + body)
+        return ResponseEntity.ok(Map.of("message", "logged out"));
     }
 }
