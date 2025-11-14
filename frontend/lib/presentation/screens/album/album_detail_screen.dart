@@ -25,6 +25,14 @@ class AlbumDetailScreen extends StatefulWidget {
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   bool _working = false;
   bool _autoHandled = false;
+  bool _isSelectionMode = false;
+  final Set<int> _selected = {};
+  final ValueNotifier<Set<int>> _selectedNotifier = ValueNotifier<Set<int>>(
+    <int>{},
+  );
+  // photos 캐싱 (해결책 A)
+  List<PhotoItem>? _cachedPhotos;
+  List<int>? _cachedPhotoIds;
 
   @override
   void initState() {
@@ -48,6 +56,22 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         ).showSnackBar(const SnackBar(content: Text('공유는 추후 지원 예정입니다.')));
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _selectedNotifier.dispose();
+    super.dispose();
+  }
+
+  // List 비교 헬퍼 함수 (해결책 A)
+  bool _listEquals<T>(List<T>? a, List<T>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _addPhotos() async {
@@ -411,10 +435,20 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         }
       });
     }
-    final photos = context.watch<PhotoProvider>().items.where(
-      (p) => album.photoIdList.contains(p.photoId),
-    );
-    final selected = <int>{};
+
+    // PhotoProvider는 read로 변경하여 불필요한 rebuild 방지 (해결책 A)
+    final photoProvider = context.read<PhotoProvider>();
+    final albumPhotoIds = album.photoIdList;
+
+    // 캐시 무효화 체크 (photoIdList가 변경된 경우만)
+    if (_cachedPhotos == null || !_listEquals(_cachedPhotoIds, albumPhotoIds)) {
+      _cachedPhotoIds = List.from(albumPhotoIds);
+      _cachedPhotos = photoProvider.items
+          .where((p) => albumPhotoIds.contains(p.photoId))
+          .toList(); // List로 변환하여 O(1) 접근 보장
+    }
+
+    final photos = _cachedPhotos!;
 
     return Scaffold(
       appBar: AppBar(
@@ -422,12 +456,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         actions: [
           IconButton(
             tooltip: '사진 선택',
-            icon: const Icon(Icons.checklist_rtl),
+            icon: Icon(_isSelectionMode ? Icons.done : Icons.checklist_rtl),
             onPressed: () {
-              // 길게 눌러 선택과 동일: 안내 토스트
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('사진을 길게 눌러 선택하세요.')));
+              setState(() {
+                _isSelectionMode = !_isSelectionMode;
+                if (!_isSelectionMode) {
+                  _selected.clear(); // 선택 모드 해제 시 선택 항목 초기화
+                  _selectedNotifier.value = <int>{};
+                }
+              });
             },
           ),
           PopupMenuButton<String>(
@@ -547,118 +584,103 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           Expanded(
             child: shouldFetchDetail
                 ? const Center(child: CircularProgressIndicator())
-                : StatefulBuilder(
-                    builder: (context, setInner) {
-                      return GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                            ),
-                        itemCount: photos.length,
-                        itemBuilder: (_, i) {
-                          final p = photos.elementAt(i);
-                          final isSel = selected.contains(p.photoId);
-                          return GestureDetector(
-                            onDoubleTap: () async {
-                              try {
-                                await AlbumApi.setCoverPhoto(
-                                  albumId: widget.albumId,
+                : GridView.builder(
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                    cacheExtent: 500,
+                    itemCount: photos.length,
+                    itemBuilder: (_, i) {
+                      final p = photos[i]; // elementAt → 인덱스 접근 (O(1))
+                      final isSel = _selected.contains(p.photoId);
+                      return RepaintBoundary(
+                        child: _PhotoGridItem(
+                          photo: p,
+                          isSelectionMode: _isSelectionMode,
+                          initialSelected: isSel,
+                          onSelectionChanged: (photoId) {
+                            // _selected Set만 업데이트 (부모 rebuild 완전 방지)
+                            if (_selected.contains(photoId)) {
+                              _selected.remove(photoId);
+                            } else {
+                              _selected.add(photoId);
+                            }
+                            // ValueNotifier 즉시 업데이트 (addPostFrameCallback 제거) (해결책 B)
+                            _selectedNotifier.value = Set<int>.from(_selected);
+                          },
+                          onDoubleTap: () async {
+                            if (_isSelectionMode) return;
+                            try {
+                              await AlbumApi.setCoverPhoto(
+                                albumId: widget.albumId,
+                                photoId: p.photoId,
+                              );
+                              if (!mounted) return;
+                              context.read<AlbumProvider>().updateCoverUrl(
+                                widget.albumId,
+                                p.imageUrl,
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('대표사진이 설정되었습니다.')),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('대표 설정 실패: $e')),
+                              );
+                            }
+                          },
+                          onView: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PhotoViewerScreen(
                                   photoId: p.photoId,
-                                );
-                                if (!mounted) return;
-                                context.read<AlbumProvider>().updateCoverUrl(
-                                  widget.albumId,
-                                  p.imageUrl,
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('대표사진이 설정되었습니다.'),
-                                  ),
-                                );
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('대표 설정 실패: $e')),
-                                );
-                              }
-                            },
-                            onLongPress: () {
-                              setInner(() {
-                                if (isSel) {
-                                  selected.remove(p.photoId);
-                                } else {
-                                  selected.add(p.photoId);
-                                }
-                              });
-                            },
-                            onTap: () {
-                              if (selected.isEmpty) {
-                                // 전체화면 뷰어로 진입 (사진탭과 동일)
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PhotoViewerScreen(
-                                      photoId: p.photoId,
-                                      imageUrl: p.imageUrl,
-                                      albumId: widget.albumId,
-                                    ),
-                                  ),
-                                );
-                              } else {
-                                setInner(() {
-                                  if (isSel) {
-                                    selected.remove(p.photoId);
-                                  } else {
-                                    selected.add(p.photoId);
-                                  }
-                                });
-                              }
-                            },
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Image.network(
-                                  p.imageUrl,
-                                  fit: BoxFit.cover,
-                                  alignment: Alignment.center,
-                                  errorBuilder: (_, __, ___) =>
-                                      const ColoredBox(
-                                        color: Color(0xFFE0E0E0),
-                                      ),
+                                  imageUrl: p.imageUrl,
+                                  albumId: widget.albumId,
                                 ),
-                                if (isSel)
-                                  Container(
-                                    color: Colors.blue.withOpacity(0.25),
-                                  ),
-                                // i 버튼 제거 요청에 따라 상세 오버레이 제거
-                              ],
-                            ),
-                          );
-                        },
+                              ),
+                            );
+                          },
+                        ),
                       );
                     },
                   ),
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: ElevatedButton.icon(
-            onPressed: _working
-                ? null
-                : () async {
-                    // 선택된 사진 삭제
-                    final toRemove = selected.toList();
-                    await _removeSelected(toRemove);
-                  },
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('선택 사진 삭제'),
-          ),
-        ),
+      bottomNavigationBar: ValueListenableBuilder<Set<int>>(
+        valueListenable: _selectedNotifier,
+        builder: (context, selectedSet, _) {
+          if (!_isSelectionMode || selectedSet.isEmpty) {
+            return const SizedBox.shrink();
+          }
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ElevatedButton.icon(
+                onPressed: _working
+                    ? null
+                    : () async {
+                        // 선택된 사진 삭제
+                        final toRemove = selectedSet.toList();
+                        await _removeSelected(toRemove);
+                        setState(() {
+                          _selected.clear();
+                          _isSelectionMode = false;
+                          _selectedNotifier.value = <int>{};
+                        });
+                      },
+                icon: const Icon(Icons.delete_outline),
+                label: Text('선택 사진 삭제 (${selectedSet.length})'),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -945,6 +967,156 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+class _PhotoGridItem extends StatefulWidget {
+  final PhotoItem photo;
+  final bool isSelectionMode;
+  final bool initialSelected;
+  final ValueChanged<int> onSelectionChanged;
+  final VoidCallback onDoubleTap;
+  final VoidCallback onView;
+
+  const _PhotoGridItem({
+    required this.photo,
+    required this.isSelectionMode,
+    required this.initialSelected,
+    required this.onSelectionChanged,
+    required this.onDoubleTap,
+    required this.onView,
+  });
+
+  @override
+  State<_PhotoGridItem> createState() => _PhotoGridItemState();
+}
+
+class _PhotoGridItemState extends State<_PhotoGridItem> {
+  final GlobalKey<_SelectionCheckboxState> _checkboxKey = GlobalKey();
+
+  void _handleTap() {
+    if (widget.isSelectionMode) {
+      // 체크박스를 직접 토글하여 즉각적인 시각적 피드백 (부모 알림은 제외)
+      _checkboxKey.currentState?.toggle(notifyParent: false);
+      // 부모에게 알림 (비동기 처리)
+      Future.microtask(() {
+        widget.onSelectionChanged(widget.photo.photoId);
+      });
+    } else {
+      widget.onView();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTap: widget.onDoubleTap,
+      onTap: _handleTap,
+      behavior: HitTestBehavior.opaque,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            widget.photo.imageUrl,
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            cacheWidth: 200,
+            cacheHeight: 200,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded) return child;
+              return frame == null
+                  ? const ColoredBox(color: Color(0xFFE0E0E0))
+                  : child;
+            },
+            errorBuilder: (_, __, ___) =>
+                const ColoredBox(color: Color(0xFFE0E0E0)),
+          ),
+          if (widget.isSelectionMode)
+            Positioned(
+              left: 6,
+              top: 6,
+              child: _SelectionCheckbox(
+                key: _checkboxKey,
+                initialSelected: widget.initialSelected,
+                onChanged: () {
+                  widget.onSelectionChanged(widget.photo.photoId);
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectionCheckbox extends StatefulWidget {
+  final bool initialSelected;
+  final VoidCallback onChanged;
+
+  const _SelectionCheckbox({
+    super.key,
+    required this.initialSelected,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SelectionCheckbox> createState() => _SelectionCheckboxState();
+}
+
+class _SelectionCheckboxState extends State<_SelectionCheckbox> {
+  late bool _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialSelected;
+  }
+
+  @override
+  void didUpdateWidget(_SelectionCheckbox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSelected != widget.initialSelected) {
+      _selected = widget.initialSelected;
+    }
+  }
+
+  void toggle({bool notifyParent = false}) {
+    // setState로 즉시 업데이트 (동기적, 가장 빠름)
+    setState(() {
+      _selected = !_selected;
+    });
+    // 부모에게 알림이 필요한 경우에만 호출
+    if (notifyParent) {
+      Future.microtask(() {
+        widget.onChanged();
+      });
+    }
+  }
+
+  void _handleTap() {
+    // 체크박스를 직접 터치한 경우에만 부모에게 알림
+    toggle(notifyParent: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _handleTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: _selected ? Colors.blue : Colors.black45,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          _selected ? Icons.check : Icons.radio_button_unchecked,
+          size: 16,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 }
