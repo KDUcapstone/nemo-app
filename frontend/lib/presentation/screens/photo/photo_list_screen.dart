@@ -511,7 +511,10 @@ class _PhotoCard extends StatelessWidget {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Container(color: Colors.grey[200], child: imageWidget),
+              child: Container(
+                color: Colors.grey[200],
+                child: Center(child: imageWidget),
+              ),
             ),
             Positioned(
               top: 8,
@@ -541,7 +544,7 @@ class _Thumb extends StatelessWidget {
       if (!file.existsSync()) return const _ThumbFallback();
       return Image.file(
         file,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         gaplessPlayback: true,
@@ -550,7 +553,7 @@ class _Thumb extends StatelessWidget {
     } else {
       return Image.network(
         imageUrl,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         loadingBuilder: (context, child, progress) {
