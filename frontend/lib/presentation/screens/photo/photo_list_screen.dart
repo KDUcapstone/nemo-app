@@ -14,6 +14,8 @@ import 'package:frontend/services/album_api.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -26,6 +28,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   bool _showAlbums = false;
   String _sort = 'takenAt,desc';
   String? _brand;
+  final ImagePicker _imagePicker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
@@ -38,11 +42,49 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     });
   }
 
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image != null && mounted) {
+        final file = File(image.path);
+        // PhotoAddDetailScreen으로 이동 (qrCode: null)
+        final success = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhotoAddDetailScreen(
+              imageFile: file,
+              qrCode: null, // QR 없음
+              defaultTakenAt: null, // EXIF 또는 사용자 입력
+            ),
+          ),
+        );
+        if (success == true && mounted) {
+          // 사진이 성공적으로 추가된 경우 (화면에서 이미 알림 표시)
+          // Provider 상태는 PhotoAddDetailScreen에서 이미 업데이트됨
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('갤러리에서 사진을 선택하지 못했습니다: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = context.watch<PhotoProvider>().items;
     return Scaffold(
       appBar: null,
+      floatingActionButton: !_showAlbums
+          ? _GlassFloatingActionButton(
+              onPressed: _pickFromGallery,
+            )
+          : null,
       body: SafeArea(
         child: Column(
           children: [
@@ -1123,6 +1165,59 @@ class _AlbumQuickActions extends StatelessWidget {
                 onTap: () => Navigator.pop(context, 'delete'),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 글라스모피즘 스타일의 FloatingActionButton (둥근 네모)
+class _GlassFloatingActionButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _GlassFloatingActionButton({
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 16, bottom: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.3),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onPressed,
+                child: const Icon(
+                  Icons.add,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            ),
           ),
         ),
       ),

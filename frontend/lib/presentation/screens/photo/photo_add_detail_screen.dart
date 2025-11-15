@@ -219,7 +219,9 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
 
   Future<void> _uploadPhoto() async {
     if (_formKey.currentState?.validate() != true) return;
-    if (_takenAt == null) {
+
+    // QR 업로드인 경우 촬영일시 필수, 갤러리 업로드인 경우 선택사항
+    if (widget.qrCode != null && _takenAt == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('촬영일시를 선택해주세요.')));
@@ -228,23 +230,47 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
 
     setState(() => _loading = true);
     try {
-      final takenAtIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!);
       final api = PhotoUploadApi();
+      Map<String, dynamic> result;
 
-      final result = await api.uploadPhotoViaQr(
-        qrCode: widget.qrCode ?? '',
-        imageFile: widget.imageFile,
-        takenAtIso: takenAtIso,
-        location: _locationCtrl.text.trim().isEmpty
-            ? '미지정'
-            : _locationCtrl.text.trim(),
-        brand: _brandCtrl.text.trim().isEmpty ? '미지정' : _brandCtrl.text.trim(),
-        tagList: _tags.isEmpty ? null : _tags,
-        friendIdList: _selectedFriendIds.isEmpty
-            ? null
-            : _selectedFriendIds.toList(),
-        memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
-      );
+      if (widget.qrCode != null) {
+        // QR 업로드: takenAt, location, brand 필수
+        final takenAtIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!);
+        result = await api.uploadPhotoViaQr(
+          qrCode: widget.qrCode!,
+          imageFile: widget.imageFile,
+          takenAtIso: takenAtIso,
+          location: _locationCtrl.text.trim().isEmpty
+              ? '미지정'
+              : _locationCtrl.text.trim(),
+          brand: _brandCtrl.text.trim().isEmpty
+              ? '미지정'
+              : _brandCtrl.text.trim(),
+          tagList: _tags.isEmpty ? null : _tags,
+          friendIdList: _selectedFriendIds.isEmpty
+              ? null
+              : _selectedFriendIds.toList(),
+          memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+        );
+      } else {
+        // 갤러리 업로드: 모든 필드 선택사항
+        final takenAtIso = _takenAt != null
+            ? DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!)
+            : null;
+        result = await api.uploadPhotoFromGallery(
+          imageFile: widget.imageFile,
+          takenAtIso: takenAtIso,
+          location: _locationCtrl.text.trim().isEmpty
+              ? null
+              : _locationCtrl.text.trim(),
+          brand: _brandCtrl.text.trim().isEmpty ? null : _brandCtrl.text.trim(),
+          tagList: _tags.isEmpty ? null : _tags,
+          friendIdList: _selectedFriendIds.isEmpty
+              ? null
+              : _selectedFriendIds.toList(),
+          memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+        );
+      }
 
       if (!context.mounted) return;
 
@@ -361,9 +387,9 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
               // 촬영일시
               Row(
                 children: [
-                  const Text(
-                    '촬영일시:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  Text(
+                    widget.qrCode != null ? '촬영일시*:' : '촬영일시:',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
