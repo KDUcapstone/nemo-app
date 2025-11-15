@@ -50,17 +50,44 @@ class AlbumApi {
           ).subtract(Duration(days: i * 5)).toIso8601String(),
         };
       });
+
+      // sort 파라미터에 따라 정렬 적용
+      final sortedMock = List<Map<String, dynamic>>.from(mock);
+      if (sort == 'createdAt,asc') {
+        // 오래된순: createdAt 오름차순
+        sortedMock.sort((a, b) {
+          final aDate = DateTime.parse(a['createdAt'] as String);
+          final bDate = DateTime.parse(b['createdAt'] as String);
+          return aDate.compareTo(bDate);
+        });
+      } else if (sort == 'title,asc') {
+        // 이름순: title 오름차순 (가나다순)
+        sortedMock.sort((a, b) {
+          final aTitle = (a['title'] as String?) ?? '';
+          final bTitle = (b['title'] as String?) ?? '';
+          return aTitle.compareTo(bTitle);
+        });
+      } else {
+        // 기본값: createdAt,desc (최신순) - 이미 mock이 최신순으로 생성됨
+        // 추가 정렬 불필요하지만 명시적으로 유지
+        sortedMock.sort((a, b) {
+          final aDate = DateTime.parse(a['createdAt'] as String);
+          final bDate = DateTime.parse(b['createdAt'] as String);
+          return bDate.compareTo(aDate);
+        });
+      }
+
       final start = page * size;
-      final end = (start + size).clamp(0, mock.length);
-      final content = start < mock.length
-          ? mock.sublist(start, end)
+      final end = (start + size).clamp(0, sortedMock.length);
+      final content = start < sortedMock.length
+          ? sortedMock.sublist(start, end)
           : <Map<String, dynamic>>[];
       return {
         'content': content,
         'page': {
           'size': size,
-          'totalElements': mock.length,
-          'totalPages': (mock.length / size).ceil(),
+          'totalElements': sortedMock.length,
+          'totalPages': (sortedMock.length / size).ceil(),
           'number': page,
         },
       };

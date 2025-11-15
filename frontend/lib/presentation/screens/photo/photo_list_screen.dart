@@ -27,6 +27,7 @@ class PhotoListScreen extends StatefulWidget {
 class _PhotoListScreenState extends State<PhotoListScreen> {
   bool _showAlbums = false;
   String _sort = 'takenAt,desc';
+  String _albumSort = 'createdAt,desc';
   String? _brand;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -106,29 +107,46 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       children: [
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: !_showAlbums
-                              ? ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 70,
-                                  ),
-                                  child: _BrandFilter(
-                                    value: _brand,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 30),
+                            child: _showAlbums
+                                ? _AlbumSortDropdown(
+                                    value: _albumSort,
                                     onChanged: (v) {
-                                      setState(() => _brand = v);
+                                      if (v == null) return;
+                                      setState(() => _albumSort = v);
+                                      context
+                                          .read<AlbumProvider>()
+                                          .resetAndLoad(sort: v);
+                                    },
+                                  )
+                                : _SortDropdown(
+                                    value: _sort,
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      setState(() => _sort = v);
                                       context
                                           .read<PhotoProvider>()
-                                          .resetAndLoad(brand: v);
+                                          .resetAndLoad(sort: v);
                                     },
                                   ),
-                                )
-                              : const SizedBox(width: 40),
+                          ),
                         ),
                         Align(
                           alignment: Alignment.center,
                           child: _TopToggle(
                             isAlbums: _showAlbums,
-                            onChanged: (isAlbums) =>
-                                setState(() => _showAlbums = isAlbums),
+                            onChanged: (isAlbums) {
+                              setState(() => _showAlbums = isAlbums);
+                              // 앨범 모드로 전환 시 Provider의 정렬 상태 동기화
+                              if (isAlbums) {
+                                final albumProvider = context
+                                    .read<AlbumProvider>();
+                                if (albumProvider.sort != _albumSort) {
+                                  albumProvider.resetAndLoad(sort: _albumSort);
+                                }
+                              }
+                            },
                           ),
                         ),
                         Align(
@@ -177,16 +195,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                 )
                               : ConstrainedBox(
                                   constraints: const BoxConstraints(
-                                    maxWidth: 30,
+                                    maxWidth: 70,
                                   ),
-                                  child: _SortDropdown(
-                                    value: _sort,
+                                  child: _BrandFilter(
+                                    value: _brand,
                                     onChanged: (v) {
-                                      if (v == null) return;
-                                      setState(() => _sort = v);
+                                      setState(() => _brand = v);
                                       context
                                           .read<PhotoProvider>()
-                                          .resetAndLoad(sort: v);
+                                          .resetAndLoad(brand: v);
                                     },
                                   ),
                                 ),
@@ -207,7 +224,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     items.isEmpty
                         ? const _EmptyState()
                         : (_showAlbums
-                              ? const _AlbumListGrid()
+                              ? _AlbumListGrid(sort: _albumSort)
                               : NotificationListener<ScrollNotification>(
                                   onNotification: (n) {
                                     if (n.metrics.pixels >=
@@ -490,6 +507,66 @@ class _SortDropdown extends StatelessWidget {
   }
 }
 
+class _AlbumSortDropdown extends StatelessWidget {
+  final String
+  value; // 'createdAt,desc' | 'createdAt,asc' | 'title,asc' | 'title,desc'
+  final ValueChanged<String?> onChanged;
+  const _AlbumSortDropdown({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const sorts = <Map<String, String>>[
+      {'value': 'createdAt,desc', 'label': '최신순'},
+      {'value': 'createdAt,asc', 'label': '오래된순'},
+      {'value': 'title,asc', 'label': '이름순'},
+    ];
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        border: Border.all(color: AppColors.divider, width: 1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Center(
+        child: PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          color: AppColors.secondary,
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          onSelected: (v) => onChanged(v),
+          itemBuilder: (ctx) => sorts
+              .map(
+                (m) => PopupMenuItem<String>(
+                  value: m['value']!,
+                  child: Text(
+                    m['label']!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+          child: const SizedBox(
+            height: 28,
+            child: Center(
+              child: Text(
+                '📅',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PhotoCard extends StatelessWidget {
   final PhotoItem item;
   final VoidCallback onTap;
@@ -652,7 +729,8 @@ class _DeleteButtonState extends State<_DeleteButton> {
 }
 
 class _AlbumListGrid extends StatefulWidget {
-  const _AlbumListGrid();
+  final String sort;
+  const _AlbumListGrid({required this.sort});
 
   @override
   State<_AlbumListGrid> createState() => _AlbumListGridState();
@@ -662,12 +740,28 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   int? _pressedIndex;
 
   @override
+  void didUpdateWidget(_AlbumListGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // sort 값이 변경되었고, Provider의 sort와도 다르면 다시 로드
+    if (oldWidget.sort != widget.sort) {
+      final provider = context.read<AlbumProvider>();
+      if (provider.sort != widget.sort) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
+          }
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<AlbumProvider>();
     if (provider.albums.isEmpty && !provider.isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          context.read<AlbumProvider>().resetAndLoad();
+          context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
         }
       });
     }
