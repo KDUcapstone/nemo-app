@@ -68,9 +68,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('갤러리에서 사진을 선택하지 못했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('갤러리에서 사진을 선택하지 못했습니다: $e')));
       }
     }
   }
@@ -81,9 +81,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     return Scaffold(
       appBar: null,
       floatingActionButton: !_showAlbums
-          ? _GlassFloatingActionButton(
-              onPressed: _pickFromGallery,
-            )
+          ? _GlassFloatingActionButton(onPressed: _pickFromGallery)
           : null,
       body: SafeArea(
         child: Column(
@@ -840,8 +838,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   Future<void> _showAlbumShareSheet(BuildContext context, int albumId) async {
     final searchCtrl = TextEditingController();
     final selectedIds = <int>{};
-    final Set<int> inFlight = <int>{};
-    List<Map<String, dynamic>> friends = await FriendApi.list();
+    List<Map<String, dynamic>> friends = await FriendApi.getFriends();
     List<Map<String, dynamic>> shareTargets = [];
     try {
       shareTargets = await AlbumApi.getShareTargets(albumId);
@@ -936,9 +933,15 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                     ),
                     onTapOutside: (_) => FocusScope.of(context).unfocus(),
                     onChanged: (q) async {
-                      friends = q.trim().isEmpty
-                          ? await FriendApi.list()
-                          : await FriendApi.search(q);
+                      if (q.trim().isEmpty) {
+                        friends = await FriendApi.getFriends();
+                      } else {
+                        final searchResults = await FriendApi.search(q);
+                        friends = searchResults.where((f) {
+                          final isFriend = (f['isFriend'] as bool?) ?? false;
+                          return isFriend;
+                        }).toList();
+                      }
                       // ignore: use_build_context_synchronously
                       (ctx as Element).markNeedsBuild();
                     },
@@ -950,7 +953,6 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                     final nick = f['nickname'] as String? ?? '친구$id';
                     final avatarUrl =
                         (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
-                    final isFriend = (f['isFriend'] as bool?) ?? true;
                     final checked = selectedIds.contains(id);
                     return ListTile(
                       leading: CircleAvatar(
@@ -963,85 +965,25 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                             : null,
                       ),
                       title: Text(nick),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!isFriend)
-                            OutlinedButton(
-                              onPressed: inFlight.contains(id)
-                                  ? null
-                                  : () async {
-                                      inFlight.add(id);
-                                      (ctx as Element).markNeedsBuild();
-                                      try {
-                                        await FriendApi.addFriend(id);
-                                        friends[idx] = {...f, 'isFriend': true};
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text('친구 추가 완료: $nick'),
-                                          ),
-                                        );
-                                      } catch (e) {
-                                        if (!context.mounted) return;
-                                        final msg =
-                                            e.toString().contains(
-                                              'ALREADY_FRIEND',
-                                            )
-                                            ? '이미 친구입니다.'
-                                            : e.toString().contains(
-                                                'USER_NOT_FOUND',
-                                              )
-                                            ? '사용자를 찾을 수 없습니다.'
-                                            : '친구 추가 실패';
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(content: Text(msg)),
-                                        );
-                                      } finally {
-                                        inFlight.remove(id);
-                                        (ctx).markNeedsBuild();
-                                      }
-                                    },
-                              child: inFlight.contains(id)
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('친구 추가'),
-                            ),
-                          const SizedBox(width: 8),
-                          Checkbox(
-                            value: checked,
-                            onChanged: isFriend
-                                ? (v) {
-                                    if (v == true) {
-                                      selectedIds.add(id);
-                                    } else {
-                                      selectedIds.remove(id);
-                                    }
-                                    (ctx as Element).markNeedsBuild();
-                                  }
-                                : null,
-                          ),
-                        ],
+                      trailing: Checkbox(
+                        value: checked,
+                        onChanged: (v) {
+                          if (v == true) {
+                            selectedIds.add(id);
+                          } else {
+                            selectedIds.remove(id);
+                          }
+                          (ctx as Element).markNeedsBuild();
+                        },
                       ),
-                      onTap: isFriend
-                          ? () {
-                              if (checked) {
-                                selectedIds.remove(id);
-                              } else {
-                                selectedIds.add(id);
-                              }
-                              (ctx as Element).markNeedsBuild();
-                            }
-                          : null,
+                      onTap: () {
+                        if (checked) {
+                          selectedIds.remove(id);
+                        } else {
+                          selectedIds.add(id);
+                        }
+                        (ctx as Element).markNeedsBuild();
+                      },
                     );
                   }),
                   const SizedBox(height: 8),
@@ -1176,9 +1118,7 @@ class _AlbumQuickActions extends StatelessWidget {
 class _GlassFloatingActionButton extends StatelessWidget {
   final VoidCallback onPressed;
 
-  const _GlassFloatingActionButton({
-    required this.onPressed,
-  });
+  const _GlassFloatingActionButton({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -1211,11 +1151,7 @@ class _GlassFloatingActionButton extends StatelessWidget {
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: onPressed,
-                child: const Icon(
-                  Icons.add,
-                  color: Colors.white,
-                  size: 28,
-                ),
+                child: const Icon(Icons.add, color: Colors.white, size: 28),
               ),
             ),
           ),

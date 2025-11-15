@@ -271,8 +271,14 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
             if (q.trim().isEmpty) {
               setState(() => _applySort());
             } else {
-              final results = await FriendApi.search(q);
-              setState(() => _filtered = results);
+              // 친구 목록 내에서만 로컬 검색
+              final query = q.toLowerCase();
+              final filtered = _friends.where((f) {
+                final nick = (f['nickname'] ?? '').toString().toLowerCase();
+                final email = (f['email'] ?? '').toString().toLowerCase();
+                return nick.contains(query) || email.contains(query);
+              }).toList();
+              setState(() => _filtered = filtered);
             }
           },
         ),
@@ -356,15 +362,6 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                           _toast(
                             context,
                             '선택한 ${friendIds.length}명에게 공유되었습니다.',
-                          );
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(
-                                albumId: albumId,
-                                autoOpenAction: 'share',
-                              ),
-                            ),
                           );
                         } catch (e) {
                           final s = e.toString();
