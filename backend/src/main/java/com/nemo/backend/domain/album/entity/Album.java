@@ -23,6 +23,10 @@ public class Album extends BaseEntity {
 
     private String description;
 
+    // ✅ 앨범 썸네일 URL (명세의 coverPhotoUrl)
+    @Column(name = "cover_photo_url")
+    private String coverPhotoUrl;
+
     // 소유자 (User)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
