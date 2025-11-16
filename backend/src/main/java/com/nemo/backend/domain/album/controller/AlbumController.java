@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.service.AlbumService;
+import com.nemo.backend.domain.album.service.AlbumShareService;
 import com.nemo.backend.domain.auth.util.AuthExtractor;  // 🔥 공통 인증 유틸
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,8 @@ public class AlbumController {
     // ⭐ 의존성 주입
     // --------------------------------------------------------
     private final AlbumService albumService;
+
+    private final AlbumShareService albumShareService; // ⬅ 추가
 
     /**
      * 🔐 AuthExtractor
@@ -131,6 +134,52 @@ public class AlbumController {
 
         Long userId = authExtractor.extractUserId(authorizationHeader);
         albumService.deleteAlbum(userId, albumId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // POST /api/albums/{albumId}/share
+    @PostMapping("/{albumId}/share")
+    public ResponseEntity<AlbumShareResponse> shareAlbum(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId,
+            @RequestBody AlbumShareRequest request
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumShareResponse resp = albumShareService.shareAlbum(albumId, userId, request);
+        return ResponseEntity.ok(resp);
+    }
+
+    // POST /api/albums/{albumId}/share/link
+    @PostMapping("/{albumId}/share/link")
+    public ResponseEntity<AlbumShareLinkResponse> createShareLink(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumShareLinkResponse resp = albumShareService.createShareLink(albumId, userId);
+        return ResponseEntity.ok(resp);
+    }
+
+    // GET /api/albums/{albumId}/share/targets
+    @GetMapping("/{albumId}/share/targets")
+    public ResponseEntity<AlbumShareTargetsResponse> getShareTargets(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumShareTargetsResponse resp = albumShareService.getShareTargets(albumId, userId);
+        return ResponseEntity.ok(resp);
+    }
+
+    // DELETE /api/albums/{albumId}/share/{userId}
+    @DeleteMapping("/{albumId}/share/{userId}")
+    public ResponseEntity<Void> unshare(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId,
+            @PathVariable Long userId
+    ) {
+        Long meId = authExtractor.extractUserId(authorizationHeader);
+        albumShareService.unshare(albumId, meId, userId);
         return ResponseEntity.noContent().build();
     }
 }

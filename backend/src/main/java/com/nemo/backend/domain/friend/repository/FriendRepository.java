@@ -41,4 +41,6 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
      * 예: 특정 친구 요청을 수락하거나 취소할 때
      */
     Optional<Friend> findByUserIdAndFriendId(Long userId, Long friendId);
+
+    boolean existsByUserIdAndFriendIdAndStatus(Long userId, Long friendId, FriendStatus status);
 }
