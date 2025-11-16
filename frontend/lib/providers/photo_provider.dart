@@ -28,6 +28,7 @@ class PhotoProvider extends ChangeNotifier {
   final List<PhotoItem> _items = [];
   // 모킹 모드에서 전체 원본 보관
   final List<PhotoItem> _allMockItems = [];
+  static const Object _paramNotSet = Object();
   List<PhotoItem> get items => List.unmodifiable(_items);
   bool _loadedOnce = false;
   // Filters and pagination
@@ -55,6 +56,9 @@ class PhotoProvider extends ChangeNotifier {
 
   void add(PhotoItem item) {
     _items.insert(0, item);
+    if (AppConstants.useMockApi) {
+      _allMockItems.insert(0, item);
+    }
     notifyListeners();
   }
 
@@ -76,6 +80,7 @@ class PhotoProvider extends ChangeNotifier {
   void updateFromResponse(Map<String, dynamic> res) {
     final id = res['photoId'] as int;
     final idx = _items.indexWhere((e) => e.photoId == id);
+    final mockIdx = _allMockItems.indexWhere((e) => e.photoId == id);
     if (idx == -1) return;
     _items[idx] = PhotoItem(
       photoId: id,
@@ -89,11 +94,17 @@ class PhotoProvider extends ChangeNotifier {
           ? (res['favorite'] == true)
           : _items[idx].favorite,
     );
+    if (AppConstants.useMockApi && mockIdx != -1) {
+      _allMockItems[mockIdx] = _items[idx];
+    }
     notifyListeners();
   }
 
   void removeById(int photoId) {
     _items.removeWhere((e) => e.photoId == photoId);
+    if (AppConstants.useMockApi) {
+      _allMockItems.removeWhere((e) => e.photoId == photoId);
+    }
     notifyListeners();
   }
 
@@ -184,18 +195,32 @@ class PhotoProvider extends ChangeNotifier {
   }
 
   Future<void> resetAndLoad({
-    bool? favorite,
-    String? tag,
-    String? brand,
+    Object? favorite = _paramNotSet,
+    Object? tag = _paramNotSet,
+    Object? brand = _paramNotSet,
     String? sort,
   }) async {
+    debugPrint(
+      '[PhotoProvider] resetAndLoad called with '
+      'favorite=${favorite == _paramNotSet ? '(unchanged)' : favorite}, '
+      'tag=${tag == _paramNotSet ? '(unchanged)' : tag}, '
+      'brand=${brand == _paramNotSet ? '(unchanged)' : brand}, sort=$sort',
+    );
+    if (favorite != _paramNotSet) {
+      _favoriteOnly = favorite == true;
+    }
+    if (tag != _paramNotSet) {
+      _tagFilter = tag as String?;
+    }
+    if (brand != _paramNotSet) {
+      _brandFilter = brand as String?;
+    }
+    if (sort != null && sort.isNotEmpty) {
+      _sort = sort;
+    }
+
     if (AppConstants.useMockApi) {
       // 모킹 모드: 로컬 필터/정렬 적용
-      _favoriteOnly = favorite ?? _favoriteOnly;
-      _tagFilter = tag ?? _tagFilter;
-      _brandFilter = brand ?? _brandFilter;
-      if (sort != null && sort.isNotEmpty) _sort = sort;
-
       Iterable<PhotoItem> view = _allMockItems.isEmpty ? _items : _allMockItems;
       if (_brandFilter != null && _brandFilter!.isNotEmpty) {
         view = view.where((e) => e.brand == _brandFilter);
@@ -212,16 +237,17 @@ class PhotoProvider extends ChangeNotifier {
       } else if (_sort == 'takenAt,desc') {
         list.sort((a, b) => b.takenAt.compareTo(a.takenAt));
       }
+      debugPrint(
+        '[PhotoProvider] mock mode applying filters '
+        'favoriteOnly=$_favoriteOnly tag=$_tagFilter brand=$_brandFilter '
+        'resultCount=${list.length} total=${_allMockItems.length}',
+      );
       _items
         ..clear()
         ..addAll(list);
       notifyListeners();
       return;
     }
-    _favoriteOnly = favorite ?? _favoriteOnly;
-    _tagFilter = tag ?? _tagFilter;
-    _brandFilter = brand ?? _brandFilter;
-    if (sort != null && sort.isNotEmpty) _sort = sort;
     _page = 0;
     _hasMore = true;
     _items.clear();

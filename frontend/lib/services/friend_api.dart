@@ -103,7 +103,7 @@ class FriendApi {
     throw Exception('Failed to search friends (${res.statusCode})');
   }
 
-  // POST /api/friends { targetUserId }
+  // ✅ POST /api/friends?targetId= (백엔드 @RequestParam Long targetId 에 맞춤)
   static Future<Map<String, dynamic>> addFriend(int targetUserId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -125,12 +125,21 @@ class FriendApi {
         },
       };
     }
-    final res = await http.post(
-      _uri('/api/friends'),
-      headers: _headers(),
-      body: jsonEncode({'targetUserId': targetUserId}),
+
+    // 🔹 쿼리 파라미터로 targetId 전달
+    final uri = _uri('/api/friends').replace(
+      queryParameters: {
+        'targetId': targetUserId.toString(),
+      },
     );
-    if (res.statusCode == 201) {
+
+    // 🔹 body 필요 없음 (백엔드는 @RequestParam만 사용)
+    final res = await http.post(
+      uri,
+      headers: _headers(),
+    );
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
     if (res.statusCode == 409) throw Exception('ALREADY_FRIEND');
@@ -139,7 +148,7 @@ class FriendApi {
     throw Exception('Failed to add friend (${res.statusCode})');
   }
 
-  // PUT /api/friends/accept { requesterUserId }
+  // ✅ PUT /api/friends/accept?requesterId= (백엔드 @RequestParam Long requesterId 에 맞춤)
   static Future<Map<String, dynamic>> acceptFriend(int requesterUserId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -157,10 +166,17 @@ class FriendApi {
         },
       };
     }
+
+    final uri = _uri('/api/friends/accept').replace(
+      queryParameters: {
+        'requesterId': requesterUserId.toString(),
+      },
+    );
+
+    // 🔹 body 제거 (쿼리 파라미터만 전달)
     final res = await http.put(
-      _uri('/api/friends/accept'),
+      uri,
       headers: _headers(),
-      body: jsonEncode({'requesterUserId': requesterUserId}),
     );
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;

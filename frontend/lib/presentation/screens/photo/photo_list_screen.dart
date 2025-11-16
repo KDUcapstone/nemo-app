@@ -11,7 +11,9 @@ import 'package:frontend/presentation/screens/album/select_album_photos_screen.d
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
 import 'package:frontend/services/album_api.dart';
+import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/app/theme/app_colors.dart';
+import 'package:flutter/services.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -54,88 +56,109 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             // 사진/앨범 전환 토글(정중앙 고정) + (앨범 모드) 새 앨범 버튼(우측 끝)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                height: 36,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    if (!_showAlbums)
-                      Positioned(
-                        left: 0,
-                        child: _BrandFilter(
-                          value: _brand,
-                          onChanged: (v) {
-                            setState(() => _brand = v);
-                            context.read<PhotoProvider>().resetAndLoad(
-                              brand: v,
-                            );
-                          },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: 40,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: !_showAlbums
+                              ? ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 70,
+                                  ),
+                                  child: _BrandFilter(
+                                    value: _brand,
+                                    onChanged: (v) {
+                                      setState(() => _brand = v);
+                                      context
+                                          .read<PhotoProvider>()
+                                          .resetAndLoad(brand: v);
+                                    },
+                                  ),
+                                )
+                              : const SizedBox(width: 40),
                         ),
-                      ),
-                    Center(
-                      child: _TopToggle(
-                        isAlbums: _showAlbums,
-                        onChanged: (isAlbums) =>
-                            setState(() => _showAlbums = isAlbums),
-                      ),
-                    ),
-                    if (_showAlbums)
-                      Positioned(
-                        right: 0,
-                        child: IconButton(
-                          icon: const Icon(Icons.add),
-                          tooltip: '새 앨범',
-                          padding: const EdgeInsets.all(6),
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
+                        Align(
+                          alignment: Alignment.center,
+                          child: _TopToggle(
+                            isAlbums: _showAlbums,
+                            onChanged: (isAlbums) =>
+                                setState(() => _showAlbums = isAlbums),
                           ),
-                          onPressed: () async {
-                            // 1) 사진 먼저 선택
-                            final selected = await Navigator.push<List<int>>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const SelectAlbumPhotosScreen(),
-                              ),
-                            );
-                            if (!mounted) return;
-                            if (selected == null) return;
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: _showAlbums
+                              ? IconButton(
+                                  icon: const Icon(Icons.add),
+                                  tooltip: '새 앨범',
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 36,
+                                    minHeight: 36,
+                                  ),
+                                  onPressed: () async {
+                                    final selected =
+                                        await Navigator.push<List<int>>(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const SelectAlbumPhotosScreen(),
+                                          ),
+                                        );
+                                    if (!mounted) return;
+                                    if (selected == null) return;
 
-                            // 2) 제목/설명 입력
-                            final created = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CreateAlbumScreenInitial(
-                                  selectedPhotoIds: selected,
+                                    final created = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            CreateAlbumScreenInitial(
+                                              selectedPhotoIds: selected,
+                                            ),
+                                      ),
+                                    );
+                                    if (!mounted) return;
+                                    if (created != null) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('앨범이 생성되었습니다.'),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                )
+                              : ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 30,
+                                  ),
+                                  child: _SortDropdown(
+                                    value: _sort,
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      setState(() => _sort = v);
+                                      context
+                                          .read<PhotoProvider>()
+                                          .resetAndLoad(sort: v);
+                                    },
+                                  ),
                                 ),
-                              ),
-                            );
-                            if (!mounted) return;
-                            if (created != null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('앨범이 생성되었습니다.')),
-                              );
-                            }
-                          },
                         ),
-                      ),
-                    if (!_showAlbums)
-                      Positioned(
-                        right: 0,
-                        child: _SortDropdown(
-                          value: _sort,
-                          onChanged: (v) {
-                            if (v == null) return;
-                            setState(() => _sort = v);
-                            context.read<PhotoProvider>().resetAndLoad(sort: v);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -229,19 +252,19 @@ class _TopToggle extends StatelessWidget {
     return ToggleButtons(
       isSelected: [!isAlbums, isAlbums],
       onPressed: (idx) => onChanged(idx == 1),
-      borderRadius: BorderRadius.circular(20),
-      constraints: const BoxConstraints(minHeight: 36, minWidth: 88),
+      borderRadius: BorderRadius.circular(18),
+      constraints: const BoxConstraints(minHeight: 32, minWidth: 80),
       selectedColor: scheme.onPrimary,
       fillColor: scheme.primary,
       color: scheme.onSurface.withOpacity(0.8),
-      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       children: const [
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: 10),
           child: Text('사진'),
         ),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: 10),
           child: Text('앨범'),
         ),
       ],
@@ -311,30 +334,39 @@ class _BrandFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const brands = <String?>[null, '인생네컷', '포토이즘', '포토그레이'];
+    final dropdownValue = brands.contains(value) ? value : null;
     return Container(
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         color: AppColors.secondary,
         border: Border.all(color: AppColors.divider, width: 1),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(1),
       ),
-      child: Center(
-        child: PopupMenuButton<String?>(
-          padding: EdgeInsets.zero,
-          color: AppColors.secondary,
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          onSelected: (v) => onChanged(v),
-          itemBuilder: (ctx) => brands
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: dropdownValue,
+          isExpanded: true,
+          hint: const Text(
+            '🏷️',
+            style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          ),
+          icon: const Icon(
+            Icons.arrow_drop_down,
+            size: 18,
+            color: AppColors.textPrimary,
+          ),
+          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          onChanged: (selected) {
+            debugPrint('[BrandFilter] dropdown changed value=$selected');
+            onChanged(selected);
+          },
+          selectedItemBuilder: (ctx) => brands
               .map(
-                (b) => PopupMenuItem<String?>(
-                  value: b,
+                (_) => const Center(
                   child: Text(
-                    b ?? '전체',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    '🏷️',
+                    style: TextStyle(
                       fontSize: 14,
                       color: AppColors.textPrimary,
                     ),
@@ -342,16 +374,18 @@ class _BrandFilter extends StatelessWidget {
                 ),
               )
               .toList(),
-          child: const SizedBox(
-            height: 28,
-            child: Center(
-              child: Text(
-                '🏷️',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
-              ),
-            ),
-          ),
+          items: brands
+              .map(
+                (b) => DropdownMenuItem<String?>(
+                  value: b,
+                  child: Text(
+                    b ?? '전체',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
         ),
       ),
     );
@@ -648,7 +682,10 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                         if (!mounted) return;
                         setState(() => _pressedIndex = null);
                         if (action == null) return;
-                        if (action == 'share' || action == 'edit') {
+                        if (action == 'share') {
+                          // AlbumDetailScreen으로 이동하지 않고 바로 공유 시트 표시
+                          await _showAlbumShareSheet(context, a.albumId);
+                        } else if (action == 'edit') {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -755,6 +792,291 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
         },
       ),
     );
+  }
+
+  // 공유 시트 함수 (album_detail_screen.dart의 _showShareSheet와 동일)
+  Future<void> _showAlbumShareSheet(BuildContext context, int albumId) async {
+    final searchCtrl = TextEditingController();
+    final selectedIds = <int>{};
+    final Set<int> inFlight = <int>{};
+    List<Map<String, dynamic>> friends = await FriendApi.list();
+    List<Map<String, dynamic>> shareTargets = [];
+    try {
+      shareTargets = await AlbumApi.getShareTargets(albumId);
+    } catch (_) {}
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (_, scrollCtrl) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '앨범 공유',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  if (shareTargets.isNotEmpty) ...[
+                    const Text(
+                      '현재 공유 대상',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    ...shareTargets.map(
+                      (s) => ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.person_outline),
+                        ),
+                        title: Text(
+                          s['nickname'] ?? 'user${s['userId'] ?? ''}',
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            try {
+                              await AlbumApi.unshareTarget(
+                                albumId: albumId,
+                                userId: s['userId'],
+                              );
+                              shareTargets.removeWhere(
+                                (e) => e['userId'] == s['userId'],
+                              );
+                              (ctx as Element).markNeedsBuild();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('공유 해제되었습니다.')),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('공유 해제 실패: $e')),
+                              );
+                            }
+                          },
+                          child: const Text('제거'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: '친구 검색 (닉네임/이메일)',
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                    onChanged: (q) async {
+                      friends = q.trim().isEmpty
+                          ? await FriendApi.list()
+                          : await FriendApi.search(q);
+                      // ignore: use_build_context_synchronously
+                      (ctx as Element).markNeedsBuild();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  ...List.generate(friends.length, (idx) {
+                    final f = friends[idx];
+                    final id = f['userId'] as int;
+                    final nick = f['nickname'] as String? ?? '친구$id';
+                    final avatarUrl =
+                        (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
+                    final isFriend = (f['isFriend'] as bool?) ?? true;
+                    final checked = selectedIds.contains(id);
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage:
+                            avatarUrl != null && avatarUrl.isNotEmpty
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: (avatarUrl == null || avatarUrl.isEmpty)
+                            ? const Icon(Icons.person_outline)
+                            : null,
+                      ),
+                      title: Text(nick),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!isFriend)
+                            OutlinedButton(
+                              onPressed: inFlight.contains(id)
+                                  ? null
+                                  : () async {
+                                      inFlight.add(id);
+                                      (ctx as Element).markNeedsBuild();
+                                      try {
+                                        await FriendApi.addFriend(id);
+                                        friends[idx] = {...f, 'isFriend': true};
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text('친구 추가 완료: $nick'),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        if (!context.mounted) return;
+                                        final msg =
+                                            e.toString().contains(
+                                              'ALREADY_FRIEND',
+                                            )
+                                            ? '이미 친구입니다.'
+                                            : e.toString().contains(
+                                                'USER_NOT_FOUND',
+                                              )
+                                            ? '사용자를 찾을 수 없습니다.'
+                                            : '친구 추가 실패';
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(content: Text(msg)),
+                                        );
+                                      } finally {
+                                        inFlight.remove(id);
+                                        (ctx).markNeedsBuild();
+                                      }
+                                    },
+                              child: inFlight.contains(id)
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('친구 추가'),
+                            ),
+                          const SizedBox(width: 8),
+                          Checkbox(
+                            value: checked,
+                            onChanged: isFriend
+                                ? (v) {
+                                    if (v == true) {
+                                      selectedIds.add(id);
+                                    } else {
+                                      selectedIds.remove(id);
+                                    }
+                                    (ctx as Element).markNeedsBuild();
+                                  }
+                                : null,
+                          ),
+                        ],
+                      ),
+                      onTap: isFriend
+                          ? () {
+                              if (checked) {
+                                selectedIds.remove(id);
+                              } else {
+                                selectedIds.add(id);
+                              }
+                              (ctx as Element).markNeedsBuild();
+                            }
+                          : null,
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            try {
+                              final url = await AlbumApi.createShareLink(
+                                albumId,
+                                expiryHours: 48,
+                                permission: 'view',
+                              );
+                              await Clipboard.setData(ClipboardData(text: url));
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('공유 링크가 복사되었습니다.'),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('링크 생성 실패: $e')),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.link),
+                          label: const Text('링크 생성/복사'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: selectedIds.isEmpty
+                              ? null
+                              : () => Navigator.pop(ctx, selectedIds.toList()),
+                          icon: const Icon(Icons.check),
+                          label: Text('${selectedIds.length}명에게 공유'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((value) async {
+      final list = (value as List<int>?) ?? [];
+      if (list.isEmpty) return;
+      try {
+        final res = await AlbumApi.shareAlbum(
+          albumId: albumId,
+          friendIdList: list,
+        );
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(res['message'] ?? '공유 완료')));
+      } catch (e) {
+        if (!context.mounted) return;
+        final msg = _mapShareError(e.toString());
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    });
+  }
+
+  String _mapShareError(String raw) {
+    if (raw.contains('NOT_FRIEND')) return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    if (raw.contains('FORBIDDEN')) return '이 앨범을 공유할 권한이 없습니다.';
+    if (raw.contains('ALBUM_NOT_FOUND')) return '앨범을 찾을 수 없습니다.';
+    return '공유 중 오류가 발생했습니다.';
   }
 }
 
