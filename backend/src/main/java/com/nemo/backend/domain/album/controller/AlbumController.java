@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.service.AlbumService;
+import com.nemo.backend.domain.album.service.AlbumShareService;
 import com.nemo.backend.domain.auth.util.AuthExtractor;  // 🔥 공통 인증 유틸
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +19,19 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor // ⭐ 생성자 자동 생성 (final 필드만)
 public class AlbumController {
 
+    // --------------------------------------------------------
+    // ⭐ 의존성 주입
+    // --------------------------------------------------------
     private final AlbumService albumService;
+
+    private final AlbumShareService albumShareService; // ⬅ 추가
+
+    /**
+     * 🔐 AuthExtractor
+     * - Authorization 헤더에서 userId를 뽑는 공통 로직
+     *   (JWT 검증 + RefreshToken 존재 여부까지 포함)
+     * - UserAuthController, PhotoController 등과 동일하게 사용
+     */
     private final AuthExtractor authExtractor;
 
     // ========================================================
@@ -32,6 +45,7 @@ public class AlbumController {
 
         List<AlbumSummaryResponse> content = albumService.getAlbums(userId);
 
+        // 간단한 페이징 형식으로 감싸서 반환
         return ResponseEntity.ok(
                 java.util.Map.of(
                         "content", content,
@@ -149,5 +163,51 @@ public class AlbumController {
                 albumService.updateThumbnail(userId, albumId, photoId, file);
 
         return ResponseEntity.ok(resp);
+    }
+
+    // POST /api/albums/{albumId}/share
+    @PostMapping("/{albumId}/share")
+    public ResponseEntity<AlbumShareResponse> shareAlbum(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId,
+            @RequestBody AlbumShareRequest request
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumShareResponse resp = albumShareService.shareAlbum(albumId, userId, request);
+        return ResponseEntity.ok(resp);
+    }
+
+    // POST /api/albums/{albumId}/share/link
+    @PostMapping("/{albumId}/share/link")
+    public ResponseEntity<AlbumShareLinkResponse> createShareLink(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumShareLinkResponse resp = albumShareService.createShareLink(albumId, userId);
+        return ResponseEntity.ok(resp);
+    }
+
+    // GET /api/albums/{albumId}/share/targets
+    @GetMapping("/{albumId}/share/targets")
+    public ResponseEntity<AlbumShareTargetsResponse> getShareTargets(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumShareTargetsResponse resp = albumShareService.getShareTargets(albumId, userId);
+        return ResponseEntity.ok(resp);
+    }
+
+    // DELETE /api/albums/{albumId}/share/{userId}
+    @DeleteMapping("/{albumId}/share/{userId}")
+    public ResponseEntity<Void> unshare(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable Long albumId,
+            @PathVariable Long userId
+    ) {
+        Long meId = authExtractor.extractUserId(authorizationHeader);
+        albumShareService.unshare(albumId, meId, userId);
+        return ResponseEntity.noContent().build();
     }
 }
