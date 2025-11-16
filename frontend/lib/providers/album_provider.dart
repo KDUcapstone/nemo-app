@@ -49,11 +49,45 @@ class AlbumProvider extends ChangeNotifier {
   final int _size = 10;
   String _sort = 'createdAt,desc';
   bool _favoriteOnly = false;
+  final Set<int> _favoritedAlbumIds = <int>{};
+  // 내가 공유 중/공유받은 앨범 ID 집합과 역할 맵
+  final Set<int> _sharedAlbumIds = <int>{};
+  final Map<int, String> _albumIdToMyRole = <int, String>{}; // OWNER|CO_OWNER|EDITOR|VIEWER
 
   bool get isLoading => _isLoading;
   bool get hasMore => _hasMore;
   String get sort => _sort;
   bool get favoriteOnly => _favoriteOnly;
+  bool isFavorited(int albumId) => _favoritedAlbumIds.contains(albumId);
+  bool isShared(int albumId) => _sharedAlbumIds.contains(albumId);
+  String? myRoleOf(int albumId) => _albumIdToMyRole[albumId];
+
+  Future<void> refreshSharedAlbums() async {
+    try {
+      final shared = await AlbumApi.getSharedAlbums(page: 0, size: 200);
+      _sharedAlbumIds
+        ..clear()
+        ..addAll(shared.map<int>((e) => (e['albumId'] as int)));
+      _albumIdToMyRole
+        ..clear()
+        ..addEntries(shared.map((e) => MapEntry(
+              e['albumId'] as int,
+              (e['myRole']?.toString() ?? 'VIEWER').toUpperCase(),
+            )));
+      notifyListeners();
+    } catch (_) {
+      // 무시
+    }
+  }
+
+  void setFavorite(int albumId, bool favorited) {
+    if (favorited) {
+      _favoritedAlbumIds.add(albumId);
+    } else {
+      _favoritedAlbumIds.remove(albumId);
+    }
+    notifyListeners();
+  }
 
   void addFromResponse(Map<String, dynamic> res) {
     final albumId = res['albumId'] as int;
@@ -148,10 +182,16 @@ class AlbumProvider extends ChangeNotifier {
   Future<void> loadDetail(int albumId) async {
     final res = await AlbumApi.getAlbum(albumId);
     final idx = _albums.indexWhere((e) => e.albumId == albumId);
+    final existing = idx != -1 ? _albums[idx] : null;
     final item = AlbumItem(
       albumId: albumId,
-      title: (res['title'] ?? '') as String,
-      description: (res['description'] ?? '') as String,
+      // 모킹/서버 응답이 부정확한 경우 기존 값을 우선 유지
+      title: (existing?.title.isNotEmpty == true)
+          ? existing!.title
+          : ((res['title'] ?? '') as String),
+      description: (existing?.description.isNotEmpty == true)
+          ? existing!.description
+          : ((res['description'] ?? '') as String),
       coverPhotoUrl: res['coverPhotoUrl'] as String?,
       photoCount:
           (res['photoCount'] as int?) ??

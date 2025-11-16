@@ -27,6 +27,8 @@ import 'package:frontend/services/photo_upload_api.dart';
 import 'change_password_screen.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'friends_list_screen.dart';
+import 'widgets/storage_quota_card.dart';
+import 'package:frontend/services/storage_api.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -39,6 +41,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nicknameController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
+  late Future<StorageQuota> _quotaFuture;
 
   // 임시 사용자 데이터 (실제로는 API에서 가져옴)
   Map<String, dynamic> _userInfo = {
@@ -87,6 +90,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     super.initState();
     _nicknameController.text = _userInfo['nickname'];
     _loadUserInfo();
+    _quotaFuture = StorageApi.fetchQuota();
   }
 
   @override
@@ -705,6 +709,62 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           }),
                           onSave: _updateUserInfo,
                           onOpenImagePicker: _showImagePickerDialog,
+                        ),
+                        SizedBox(height: gap),
+
+                        // 저장 한도/사용량 (프로필과 계정 정보 사이)
+                        FutureBuilder<StorageQuota>(
+                          future: _quotaFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Card(
+                                elevation: 0,
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: LinearProgressIndicator(),
+                                ),
+                              );
+                            }
+                            if (snapshot.hasError || !snapshot.hasData) {
+                              return Card(
+                                elevation: 0,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.info_outline, color: AppColors.textSecondary),
+                                      const SizedBox(width: 8),
+                                      const Expanded(
+                                        child: Text(
+                                          '저장 한도 정보를 불러오지 못했습니다.',
+                                          style: TextStyle(color: AppColors.textSecondary),
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _quotaFuture = StorageApi.fetchQuota();
+                                          });
+                                        },
+                                        child: const Text('다시 시도'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+                            final quota = snapshot.data!;
+                            return StorageQuotaCard(
+                              quota: quota,
+                              onUpgrade: () {
+                                // 업그레이드 플로우 진입 (추후 결제/구독 화면 연결)
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('업그레이드 준비 중입니다.')),
+                                );
+                              },
+                              capFreeAtTwenty: true,
+                            );
+                          },
                         ),
                         SizedBox(height: gap),
 

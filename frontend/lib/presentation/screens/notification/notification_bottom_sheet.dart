@@ -141,11 +141,26 @@ class _NotificationBottomSheetState extends State<NotificationBottomSheet> {
       final itemIndexInGroup = index - offset;
       if (itemIndexInGroup < g.items.length) {
         final item = g.items[itemIndexInGroup];
+        final isAlbumInvite = item.type == NotificationType.ALBUM_INVITE;
         return _NotificationTile(
           item: item,
           onTap: () => _onTapItem(item),
-          onAccept: () => _onAccept(item),
-          onDecline: () => _onDecline(item),
+          onAccept: isAlbumInvite
+              ? () async {
+                  final provider = context.read<NotificationProvider>();
+                  await provider.actOnAlbumInvite(item, accept: true);
+                  if (!mounted) return;
+                  _showTopToast(context, '앨범 초대를 수락했어요.');
+                }
+              : null,
+          onDecline: isAlbumInvite
+              ? () async {
+                  final provider = context.read<NotificationProvider>();
+                  await provider.actOnAlbumInvite(item, accept: false);
+                  if (!mounted) return;
+                  _showTopToast(context, '앨범 초대를 거절했어요.');
+                }
+              : null,
         );
       }
       offset += g.items.length;
@@ -174,9 +189,7 @@ class _NotificationBottomSheetState extends State<NotificationBottomSheet> {
             );
           } catch (e) {
             if (!mounted) return;
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('사진을 열 수 없습니다: $e')));
+            _showTopToast(context, '사진을 열 수 없습니다: $e');
           }
         }
         break;
@@ -203,44 +216,35 @@ class _NotificationBottomSheetState extends State<NotificationBottomSheet> {
     }
   }
 
-  Future<void> _onAccept(NotificationItem item) async {
-    final provider = context.read<NotificationProvider>();
-    if (item.type == NotificationType.FRIEND_REQUEST) {
-      await provider.actOnFriendRequest(item, accept: true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('친구 요청을 수락했어요.')));
-      return;
-    }
-    if (item.type == NotificationType.ALBUM_NEW_PHOTO ||
-        item.type == NotificationType.ALBUM_INVITE) {
-      await provider.actOnAlbumInvite(item, accept: true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('앨범 초대를 수락했어요.')));
-    }
-  }
-
-  Future<void> _onDecline(NotificationItem item) async {
-    final provider = context.read<NotificationProvider>();
-    if (item.type == NotificationType.FRIEND_REQUEST) {
-      await provider.actOnFriendRequest(item, accept: false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('친구 요청을 거절했어요.')));
-      return;
-    }
-    if (item.type == NotificationType.ALBUM_NEW_PHOTO ||
-        item.type == NotificationType.ALBUM_INVITE) {
-      await provider.actOnAlbumInvite(item, accept: false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('앨범 초대를 거절했어요.')));
-    }
+  // 상단 토스트 (OverlayEntry) - 반시트에 가리지 않도록 상단에 표시
+  void _showTopToast(BuildContext context, String message) {
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (ctx) => Positioned(
+        top: MediaQuery.of(ctx).padding.top + 12,
+        left: 16,
+        right: 16,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 13.5),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(
+      const Duration(milliseconds: 1500),
+    ).then((_) => entry.remove());
   }
 }
 
@@ -276,9 +280,6 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final created = DateFormat('MM/dd HH:mm').format(item.createdAt.toLocal());
-    final isActionable =
-        item.type == NotificationType.FRIEND_REQUEST ||
-        item.type == NotificationType.ALBUM_INVITE;
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -293,11 +294,45 @@ class _NotificationTile extends StatelessWidget {
             fontSize: 13.5,
           ),
         ),
-        subtitle: Text(
-          created,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        subtitle: Builder(
+          builder: (context) {
+            if (item.type == NotificationType.ALBUM_INVITE) {
+              final inviter = item.actor?.nickname ?? '친구';
+              final role = (item.inviteRole ?? 'VIEWER').toUpperCase();
+              String roleKo;
+              switch (role) {
+                case 'OWNER':
+                  roleKo = '소유주';
+                  break;
+                case 'CO_OWNER':
+                  roleKo = '공동 소유주';
+                  break;
+                case 'EDITOR':
+                  roleKo = '수정 가능';
+                  break;
+                default:
+                  roleKo = '보기 가능';
+              }
+              return Text(
+                '$inviter · 내 권한: $roleKo · $created',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              );
+            }
+            return Text(
+              created,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            );
+          },
         ),
-        trailing: isActionable
+        trailing: (onAccept != null || onDecline != null)
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

@@ -107,11 +107,15 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> actOnFriendRequest(NotificationItem item, {required bool accept}) async {
+  Future<void> actOnFriendRequest(NotificationItem item, {required bool accept, int? requestId}) async {
     // 낙관적: 읽음 처리 + 토스트는 호출측
     await markRead(item);
     try {
-      await _api.friendRequestAction(item.actor?.userId ?? 0, accept: accept);
+      await _api.friendRequestAction(
+        requestId: requestId,
+        requesterUserId: item.actor?.userId,
+        accept: accept,
+      );
       _removeItem(item.notificationId);
       notifyListeners();
     } catch (e) {

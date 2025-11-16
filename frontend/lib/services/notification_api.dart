@@ -3,6 +3,7 @@ import 'package:frontend/services/auth_service.dart';
 import 'package:frontend/models/notification_models.dart';
 import 'package:frontend/app/constants.dart';
 import 'package:frontend/services/friend_api.dart';
+import 'package:frontend/services/album_api.dart';
 
 class NotificationApi {
   static Uri _uri(String path, [Map<String, String>? query]) {
@@ -63,6 +64,7 @@ class NotificationApi {
                 },
                 'target': {'type': 'ALBUM', 'id': 777},
                 'actionType': 'OPEN_ALBUM',
+                'inviteRole': 'EDITOR',
               },
               {
                 'notificationId': 97,
@@ -159,17 +161,29 @@ class NotificationApi {
   }
 
   // Mock only actions for friend request and album invite
-  Future<void> friendRequestAction(int requesterUserId, {required bool accept}) async {
+  Future<void> friendRequestAction({
+    int? requestId,
+    int? requesterUserId,
+    required bool accept,
+  }) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(const Duration(milliseconds: 300));
       return;
     }
-    // accept: 실제 FriendApi 연동
-    if (accept) {
+    // Prefer requestId per spec; fallback to requesterUserId path only if provided (legacy)
+    if (requestId != null && requestId > 0) {
+      if (accept) {
+        await FriendApi.acceptRequest(requestId);
+      } else {
+        await FriendApi.rejectRequest(requestId);
+      }
+      return;
+    }
+    // Legacy fallback (if only requesterUserId is present and backend supports it)
+    if (requesterUserId != null && requesterUserId > 0 && accept) {
       await FriendApi.acceptFriend(requesterUserId);
       return;
     }
-    // decline: 백엔드 엔드포인트 미정 → 일단 무동작 (프론트 로컬 처리)
   }
 
   Future<void> albumInviteAction(int albumId, {required bool accept}) async {
@@ -177,8 +191,11 @@ class NotificationApi {
       await Future.delayed(const Duration(milliseconds: 300));
       return;
     }
-    // 실서버 연동 시 PATCH /api/albums/{albumId}/invites:accept|decline 등으로 교체
-    // 현재는 엔드포인트 미정 → 일단 성공으로 간주
+    if (accept) {
+      await AlbumApi.acceptShare(albumId);
+    } else {
+      await AlbumApi.rejectShare(albumId);
+    }
   }
 }
 

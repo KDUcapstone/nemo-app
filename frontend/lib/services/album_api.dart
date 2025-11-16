@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -149,6 +150,54 @@ class AlbumApi {
     throw Exception('Failed to create album (${res.statusCode})');
   }
 
+  // POST /api/albums/{albumId}/favorite  -> { albumId, favorited: true, message }
+  static Future<Map<String, dynamic>> favoriteAlbum(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'albumId': albumId,
+        'favorited': true,
+        'message': '앨범이 즐겨찾기에 추가되었습니다.',
+      };
+    }
+    final res = await http.post(
+      _uri('/api/albums/$albumId/favorite'),
+      headers: _headersJson(),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to favorite album (${res.statusCode})');
+  }
+
+  // DELETE /api/albums/{albumId}/favorite -> { albumId, favorited: false, message }
+  static Future<Map<String, dynamic>> unfavoriteAlbum(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'albumId': albumId,
+        'favorited': false,
+        'message': '앨범 즐겨찾기가 해제되었습니다.',
+      };
+    }
+    final res = await http.delete(
+      _uri('/api/albums/$albumId/favorite'),
+      headers: _headersJson(),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to unfavorite album (${res.statusCode})');
+  }
+
   // POST /api/albums/{albumId}/photos
   static Future<void> addPhotos({
     required int albumId,
@@ -262,6 +311,94 @@ class AlbumApi {
     throw Exception('Failed to fetch album (${res.statusCode})');
   }
 
+  // GET /api/albums/share/requests -> PENDING 공유 요청 목록
+  static Future<List<Map<String, dynamic>>> getShareRequests() async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return [
+        {
+          'albumId': 20,
+          'albumTitle': '여름 제주 여행',
+          'invitedBy': {'userId': 1, 'nickname': '앨범주인'},
+          'invitedAt': DateTime.now().subtract(const Duration(minutes: 40)).toIso8601String(),
+          'status': 'PENDING',
+          'inviteRole': 'VIEWER',
+        },
+        {
+          'albumId': 34,
+          'albumTitle': '겨울 스키장',
+          'invitedBy': {'userId': 8, 'nickname': '친구A'},
+          'invitedAt': DateTime.now().subtract(const Duration(hours: 3)).toIso8601String(),
+          'status': 'PENDING',
+          'inviteRole': 'EDITOR',
+        },
+      ];
+    }
+    final res = await http.get(_uri('/api/albums/share/requests'), headers: _headersJson());
+    if (res.statusCode == 200) {
+      final List list = jsonDecode(res.body) as List;
+      return list.cast<Map<String, dynamic>>();
+    }
+    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    throw Exception('Failed to fetch share requests (${res.statusCode})');
+  }
+
+  // GET /api/albums/shared -> 내가 공유받은/공유 중인 앨범 목록(목업 포함 myRole)
+  static Future<List<Map<String, dynamic>>> getSharedAlbums({
+    int page = 0,
+    int size = 10,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      final now = DateTime.now();
+      return [
+        {
+          'albumId': 201,
+          'title': '여름 제주 여행',
+          'coverPhotoUrl': 'https://picsum.photos/seed/shared201/600/800',
+          'photoCount': 24,
+          'createdAt': now.subtract(const Duration(days: 10)).toIso8601String(),
+          'myRole': 'VIEWER',
+        },
+        {
+          'albumId': 202,
+          'title': '겨울 스키장',
+          'coverPhotoUrl': 'https://picsum.photos/seed/shared202/600/800',
+          'photoCount': 12,
+          'createdAt': now.subtract(const Duration(days: 3)).toIso8601String(),
+          'myRole': 'EDITOR',
+        },
+        {
+          'albumId': 203,
+          'title': '동아리 공연 아카이브',
+          'coverPhotoUrl': null,
+          'photoCount': 57,
+          'createdAt': now.subtract(const Duration(days: 30)).toIso8601String(),
+          'myRole': 'CO_OWNER',
+        },
+      ];
+    }
+    final res = await http.get(
+      _uri('/api/albums/shared').replace(queryParameters: {'page': '$page', 'size': '$size'}),
+      headers: _headersJson(),
+    );
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body is List) return body.cast<Map<String, dynamic>>();
+      if (body is Map<String, dynamic>) {
+        final List list = body['content'] ?? body['items'] ?? [];
+        return list.cast<Map<String, dynamic>>();
+      }
+      return const <Map<String, dynamic>>[];
+    }
+    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    throw Exception('Failed to fetch shared albums (${res.statusCode})');
+  }
+
   // PUT /api/albums/{albumId}/cover
   static Future<void> setCoverPhoto({
     required int albumId,
@@ -280,6 +417,172 @@ class AlbumApi {
     );
     if (res.statusCode == 200 || res.statusCode == 204) return;
     throw Exception('Failed to set cover (${res.statusCode})');
+  }
+
+  // POST /api/albums/{albumId}/thumbnail (JSON: { photoId })
+  static Future<Map<String, dynamic>> setThumbnail({
+    required int albumId,
+    int? photoId,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'albumId': albumId,
+        'thumbnailUrl': 'https://picsum.photos/seed/album${albumId}-thumb/600/800',
+        'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
+      };
+    }
+    final uri = _uri('/api/albums/$albumId/thumbnail');
+    final headers = _headersJson();
+    final body = photoId != null ? jsonEncode({'photoId': photoId}) : null;
+    final res = await http.post(uri, headers: headers, body: body);
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 404) {
+      final e = jsonDecode(res.body);
+      final err = e is Map<String, dynamic> ? (e['error']?.toString() ?? '') : '';
+      if (err == 'ALBUM_NOT_FOUND') throw Exception('ALBUM_NOT_FOUND');
+      if (err == 'PHOTO_NOT_FOUND') throw Exception('PHOTO_NOT_FOUND');
+      throw Exception('NOT_FOUND');
+    }
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to set thumbnail (${res.statusCode})');
+  }
+
+  // POST /api/albums/{albumId}/thumbnail (multipart: file)
+  static Future<Map<String, dynamic>> uploadThumbnailFile({
+    required int albumId,
+    required File file,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'albumId': albumId,
+        'thumbnailUrl': 'https://picsum.photos/seed/album${albumId}-upload/600/800',
+        'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
+      };
+    }
+    final uri = _uri('/api/albums/$albumId/thumbnail');
+    final req = http.MultipartRequest('POST', uri);
+    final token = AuthService.accessToken;
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    req.files.add(await http.MultipartFile.fromPath('file', file.path));
+
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 404) {
+      final e = jsonDecode(res.body);
+      final err = e is Map<String, dynamic> ? (e['error']?.toString() ?? '') : '';
+      if (err == 'ALBUM_NOT_FOUND') throw Exception('ALBUM_NOT_FOUND');
+      if (err == 'PHOTO_NOT_FOUND') throw Exception('PHOTO_NOT_FOUND');
+      throw Exception('NOT_FOUND');
+    }
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to upload thumbnail (${res.statusCode})');
+  }
+
+  // POST /api/albums/{albumId}/share/accept
+  static Future<Map<String, dynamic>> acceptShare(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {'albumId': albumId, 'role': 'VIEWER', 'message': '앨범 공유를 수락했습니다.'};
+    }
+    final res = await http.post(_uri('/api/albums/$albumId/share/accept'), headers: _headersJson());
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 404) throw Exception('INVITE_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 409) throw Exception('ALREADY_ACCEPTED');
+    throw Exception('Failed to accept share (${res.statusCode})');
+  }
+
+  // POST /api/albums/{albumId}/share/reject
+  static Future<Map<String, dynamic>> rejectShare(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
+    }
+    final res = await http.post(_uri('/api/albums/$albumId/share/reject'), headers: _headersJson());
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 404) throw Exception('INVITE_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to reject share (${res.statusCode})');
+  }
+
+  // GET /api/albums/{albumId}/share/members
+  static Future<List<Map<String, dynamic>>> getShareMembers(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
+      return [
+        {'userId': 1, 'nickname': '앨범주인', 'role': 'OWNER'},
+        {'userId': 7, 'nickname': '네컷러버', 'role': 'EDITOR'},
+        {'userId': 9, 'nickname': '하루필름', 'role': 'VIEWER'},
+      ];
+    }
+    final res = await http.get(_uri('/api/albums/$albumId/share/members'), headers: _headersJson());
+    if (res.statusCode == 200) {
+      final List list = jsonDecode(res.body) as List;
+      return list.cast<Map<String, dynamic>>();
+    }
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    throw Exception('Failed to fetch members (${res.statusCode})');
+  }
+
+  // PUT /api/albums/{albumId}/share/permission { targetUserId, role }
+  static Future<Map<String, dynamic>> updateSharePermission({
+    required int albumId,
+    required int targetUserId,
+    required String role, // VIEWER | EDITOR | CO_OWNER
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
+      if (!['VIEWER', 'EDITOR', 'CO_OWNER'].contains(role)) {
+        throw Exception('INVALID_ROLE');
+      }
+      return {
+        'albumId': albumId,
+        'targetUserId': targetUserId,
+        'role': role,
+        'message': '공유 멤버 권한이 변경되었습니다.',
+      };
+    }
+    final res = await http.put(
+      _uri('/api/albums/$albumId/share/permission'),
+      headers: _headersJson(),
+      body: jsonEncode({'targetUserId': targetUserId, 'role': role}),
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 400) throw Exception('INVALID_ROLE');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to update permission (${res.statusCode})');
+  }
+
+  // DELETE /api/albums/{albumId}/share/{targetUserId}
+  static Future<Map<String, dynamic>> removeShareMember({
+    required int albumId,
+    required int targetUserId,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
+      if (targetUserId == 1) throw Exception('CANNOT_REMOVE_OWNER');
+      return {'albumId': albumId, 'removedUserId': targetUserId, 'message': '해당 사용자를 앨범에서 제거했습니다.'};
+    }
+    final res = await http.delete(_uri('/api/albums/$albumId/share/$targetUserId'), headers: _headersJson());
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 400) throw Exception('CANNOT_REMOVE_OWNER');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to remove member (${res.statusCode})');
   }
 
   // PUT /api/albums/{albumId}
@@ -347,6 +650,8 @@ class AlbumApi {
   static Future<Map<String, dynamic>> shareAlbum({
     required int albumId,
     required List<int> friendIdList,
+    String defaultRole = 'VIEWER',
+    Map<int, String>? perUserRoles,
   }) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -459,50 +764,15 @@ extension AlbumSharing on AlbumApi {
   static Future<Map<String, dynamic>> shareAlbum({
     required int albumId,
     required List<int> friendIdList,
+    String defaultRole = 'VIEWER',
+    Map<int, String>? perUserRoles,
   }) async {
-    if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
-      if (albumId <= 0) {
-        throw Exception('ALBUM_NOT_FOUND');
-      }
-      if (friendIdList.isEmpty) {
-        return {'albumId': albumId, 'sharedTo': [], 'message': '선택된 친구가 없습니다.'};
-      }
-      // 더미: 친구 2명만 유효, 나머지는 NOT_FRIEND로 가정하지 않고 무시
-      final sharedTo = friendIdList
-          .map(
-            (id) => {
-              'userId': id,
-              'nickname': id == 3
-                  ? '네컷러버'
-                  : id == 5
-                  ? '사진장인'
-                  : '친구$id',
-            },
-          )
-          .toList();
-      return {
-        'albumId': albumId,
-        'sharedTo': sharedTo,
-        'message': '앨범이 선택한 친구들에게 성공적으로 공유되었습니다.',
-      };
-    }
-
-    final res = await http.post(
-      AlbumApi._uri('/api/albums/$albumId/share'),
-      headers: AlbumApi._headersJson(),
-      body: jsonEncode({'friendIdList': friendIdList}),
+    return AlbumApi.shareAlbum(
+      albumId: albumId,
+      friendIdList: friendIdList,
+      defaultRole: defaultRole,
+      perUserRoles: perUserRoles,
     );
-
-    if (res.statusCode == 200) {
-      return jsonDecode(res.body) as Map<String, dynamic>;
-    }
-    if (res.statusCode == 400) throw Exception('NOT_FRIEND');
-    if (res.statusCode == 403) throw Exception('FORBIDDEN');
-    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
-    throw Exception('Failed to share album (${res.statusCode})');
   }
 
   // POST /api/albums/{albumId}/share-url (가정) → 공유 URL 생성

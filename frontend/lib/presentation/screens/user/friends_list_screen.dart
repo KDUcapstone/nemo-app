@@ -68,7 +68,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       if (!mounted) return;
       setState(() {
         _requests = list
-            .where((e) => !_dismissedRequestIds.contains(e['userId'] as int))
+            .where((e) => !_dismissedRequestIds.contains((e['requestId'] ?? -1) as int))
             .toList();
       });
     } catch (_) {
@@ -129,28 +129,27 @@ class _FriendsListScreenState extends State<FriendsListScreen>
     }
   }
 
-  Future<void> _accept(int requesterId, String nickname) async {
+  Future<void> _acceptByRequestId(int requestId, int requesterId, String nickname) async {
     try {
-      final res = await FriendApi.acceptFriend(requesterId);
-      final friend = (res['friend'] is Map<String, dynamic>)
-          ? res['friend'] as Map<String, dynamic>
-          : null;
+      await FriendApi.acceptRequest(requestId);
+      final friend = {
+        'userId': requesterId,
+        'nickname': nickname,
+        'email': null,
+        'profileImageUrl': null,
+        'addedAt': DateTime.now().toIso8601String(),
+      };
       setState(() {
         // 요청 목록에서 제거
-        _requests.removeWhere((e) => (e['userId'] as int) == requesterId);
-        _dismissedRequestIds.add(requesterId);
+        _requests.removeWhere((e) => (e['requestId'] as int) == requestId);
+        _dismissedRequestIds.add(requestId);
         // 내 친구 목록에 추가(중복 방지)
-        final already = _friends.any((e) => (e['userId'] as int) == requesterId);
+        final already =
+            _friends.any((e) => (e['userId'] as int) == requesterId);
         if (!already) {
           _friends = [
             ..._friends,
-            friend ?? {
-              'userId': requesterId,
-              'nickname': nickname,
-              'email': null,
-              'profileImageUrl': null,
-              'addedAt': DateTime.now().toIso8601String(),
-            },
+            friend,
           ];
         }
         // 검색 결과에 반영
@@ -346,6 +345,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
         separatorBuilder: (_, __) => const Divider(height: 1),
         itemBuilder: (_, i) {
           final r = _requests[i];
+          final requestId = (r['requestId'] as int?) ?? -1;
           final id = r['userId'] as int;
           final nick = (r['nickname'] ?? '') as String;
           final email = (r['email'] ?? '') as String?;
@@ -354,9 +354,42 @@ class _FriendsListScreenState extends State<FriendsListScreen>
             title: Text(nick),
             subtitle:
                 email == null ? null : Text(email, style: const TextStyle(fontSize: 12)),
-            trailing: TextButton(
-              onPressed: () => _accept(id, nick),
-              child: const Text('수락'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: requestId <= 0 ? null : () => _acceptByRequestId(requestId, id, nick),
+                  child: const Text('수락'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: requestId <= 0
+                      ? null
+                      : () async {
+                          try {
+                            await FriendApi.rejectRequest(requestId);
+                            if (!mounted) return;
+                            setState(() {
+                              _requests.removeWhere((e) => (e['requestId'] as int) == requestId);
+                              _dismissedRequestIds.add(requestId);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('요청을 거절했어요.')),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            final s = e.toString();
+                            final msg = s.contains('REQUEST_NOT_FOUND')
+                                ? '요청을 찾을 수 없습니다.'
+                                : s.contains('FORBIDDEN')
+                                    ? '권한이 없습니다.'
+                                    : '거절 실패';
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                          }
+                        },
+                  child: const Text('거절', style: TextStyle(color: Colors.red)),
+                ),
+              ],
             ),
           );
         },

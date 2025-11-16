@@ -8,6 +8,8 @@ import 'package:frontend/services/friend_api.dart';
 import 'package:flutter/services.dart';
 // removed unused imports after refactor
 import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
+import 'package:frontend/presentation/screens/album/album_members_screen.dart';
+import 'package:frontend/providers/user_provider.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
@@ -33,6 +35,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   // photos 캐싱 (해결책 A)
   List<PhotoItem>? _cachedPhotos;
   List<int>? _cachedPhotoIds;
+  String? _myRole; // OWNER | CO_OWNER | EDITOR | VIEWER
+  bool _roleLoading = false;
 
   @override
   void initState() {
@@ -54,8 +58,58 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         await _showShareSheet(context);
       }
     });
+    _loadMyRole();
   }
 
+  Future<void> _loadMyRole() async {
+    setState(() => _roleLoading = true);
+    try {
+      // 공유 앨범이 아니면 내 개인 앨범으로 간주하여 OWNER 처리
+      final albumProvider = context.read<AlbumProvider>();
+      if (!albumProvider.isShared(widget.albumId)) {
+        if (!mounted) return;
+        setState(() {
+          _myRole = 'OWNER';
+          _roleLoading = false;
+        });
+        return;
+      }
+      // 공유 앨범인 경우, 우선 Provider에 저장된 내 역할을 사용
+      final cachedRole = albumProvider.myRoleOf(widget.albumId);
+      if (cachedRole != null && cachedRole.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _myRole = cachedRole.toUpperCase();
+          _roleLoading = false;
+        });
+        return;
+      }
+      final me = context.read<UserProvider>().userId;
+      final members = await AlbumApi.getShareMembers(widget.albumId);
+      String? role;
+      if (me != null) {
+        final mine = members.cast<Map<String, dynamic>?>().firstWhere(
+          (m) => m != null && m['userId'] == me,
+          orElse: () => null,
+        );
+        if (mine != null && mine['role'] != null) {
+          role = (mine['role'] as String).toUpperCase();
+        }
+      }
+      role ??= 'VIEWER';
+      if (!mounted) return;
+      setState(() {
+        _myRole = role;
+        _roleLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _myRole = null;
+        _roleLoading = false;
+      });
+    }
+  }
   @override
   void dispose() {
     _selectedNotifier.dispose();
@@ -397,84 +451,34 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         title: Text(album.title.isEmpty ? '앨범' : album.title),
         actions: [
           IconButton(
-            tooltip: '사진 선택',
-            icon: Icon(_isSelectionMode ? Icons.done : Icons.checklist_rtl),
-            onPressed: () {
-              setState(() {
-                _isSelectionMode = !_isSelectionMode;
-                if (!_isSelectionMode) {
-                  _selected.clear(); // 선택 모드 해제 시 선택 항목 초기화
-                  _selectedNotifier.value = <int>{};
+            tooltip: albumProvider.isFavorited(widget.albumId) ? '즐겨찾기 해제' : '즐겨찾기',
+            icon: Icon(
+              albumProvider.isFavorited(widget.albumId)
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              color: albumProvider.isFavorited(widget.albumId) ? Colors.red : null,
+            ),
+            onPressed: () async {
+              final current = albumProvider.isFavorited(widget.albumId);
+              try {
+                if (current) {
+                  await AlbumApi.unfavoriteAlbum(widget.albumId);
+                  if (!mounted) return;
+                  albumProvider.setFavorite(widget.albumId, false);
+                } else {
+                  await AlbumApi.favoriteAlbum(widget.albumId);
+                  if (!mounted) return;
+                  albumProvider.setFavorite(widget.albumId, true);
                 }
-              });
-            },
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_horiz),
-            onSelected: (v) async {
-              switch (v) {
-                case 'share':
-                  await _showShareSheet(context);
-                  break;
-                case 'add':
-                  if (!_working) await _addPhotos();
-                  break;
-                case 'edit':
-                  await showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
-                  );
-                  break;
-                case 'delete':
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('앨범 삭제'),
-                      content: const Text('이 앨범을 삭제하시겠습니까?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('취소'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('삭제'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) {
-                    try {
-                      final res = await AlbumApi.deleteAlbum(widget.albumId);
-                      if (!mounted) return;
-                      context.read<AlbumProvider>().removeAlbum(widget.albumId);
-                      Navigator.pop(context); // 상세 화면 닫기
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            (res['message'] as String?) ?? '앨범이 삭제되었습니다.',
-                          ),
-                        ),
-                      );
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
-                    }
-                  }
-                  break;
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('처리 실패: $e')),
+                );
               }
             },
-            itemBuilder: (c) => const [
-              PopupMenuItem(value: 'share', child: Text('공유')),
-              PopupMenuItem(value: 'add', child: Text('사진 추가')),
-              PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
-              PopupMenuItem(value: 'delete', child: Text('앨범 삭제')),
-            ],
           ),
+          if (_roleLoading || _myRole != 'VIEWER') _buildActionsMenu(context),
         ],
       ),
       body: Column(
@@ -557,15 +561,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                           onDoubleTap: () async {
                             if (_isSelectionMode) return;
                             try {
-                              await AlbumApi.setCoverPhoto(
+                              final res = await AlbumApi.setThumbnail(
                                 albumId: widget.albumId,
                                 photoId: p.photoId,
                               );
                               if (!mounted) return;
-                              context.read<AlbumProvider>().updateCoverUrl(
-                                widget.albumId,
-                                p.imageUrl,
-                              );
+                              final newUrl = (res['thumbnailUrl'] as String?) ?? p.imageUrl;
+                              context
+                                  .read<AlbumProvider>()
+                                  .updateCoverUrl(widget.albumId, newUrl);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('대표사진이 설정되었습니다.')),
                               );
@@ -624,6 +628,110 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildActionsMenu(BuildContext context) {
+    // 역할별 허용 액션 계산
+    final role = _myRole ?? 'VIEWER';
+    final isOwnerLike = role == 'OWNER' || role == 'CO_OWNER';
+    final isEditor = role == 'EDITOR';
+    final showShare = isOwnerLike || isEditor;
+    final showAdd = isOwnerLike || isEditor;
+    final showEdit = isOwnerLike || isEditor;
+    final showDelete = isOwnerLike;
+    final showMembers = isOwnerLike;
+    return Row(
+      children: [
+        IconButton(
+          tooltip: '사진 선택',
+          icon: Icon(_isSelectionMode ? Icons.done : Icons.checklist_rtl),
+          onPressed: () {
+            setState(() {
+              _isSelectionMode = !_isSelectionMode;
+              if (!_isSelectionMode) {
+                _selected.clear();
+                _selectedNotifier.value = <int>{};
+              }
+            });
+          },
+        ),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_horiz),
+          onSelected: (v) async {
+            switch (v) {
+              case 'share':
+                await _showShareSheet(context);
+                break;
+              case 'add':
+                if (!_working) await _addPhotos();
+                break;
+              case 'edit':
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
+                );
+                break;
+              case 'members':
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AlbumMembersScreen(albumId: widget.albumId),
+                  ),
+                );
+                break;
+              case 'delete':
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('앨범 삭제'),
+                    content: const Text('이 앨범을 삭제하시겠습니까?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('취소'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('삭제'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  try {
+                    final res = await AlbumApi.deleteAlbum(widget.albumId);
+                    if (!mounted) return;
+                    context.read<AlbumProvider>().removeAlbum(widget.albumId);
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          (res['message'] as String?) ?? '앨범이 삭제되었습니다.',
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
+                  }
+                }
+                break;
+            }
+          },
+          itemBuilder: (c) => [
+            if (showShare) const PopupMenuItem(value: 'share', child: Text('공유')),
+            if (showAdd) const PopupMenuItem(value: 'add', child: Text('사진 추가')),
+            if (showEdit) const PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
+            if (showMembers) const PopupMenuItem(value: 'members', child: Text('멤버 조회')),
+            if (showDelete) const PopupMenuItem(value: 'delete', child: Text('앨범 삭제')),
+          ],
+        ),
+      ],
     );
   }
 }

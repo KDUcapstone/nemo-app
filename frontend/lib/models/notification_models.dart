@@ -43,6 +43,8 @@ class NotificationItem {
   final Actor? actor;
   final TargetRef? target;
   final ActionType? actionType;
+  // For ALBUM_INVITE: inviter-set role for me (e.g., VIEWER/EDITOR/CO_OWNER)
+  final String? inviteRole;
 
   NotificationItem({
     required this.notificationId,
@@ -53,6 +55,7 @@ class NotificationItem {
     this.actor,
     this.target,
     this.actionType,
+    this.inviteRole,
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> j) => NotificationItem(
@@ -66,6 +69,7 @@ class NotificationItem {
         actionType: j['actionType'] == null
             ? null
             : ActionType.values.firstWhere((e) => e.name == j['actionType']),
+        inviteRole: j['inviteRole']?.toString(),
       );
 }
 
