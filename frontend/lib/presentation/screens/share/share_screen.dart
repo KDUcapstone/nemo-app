@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
 import 'package:frontend/presentation/screens/share/year_recap_screen.dart';
 import 'package:frontend/presentation/screens/share/timeline_screen.dart';
+import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
+import 'package:frontend/widgets/notification_badge_icon.dart';
 
 class ShareScreen extends StatelessWidget {
   const ShareScreen({super.key});
@@ -73,10 +75,17 @@ class _TopRow extends StatelessWidget {
         ),
         Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
+            NotificationBadgeIcon(
+              icon: Icons.notifications_outlined,
               color: AppColors.textPrimary,
-              onPressed: () => _showInviteStatusSheet(context),
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const NotificationBottomSheet(),
+                );
+              },
             ),
             IconButton(
               icon: const Icon(Icons.settings_outlined),
@@ -406,16 +415,7 @@ Future<void> _showShareAlbumSheet(BuildContext context) async {
   );
 }
 
-Future<void> _showInviteStatusSheet(BuildContext context) async {
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    isDismissible: true,
-    barrierColor: Colors.black26,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const _BottomSheetScaffold(child: _InviteStatusSheet()),
-  );
-}
+
 
 class _BottomSheetScaffold extends StatelessWidget {
   final Widget child;
@@ -525,47 +525,7 @@ class _ShareAlbumSheet extends StatelessWidget {
   }
 }
 
-class _InviteStatusSheet extends StatelessWidget {
-  const _InviteStatusSheet();
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '초대 현황',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _GlassCard(
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '친구들로부터 공유 초대가 있습니다.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.check_circle, color: Colors.green),
-                onPressed: () => _toast(context, '승인'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.cancel, color: Colors.redAccent),
-                onPressed: () => _toast(context, '거절'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 // Handlers for Share actions
 Future<void> _handleCreateShareLink(BuildContext context) async {

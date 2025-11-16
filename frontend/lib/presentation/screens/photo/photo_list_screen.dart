@@ -16,6 +16,8 @@ import 'package:frontend/app/theme/app_colors.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
+import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
+import 'package:frontend/widgets/notification_badge_icon.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -358,13 +360,16 @@ class _TopBar extends StatelessWidget {
         ),
         Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.notifications_none_rounded),
+            NotificationBadgeIcon(
+              icon: Icons.notifications_none_rounded,
               color: AppColors.textPrimary,
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('알림 준비 중입니다.')));
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const NotificationBottomSheet(),
+                );
               },
             ),
             IconButton(

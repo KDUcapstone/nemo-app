@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:frontend/services/friend_api.dart';
 
 class FriendsListScreen extends StatefulWidget {
-  const FriendsListScreen({super.key});
+  final int initialTabIndex;
+  const FriendsListScreen({super.key, this.initialTabIndex = 0});
 
   @override
   State<FriendsListScreen> createState() => _FriendsListScreenState();
@@ -21,7 +22,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex.clamp(0, 2));
     _loadFriends();
     _loadRequests();
   }

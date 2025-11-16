@@ -15,6 +15,8 @@ import 'package:frontend/app/constants.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:frontend/services/map_api.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
+import 'package:frontend/widgets/notification_badge_icon.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -75,13 +77,16 @@ class HomeScreen extends StatelessWidget {
         ),
         Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.notifications_none_rounded),
+            NotificationBadgeIcon(
+              icon: Icons.notifications_none_rounded,
               color: AppColors.textPrimary,
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('알림 준비 중입니다.')));
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const NotificationBottomSheet(),
+                );
               },
             ),
             IconButton(
