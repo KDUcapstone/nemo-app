@@ -1,8 +1,12 @@
+// backend/src/main/java/com/nemo/backend/domain/photo/dto/PhotoResponseDto.java
 package com.nemo.backend.domain.photo.dto;
 
 import com.nemo.backend.domain.photo.entity.Photo;
 import java.time.LocalDateTime;
 
+/**
+ * 사진 상세/목록 조회용 DTO. 기존 스키마를 유지한다.
+ */
 public class PhotoResponseDto {
     private Long id;
     private Long userId;
