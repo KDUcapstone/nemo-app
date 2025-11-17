@@ -106,11 +106,7 @@ class PhotoViewerScreen extends StatelessWidget {
                                 'photoId': photoId,
                                 'favorite': ok,
                               });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('즐겨찾기 상태가 변경되었습니다.'),
-                                ),
-                              );
+                              // 성공 시 토스트 메시지 제거
                             } catch (e) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(

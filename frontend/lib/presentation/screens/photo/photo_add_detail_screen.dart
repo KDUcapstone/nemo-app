@@ -1,71 +1,61 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:frontend/services/photo_api.dart';
+import 'package:frontend/services/photo_upload_api.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/providers/photo_provider.dart';
 
-class PhotoEditScreen extends StatefulWidget {
-  final int photoId;
-  const PhotoEditScreen({super.key, required this.photoId});
+class PhotoAddDetailScreen extends StatefulWidget {
+  final File imageFile;
+  final String? qrCode; // QR 스캔인 경우 QR 코드 값
+  final DateTime? defaultTakenAt; // 기본 촬영일시
+
+  const PhotoAddDetailScreen({
+    super.key,
+    required this.imageFile,
+    this.qrCode,
+    this.defaultTakenAt,
+  });
 
   @override
-  State<PhotoEditScreen> createState() => _PhotoEditScreenState();
+  State<PhotoAddDetailScreen> createState() => _PhotoAddDetailScreenState();
 }
 
-class _PhotoEditScreenState extends State<PhotoEditScreen> {
+class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
   final _formKey = GlobalKey<FormState>();
   final _locationCtrl = TextEditingController();
   final _brandCtrl = TextEditingController();
   final _memoCtrl = TextEditingController();
   final _tagCtrl = TextEditingController();
 
-  bool _loading = true;
-  bool _saving = false;
   DateTime? _takenAt;
   List<String> _tags = [];
   Set<int> _selectedFriendIds = {};
+  bool _loading = false;
   bool _loadingFriends = false;
   List<Map<String, dynamic>> _friends = [];
-  String _imageUrl = '';
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _takenAt = widget.defaultTakenAt ?? DateTime.now();
+    // QR에서 추정 가능한 정보 기본값 설정
+    if (widget.qrCode != null) {
+      _locationCtrl.text = '포토부스(추정)';
+      _brandCtrl.text = '인생네컷';
+      _tags = ['QR업로드'];
+    }
     _loadFriends();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final api = PhotoApi();
-      final res = await api.getPhoto(widget.photoId);
-      _imageUrl = (res['imageUrl'] ?? '') as String;
-      _locationCtrl.text = (res['location'] as String?) ?? '';
-      _brandCtrl.text = (res['brand'] as String?) ?? '';
-      _tags = (res['tagList'] as List?)?.cast<String>() ?? [];
-      _memoCtrl.text = (res['memo'] as String?) ?? '';
-
-      // 촬영일시 파싱
-      final t = res['takenAt'] as String?;
-      _takenAt = t != null ? DateTime.tryParse(t) : null;
-
-      // 친구 목록에서 ID 추출
-      final friends = (res['friendList'] as List?) ?? const [];
-      _selectedFriendIds = friends
-          .whereType<Map>()
-          .map((e) => e['userId'] as int?)
-          .whereType<int>()
-          .toSet();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('편집 데이터 로드 실패: $e')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  @override
+  void dispose() {
+    _locationCtrl.dispose();
+    _brandCtrl.dispose();
+    _memoCtrl.dispose();
+    _tagCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFriends() async {
@@ -86,15 +76,6 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
         ).showSnackBar(SnackBar(content: Text('친구 목록 로드 실패: $e')));
       }
     }
-  }
-
-  @override
-  void dispose() {
-    _locationCtrl.dispose();
-    _brandCtrl.dispose();
-    _memoCtrl.dispose();
-    _tagCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _selectTakenAt() async {
@@ -236,62 +217,88 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _uploadPhoto() async {
     if (_formKey.currentState?.validate() != true) return;
 
-    setState(() => _saving = true);
-    try {
-      final api = PhotoApi();
-      final res = await api.updatePhotoDetails(
-        widget.photoId,
-        takenAt: _takenAt,
-        location: _locationCtrl.text.trim().isEmpty
-            ? null
-            : _locationCtrl.text.trim(),
-        brand: _brandCtrl.text.trim().isEmpty ? null : _brandCtrl.text.trim(),
-        tagList: _tags.isEmpty ? null : _tags,
-        friendIdList: _selectedFriendIds.isEmpty
-            ? null
-            : _selectedFriendIds.toList(),
-        memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
-      );
-      if (!mounted) return;
-
-      // PhotoProvider 업데이트
-      context.read<PhotoProvider>().updateFromResponse({
-        'photoId': widget.photoId,
-        'takenAt': res['takenAt'],
-        'location': res['location'],
-        'brand': res['brand'],
-        'tagList': res['tagList'] ?? _tags,
-        'memo': res['memo'],
-      });
-
+    // QR 업로드인 경우 촬영일시 필수, 갤러리 업로드인 경우 선택사항
+    if (widget.qrCode != null && _takenAt == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('저장 완료')));
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
+      ).showSnackBar(const SnackBar(content: Text('촬영일시를 선택해주세요.')));
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final api = PhotoUploadApi();
+      Map<String, dynamic> result;
+
+      if (widget.qrCode != null) {
+        // QR 업로드: takenAt, location, brand 필수
+        final takenAtIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!);
+        result = await api.uploadPhotoViaQr(
+          qrCode: widget.qrCode!,
+          imageFile: widget.imageFile,
+          takenAtIso: takenAtIso,
+          location: _locationCtrl.text.trim().isEmpty
+              ? '미지정'
+              : _locationCtrl.text.trim(),
+          brand: _brandCtrl.text.trim().isEmpty
+              ? '미지정'
+              : _brandCtrl.text.trim(),
+          tagList: _tags.isEmpty ? null : _tags,
+          friendIdList: _selectedFriendIds.isEmpty
+              ? null
+              : _selectedFriendIds.toList(),
+          memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+        );
+      } else {
+        // 갤러리 업로드: 모든 필드 선택사항
+        final takenAtIso = _takenAt != null
+            ? DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!)
+            : null;
+        result = await api.uploadPhotoFromGallery(
+          imageFile: widget.imageFile,
+          takenAtIso: takenAtIso,
+          location: _locationCtrl.text.trim().isEmpty
+              ? null
+              : _locationCtrl.text.trim(),
+          brand: _brandCtrl.text.trim().isEmpty ? null : _brandCtrl.text.trim(),
+          tagList: _tags.isEmpty ? null : _tags,
+          friendIdList: _selectedFriendIds.isEmpty
+              ? null
+              : _selectedFriendIds.toList(),
+          memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+        );
       }
+
+      if (!context.mounted) return;
+
+      // 상태 반영
+      context.read<PhotoProvider>().addFromResponse(result);
+
+      // 성공 알림 후 뒤로가기
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('사진이 추가되었습니다.')));
+      Navigator.pop(context, true); // true를 반환하여 성공 표시
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('상세 편집'),
+        title: const Text('사진 정보 입력'),
         actions: [
-          if (_saving)
+          if (_loading)
             const Padding(
               padding: EdgeInsets.all(16),
               child: SizedBox(
@@ -303,8 +310,8 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
           else
             IconButton(
               icon: const Icon(Icons.check),
-              onPressed: _save,
-              tooltip: '저장',
+              onPressed: _uploadPhoto,
+              tooltip: '사진 추가',
             ),
         ],
       ),
@@ -323,9 +330,9 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               // 사진 미리보기
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: _imageUrl.isNotEmpty
-                    ? Image.network(
-                        _imageUrl,
+                child: widget.imageFile.existsSync()
+                    ? Image.file(
+                        widget.imageFile,
                         fit: BoxFit.contain,
                         width: double.infinity,
                         height: 300,
@@ -351,17 +358,6 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                             ),
                           );
                         },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            width: double.infinity,
-                            height: 300,
-                            color: Colors.grey[200],
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          );
-                        },
                         gaplessPlayback: true,
                         filterQuality: FilterQuality.low,
                       )
@@ -379,7 +375,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                             ),
                             SizedBox(height: 8),
                             Text(
-                              '이미지를 찾을 수 없습니다',
+                              '파일을 찾을 수 없습니다',
                               style: TextStyle(color: Colors.grey),
                             ),
                           ],
@@ -391,9 +387,9 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               // 촬영일시
               Row(
                 children: [
-                  const Text(
-                    '촬영일시:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  Text(
+                    widget.qrCode != null ? '촬영일시*:' : '촬영일시:',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -553,19 +549,19 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               ),
               const SizedBox(height: 24),
 
-              // 저장 버튼
+              // 업로드 버튼
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
+                  onPressed: _loading ? null : _uploadPhoto,
+                  icon: _loading
                       ? const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.check),
-                  label: const Text('저장'),
+                      : const Icon(Icons.cloud_upload),
+                  label: const Text('사진 추가'),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),

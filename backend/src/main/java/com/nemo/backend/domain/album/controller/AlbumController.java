@@ -19,19 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor // ⭐ 생성자 자동 생성 (final 필드만)
 public class AlbumController {
 
-    // --------------------------------------------------------
-    // ⭐ 의존성 주입
-    // --------------------------------------------------------
     private final AlbumService albumService;
-
-    private final AlbumShareService albumShareService; // ⬅ 추가
-
-    /**
-     * 🔐 AuthExtractor
-     * - Authorization 헤더에서 userId를 뽑는 공통 로직
-     *   (JWT 검증 + RefreshToken 존재 여부까지 포함)
-     * - UserAuthController, PhotoController 등과 동일하게 사용
-     */
     private final AuthExtractor authExtractor;
 
     // ========================================================
@@ -45,7 +33,6 @@ public class AlbumController {
 
         List<AlbumSummaryResponse> content = albumService.getAlbums(userId);
 
-        // 간단한 페이징 형식으로 감싸서 반환
         return ResponseEntity.ok(
                 java.util.Map.of(
                         "content", content,
