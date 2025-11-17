@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.service.AlbumService;
+import com.nemo.backend.domain.album.service.AlbumShareService;
 import com.nemo.backend.domain.auth.util.AuthExtractor;  // 🔥 공통 인증 유틸
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
