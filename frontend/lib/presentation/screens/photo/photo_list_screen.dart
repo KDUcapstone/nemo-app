@@ -14,6 +14,10 @@ import 'package:frontend/services/album_api.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
+import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
+import 'package:frontend/widgets/notification_badge_icon.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -25,7 +29,11 @@ class PhotoListScreen extends StatefulWidget {
 class _PhotoListScreenState extends State<PhotoListScreen> {
   bool _showAlbums = false;
   String _sort = 'takenAt,desc';
+  String _albumSort = 'createdAt,desc';
+  bool _albumSharedOnly = false;
   String? _brand;
+  final ImagePicker _imagePicker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
@@ -38,11 +46,47 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     });
   }
 
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image != null && mounted) {
+        final file = File(image.path);
+        // PhotoAddDetailScreen으로 이동 (qrCode: null)
+        final success = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhotoAddDetailScreen(
+              imageFile: file,
+              qrCode: null, // QR 없음
+              defaultTakenAt: null, // EXIF 또는 사용자 입력
+            ),
+          ),
+        );
+        if (success == true && mounted) {
+          // 사진이 성공적으로 추가된 경우 (화면에서 이미 알림 표시)
+          // Provider 상태는 PhotoAddDetailScreen에서 이미 업데이트됨
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('갤러리에서 사진을 선택하지 못했습니다: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = context.watch<PhotoProvider>().items;
     return Scaffold(
       appBar: null,
+      floatingActionButton: !_showAlbums
+          ? _GlassFloatingActionButton(onPressed: _pickFromGallery)
+          : null,
       body: SafeArea(
         child: Column(
           children: [
@@ -66,29 +110,52 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       children: [
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: !_showAlbums
-                              ? ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 70,
-                                  ),
-                                  child: _BrandFilter(
-                                    value: _brand,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 30),
+                            child: _showAlbums
+                                ? _AlbumSortDropdown(
+                                    value: _albumSort,
+                                    sharedOnly: _albumSharedOnly,
                                     onChanged: (v) {
-                                      setState(() => _brand = v);
+                                      if (v == null) return;
+                                      setState(() => _albumSort = v);
+                                      context
+                                          .read<AlbumProvider>()
+                                          .resetAndLoad(sort: v);
+                                    },
+                                    onToggleSharedOnly: (v) {
+                                      setState(() => _albumSharedOnly = v);
+                                    },
+                                  )
+                                : _SortDropdown(
+                                    value: _sort,
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      setState(() => _sort = v);
                                       context
                                           .read<PhotoProvider>()
-                                          .resetAndLoad(brand: v);
+                                          .resetAndLoad(sort: v);
                                     },
                                   ),
-                                )
-                              : const SizedBox(width: 40),
+                          ),
                         ),
                         Align(
                           alignment: Alignment.center,
                           child: _TopToggle(
                             isAlbums: _showAlbums,
-                            onChanged: (isAlbums) =>
-                                setState(() => _showAlbums = isAlbums),
+                            onChanged: (isAlbums) {
+                              setState(() => _showAlbums = isAlbums);
+                              // 앨범 모드로 전환 시 Provider의 정렬 상태 동기화
+                              if (isAlbums) {
+                                final albumProvider = context
+                                    .read<AlbumProvider>();
+                                if (albumProvider.sort != _albumSort) {
+                                  albumProvider.resetAndLoad(sort: _albumSort);
+                                }
+                                // 공유 앨범 정보 갱신
+                                albumProvider.refreshSharedAlbums();
+                              }
+                            },
                           ),
                         ),
                         Align(
@@ -137,16 +204,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                 )
                               : ConstrainedBox(
                                   constraints: const BoxConstraints(
-                                    maxWidth: 30,
+                                    maxWidth: 70,
                                   ),
-                                  child: _SortDropdown(
-                                    value: _sort,
+                                  child: _BrandFilter(
+                                    value: _brand,
                                     onChanged: (v) {
-                                      if (v == null) return;
-                                      setState(() => _sort = v);
+                                      setState(() => _brand = v);
                                       context
                                           .read<PhotoProvider>()
-                                          .resetAndLoad(sort: v);
+                                          .resetAndLoad(brand: v);
                                     },
                                   ),
                                 ),
@@ -167,7 +233,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     items.isEmpty
                         ? const _EmptyState()
                         : (_showAlbums
-                              ? const _AlbumListGrid()
+                              ? _AlbumListGrid(
+                                  sort: _albumSort,
+                                  sharedOnly: _albumSharedOnly,
+                                )
                               : NotificationListener<ScrollNotification>(
                                   onNotification: (n) {
                                     if (n.metrics.pixels >=
@@ -301,13 +370,16 @@ class _TopBar extends StatelessWidget {
         ),
         Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.notifications_none_rounded),
+            NotificationBadgeIcon(
+              icon: Icons.notifications_none_rounded,
               color: AppColors.textPrimary,
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('알림 준비 중입니다.')));
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const NotificationBottomSheet(),
+                );
               },
             ),
             IconButton(
@@ -450,6 +522,96 @@ class _SortDropdown extends StatelessWidget {
   }
 }
 
+class _AlbumSortDropdown extends StatelessWidget {
+  final String
+  value; // 'createdAt,desc' | 'createdAt,asc' | 'title,asc' | 'title,desc'
+  final bool sharedOnly;
+  final ValueChanged<String?> onChanged;
+  final ValueChanged<bool> onToggleSharedOnly;
+  const _AlbumSortDropdown({
+    required this.value,
+    required this.sharedOnly,
+    required this.onChanged,
+    required this.onToggleSharedOnly,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const sorts = <Map<String, String>>[
+      {'value': 'createdAt,desc', 'label': '최신순'},
+      {'value': 'createdAt,asc', 'label': '오래된순'},
+      {'value': 'title,asc', 'label': '이름순'},
+    ];
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        border: Border.all(color: AppColors.divider, width: 1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Center(
+        child: PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          color: AppColors.secondary,
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          onSelected: (v) => onChanged(v),
+          itemBuilder: (ctx) => [
+            ...sorts.map(
+              (m) => PopupMenuItem<String>(
+                value: m['value']!,
+                child: Text(
+                  m['label']!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            const PopupMenuDivider(height: 6),
+            PopupMenuItem<String>(
+              value: value, // 선택 시 정렬 값 유지
+              onTap: () => onToggleSharedOnly(!sharedOnly),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: sharedOnly,
+                    onChanged: (_) => onToggleSharedOnly(!sharedOnly),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '공유 앨범만 보기',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          child: const SizedBox(
+            height: 28,
+            child: Center(
+              child: Text(
+                '📅',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PhotoCard extends StatelessWidget {
   final PhotoItem item;
   final VoidCallback onTap;
@@ -471,7 +633,10 @@ class _PhotoCard extends StatelessWidget {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Container(color: Colors.grey[200], child: imageWidget),
+              child: Container(
+                color: Colors.grey[200],
+                child: Center(child: imageWidget),
+              ),
             ),
             Positioned(
               top: 8,
@@ -501,7 +666,7 @@ class _Thumb extends StatelessWidget {
       if (!file.existsSync()) return const _ThumbFallback();
       return Image.file(
         file,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         gaplessPlayback: true,
@@ -510,7 +675,7 @@ class _Thumb extends StatelessWidget {
     } else {
       return Image.network(
         imageUrl,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => const _ThumbFallback(),
         loadingBuilder: (context, child, progress) {
@@ -609,7 +774,9 @@ class _DeleteButtonState extends State<_DeleteButton> {
 }
 
 class _AlbumListGrid extends StatefulWidget {
-  const _AlbumListGrid();
+  final String sort;
+  final bool sharedOnly;
+  const _AlbumListGrid({required this.sort, this.sharedOnly = false});
 
   @override
   State<_AlbumListGrid> createState() => _AlbumListGridState();
@@ -619,12 +786,28 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   int? _pressedIndex;
 
   @override
+  void didUpdateWidget(_AlbumListGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // sort 값이 변경되었고, Provider의 sort와도 다르면 다시 로드
+    if (oldWidget.sort != widget.sort) {
+      final provider = context.read<AlbumProvider>();
+      if (provider.sort != widget.sort) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
+          }
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<AlbumProvider>();
     if (provider.albums.isEmpty && !provider.isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          context.read<AlbumProvider>().resetAndLoad();
+          context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
         }
       });
     }
@@ -645,9 +828,14 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
           crossAxisSpacing: 20,
           childAspectRatio: 0.78,
         ),
-        itemCount: provider.albums.length,
+        itemCount: provider.albums
+            .where((a) => !widget.sharedOnly || provider.isShared(a.albumId))
+            .length,
         itemBuilder: (_, i) {
-          final a = provider.albums[i];
+          final filtered = provider.albums
+              .where((a) => !widget.sharedOnly || provider.isShared(a.albumId))
+              .toList();
+          final a = filtered[i];
           final scale = _pressedIndex == i ? 0.96 : 1.0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -685,6 +873,34 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                         if (action == 'share') {
                           // AlbumDetailScreen으로 이동하지 않고 바로 공유 시트 표시
                           await _showAlbumShareSheet(context, a.albumId);
+                        } else if (action == 'fav') {
+                          try {
+                            await AlbumApi.favoriteAlbum(a.albumId);
+                            if (!mounted) return;
+                            context.read<AlbumProvider>().setFavorite(
+                              a.albumId,
+                              true,
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('즐겨찾기 추가 실패: $e')),
+                            );
+                          }
+                        } else if (action == 'unfav') {
+                          try {
+                            await AlbumApi.unfavoriteAlbum(a.albumId);
+                            if (!mounted) return;
+                            context.read<AlbumProvider>().setFavorite(
+                              a.albumId,
+                              false,
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('즐겨찾기 해제 실패: $e')),
+                            );
+                          }
                         } else if (action == 'edit') {
                           Navigator.push(
                             context,
@@ -749,6 +965,30 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                     )
                                   : const ColoredBox(color: Color(0xFFE0E0E0)),
                             ),
+                            if (context.watch<AlbumProvider>().isFavorited(
+                              a.albumId,
+                            ))
+                              const Positioned(
+                                right: 6,
+                                top: 6,
+                                child: Icon(
+                                  Icons.favorite,
+                                  size: 20,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            if (context.watch<AlbumProvider>().isShared(
+                              a.albumId,
+                            ))
+                              const Positioned(
+                                left: 6,
+                                top: 6,
+                                child: Icon(
+                                  Icons.share,
+                                  size: 20,
+                                  color: Colors.white,
+                                ),
+                              ),
                             Positioned(
                               left: 0,
                               right: 0,
@@ -798,8 +1038,9 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   Future<void> _showAlbumShareSheet(BuildContext context, int albumId) async {
     final searchCtrl = TextEditingController();
     final selectedIds = <int>{};
-    final Set<int> inFlight = <int>{};
-    List<Map<String, dynamic>> friends = await FriendApi.list();
+    String defaultRole = 'VIEWER'; // VIEWER | EDITOR | CO_OWNER
+    final Map<int, String> perUserRoles = <int, String>{};
+    List<Map<String, dynamic>> friends = await FriendApi.getFriends();
     List<Map<String, dynamic>> shareTargets = [];
     try {
       shareTargets = await AlbumApi.getShareTargets(albumId);
@@ -835,6 +1076,43 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  // 기본 권한 선택
+                  Row(
+                    children: [
+                      const Text(
+                        '기본 권한',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(width: 12),
+                      StatefulBuilder(
+                        builder: (ctx2, setStateSB) {
+                          return DropdownButton<String>(
+                            value: defaultRole,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'VIEWER',
+                                child: Text('보기 가능'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'EDITOR',
+                                child: Text('수정 가능'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'CO_OWNER',
+                                child: Text('공동 소유주'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              defaultRole = v;
+                              setStateSB(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   const Text(
                     '앨범 공유',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
@@ -894,9 +1172,15 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                     ),
                     onTapOutside: (_) => FocusScope.of(context).unfocus(),
                     onChanged: (q) async {
-                      friends = q.trim().isEmpty
-                          ? await FriendApi.list()
-                          : await FriendApi.search(q);
+                      if (q.trim().isEmpty) {
+                        friends = await FriendApi.getFriends();
+                      } else {
+                        final searchResults = await FriendApi.search(q);
+                        friends = searchResults.where((f) {
+                          final isFriend = (f['isFriend'] as bool?) ?? false;
+                          return isFriend;
+                        }).toList();
+                      }
                       // ignore: use_build_context_synchronously
                       (ctx as Element).markNeedsBuild();
                     },
@@ -908,8 +1192,8 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                     final nick = f['nickname'] as String? ?? '친구$id';
                     final avatarUrl =
                         (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
-                    final isFriend = (f['isFriend'] as bool?) ?? true;
                     final checked = selectedIds.contains(id);
+                    final role = perUserRoles[id] ?? defaultRole;
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundImage:
@@ -924,82 +1208,57 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (!isFriend)
-                            OutlinedButton(
-                              onPressed: inFlight.contains(id)
-                                  ? null
-                                  : () async {
-                                      inFlight.add(id);
-                                      (ctx as Element).markNeedsBuild();
-                                      try {
-                                        await FriendApi.addFriend(id);
-                                        friends[idx] = {...f, 'isFriend': true};
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text('친구 추가 완료: $nick'),
-                                          ),
-                                        );
-                                      } catch (e) {
-                                        if (!context.mounted) return;
-                                        final msg =
-                                            e.toString().contains(
-                                              'ALREADY_FRIEND',
-                                            )
-                                            ? '이미 친구입니다.'
-                                            : e.toString().contains(
-                                                'USER_NOT_FOUND',
-                                              )
-                                            ? '사용자를 찾을 수 없습니다.'
-                                            : '친구 추가 실패';
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(content: Text(msg)),
-                                        );
-                                      } finally {
-                                        inFlight.remove(id);
-                                        (ctx).markNeedsBuild();
-                                      }
-                                    },
-                              child: inFlight.contains(id)
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('친구 추가'),
-                            ),
-                          const SizedBox(width: 8),
-                          Checkbox(
-                            value: checked,
-                            onChanged: isFriend
+                          DropdownButton<String>(
+                            value: role,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'VIEWER',
+                                child: Text('보기 가능'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'EDITOR',
+                                child: Text('수정 가능'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'CO_OWNER',
+                                child: Text('공동 소유주'),
+                              ),
+                            ],
+                            onChanged: checked
                                 ? (v) {
-                                    if (v == true) {
-                                      selectedIds.add(id);
-                                    } else {
-                                      selectedIds.remove(id);
-                                    }
+                                    if (v == null) return;
+                                    perUserRoles[id] = v;
                                     (ctx as Element).markNeedsBuild();
                                   }
                                 : null,
                           ),
-                        ],
-                      ),
-                      onTap: isFriend
-                          ? () {
-                              if (checked) {
-                                selectedIds.remove(id);
-                              } else {
+                          const SizedBox(width: 8),
+                          Checkbox(
+                            value: checked,
+                            onChanged: (v) {
+                              if (v == true) {
                                 selectedIds.add(id);
+                                perUserRoles[id] =
+                                    perUserRoles[id] ?? defaultRole;
+                              } else {
+                                selectedIds.remove(id);
+                                perUserRoles.remove(id);
                               }
                               (ctx as Element).markNeedsBuild();
-                            }
-                          : null,
+                            },
+                          ),
+                        ],
+                      ),
+                      onTap: () {
+                        if (checked) {
+                          selectedIds.remove(id);
+                          perUserRoles.remove(id);
+                        } else {
+                          selectedIds.add(id);
+                          perUserRoles[id] = perUserRoles[id] ?? defaultRole;
+                        }
+                        (ctx as Element).markNeedsBuild();
+                      },
                     );
                   }),
                   const SizedBox(height: 8),
@@ -1057,6 +1316,8 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
         final res = await AlbumApi.shareAlbum(
           albumId: albumId,
           friendIdList: list,
+          defaultRole: defaultRole,
+          perUserRoles: perUserRoles.isEmpty ? null : perUserRoles,
         );
         if (!context.mounted) return;
         ScaffoldMessenger.of(
@@ -1117,12 +1378,75 @@ class _AlbumQuickActions extends StatelessWidget {
                 title: const Text('수정'),
                 onTap: () => Navigator.pop(context, 'edit'),
               ),
+              Builder(
+                builder: (ctx) {
+                  final isFav = context.read<AlbumProvider>().isFavorited(
+                    album.albumId,
+                  );
+                  return ListTile(
+                    leading: Icon(
+                      isFav ? Icons.favorite : Icons.favorite_border,
+                      color: isFav ? Colors.red : null,
+                    ),
+                    title: Text(isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'),
+                    onTap: () =>
+                        Navigator.pop(context, isFav ? 'unfav' : 'fav'),
+                  );
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.delete_outline),
                 title: const Text('삭제'),
                 onTap: () => Navigator.pop(context, 'delete'),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 글라스모피즘 스타일의 FloatingActionButton (둥근 네모)
+class _GlassFloatingActionButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _GlassFloatingActionButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 16, bottom: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.3),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onPressed,
+                child: const Icon(Icons.add, color: Colors.white, size: 28),
+              ),
+            ),
           ),
         ),
       ),

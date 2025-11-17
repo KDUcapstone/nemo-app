@@ -9,6 +9,10 @@ import 'package:flutter/services.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
 import 'package:frontend/presentation/screens/share/year_recap_screen.dart';
 import 'package:frontend/presentation/screens/share/timeline_screen.dart';
+import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
+import 'package:frontend/presentation/screens/share/share_requests_screen.dart';
+import 'package:frontend/widgets/notification_badge_icon.dart';
+import 'package:frontend/presentation/screens/album/album_members_screen.dart';
 
 class ShareScreen extends StatelessWidget {
   const ShareScreen({super.key});
@@ -73,10 +77,17 @@ class _TopRow extends StatelessWidget {
         ),
         Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
+            NotificationBadgeIcon(
+              icon: Icons.notifications_outlined,
               color: AppColors.textPrimary,
-              onPressed: () => _showInviteStatusSheet(context),
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const NotificationBottomSheet(),
+                );
+              },
             ),
             IconButton(
               icon: const Icon(Icons.settings_outlined),
@@ -271,8 +282,14 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
             if (q.trim().isEmpty) {
               setState(() => _applySort());
             } else {
-              final results = await FriendApi.search(q);
-              setState(() => _filtered = results);
+              // 친구 목록 내에서만 로컬 검색
+              final query = q.toLowerCase();
+              final filtered = _friends.where((f) {
+                final nick = (f['nickname'] ?? '').toString().toLowerCase();
+                final email = (f['email'] ?? '').toString().toLowerCase();
+                return nick.contains(query) || email.contains(query);
+              }).toList();
+              setState(() => _filtered = filtered);
             }
           },
         ),
@@ -357,15 +374,6 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                             context,
                             '선택한 ${friendIds.length}명에게 공유되었습니다.',
                           );
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(
-                                albumId: albumId,
-                                autoOpenAction: 'share',
-                              ),
-                            ),
-                          );
                         } catch (e) {
                           final s = e.toString();
                           final msg = s.contains('NOT_FRIEND')
@@ -409,16 +417,7 @@ Future<void> _showShareAlbumSheet(BuildContext context) async {
   );
 }
 
-Future<void> _showInviteStatusSheet(BuildContext context) async {
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    isDismissible: true,
-    barrierColor: Colors.black26,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const _BottomSheetScaffold(child: _InviteStatusSheet()),
-  );
-}
+
 
 class _BottomSheetScaffold extends StatelessWidget {
   final Widget child;
@@ -528,47 +527,7 @@ class _ShareAlbumSheet extends StatelessWidget {
   }
 }
 
-class _InviteStatusSheet extends StatelessWidget {
-  const _InviteStatusSheet();
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '초대 현황',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _GlassCard(
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '친구들로부터 공유 초대가 있습니다.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.check_circle, color: Colors.green),
-                onPressed: () => _toast(context, '승인'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.cancel, color: Colors.redAccent),
-                onPressed: () => _toast(context, '거절'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 // Handlers for Share actions
 Future<void> _handleCreateShareLink(BuildContext context) async {
@@ -941,20 +900,180 @@ class _FriendPickerSheetState extends State<_FriendPickerSheet> {
 
 // Removed unused: _FriendsTagSection
 
-class _CollaborativeAlbumSection extends StatelessWidget {
+class _CollaborativeAlbumSection extends StatefulWidget {
   const _CollaborativeAlbumSection();
+
+  @override
+  State<_CollaborativeAlbumSection> createState() => _CollaborativeAlbumSectionState();
+}
+
+class _CollaborativeAlbumSectionState extends State<_CollaborativeAlbumSection> {
+  int _pendingCount = 0;
+  bool _loading = true;
+  bool _loadingList = true;
+  List<Map<String, dynamic>> _shared = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    setState(() {
+      _loading = true;
+      _loadingList = true;
+    });
+    try {
+      final reqs = await AlbumApi.getShareRequests();
+      final shared = await AlbumApi.getSharedAlbums(page: 0, size: 20);
+      // Provider의 공유 앨범 역할 스냅샷도 최신화 (상세에서 즉시 참조 가능)
+      try {
+        // ignore: use_build_context_synchronously
+        await context.read<AlbumProvider>().refreshSharedAlbums();
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _pendingCount = reqs.length;
+        _shared = shared;
+        _loading = false;
+        _loadingList = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadingList = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
-        _SectionTitle(title: '공유 앨범'),
-        SizedBox(height: 8),
-        Text(
-          '아직 공유중인 앨범이 없습니다.',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ShareRequestsScreen()),
+            );
+            if (mounted) _loadAll(); // 돌아오면 카운트/목록 리프레시
+          },
+          child: Row(
+            children: [
+              const _SectionTitle(title: '공유 앨범'),
+              const SizedBox(width: 8),
+              if (!_loading && _pendingCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$_pendingCount',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
         ),
+        const SizedBox(height: 8),
+        if (_loading && _loadingList)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (_shared.isEmpty)
+          const Text(
+            '아직 공유중인 앨범이 없습니다.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _shared.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final a = _shared[i];
+              final albumId = a['albumId'] as int;
+              final title = a['title']?.toString() ?? '앨범';
+              final cover = a['coverPhotoUrl'] as String?;
+              final count = a['photoCount']?.toString() ?? '';
+              final role = a['myRole']?.toString() ?? 'VIEWER';
+              String roleKo;
+              switch (role) {
+                case 'OWNER':
+                  roleKo = '소유주';
+                  break;
+                case 'CO_OWNER':
+                  roleKo = '공동 소유주';
+                  break;
+                case 'EDITOR':
+                  roleKo = '수정 가능';
+                  break;
+                default:
+                  roleKo = '보기 가능';
+              }
+              final isOwnerLike = role == 'OWNER' || role == 'CO_OWNER';
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
+                leading: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: cover != null && cover.isNotEmpty
+                        ? Image.network(
+                            cover,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(color: Colors.grey[200]),
+                          )
+                        : Container(color: Colors.grey[200], child: const Icon(Icons.photo_library_outlined)),
+                  ),
+                ),
+                title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text('$roleKo · ${count}장', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                trailing: isOwnerLike
+                    ? IconButton(
+                        tooltip: '멤버 조회',
+                        icon: const Icon(Icons.group_outlined),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AlbumMembersScreen(albumId: albumId),
+                            ),
+                          );
+                        },
+                      )
+                    : const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  // 상세 진입 전 Provider에 기본 메타를 주입하여
+                  // 상세 API 목업 제목이 기존 제목을 덮어쓰지 않도록 예방
+                  context.read<AlbumProvider>().addFromResponse({
+                    'albumId': albumId,
+                    'title': title,
+                    'description': a['description']?.toString() ?? '',
+                    'coverPhotoUrl': cover,
+                    'photoCount': int.tryParse(count) ?? 0,
+                    'createdAt': a['createdAt']?.toString() ?? '',
+                    'photoIdList': const <int>[],
+                  });
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AlbumDetailScreen(albumId: albumId),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
       ],
     );
   }

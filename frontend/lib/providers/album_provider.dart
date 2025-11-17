@@ -49,15 +49,70 @@ class AlbumProvider extends ChangeNotifier {
   final int _size = 10;
   String _sort = 'createdAt,desc';
   bool _favoriteOnly = false;
+  final Set<int> _favoritedAlbumIds = <int>{};
+  // 내가 공유 중/공유받은 앨범 ID 집합과 역할 맵
+  final Set<int> _sharedAlbumIds = <int>{};
+  final Map<int, String> _albumIdToMyRole = <int, String>{}; // OWNER|CO_OWNER|EDITOR|VIEWER
 
   bool get isLoading => _isLoading;
   bool get hasMore => _hasMore;
   String get sort => _sort;
   bool get favoriteOnly => _favoriteOnly;
+  bool isFavorited(int albumId) => _favoritedAlbumIds.contains(albumId);
+  bool isShared(int albumId) => _sharedAlbumIds.contains(albumId);
+  String? myRoleOf(int albumId) => _albumIdToMyRole[albumId];
+
+  Future<void> refreshSharedAlbums() async {
+    try {
+      final shared = await AlbumApi.getSharedAlbums(page: 0, size: 200);
+      _sharedAlbumIds
+        ..clear()
+        ..addAll(shared.map<int>((e) => (e['albumId'] as int)));
+      _albumIdToMyRole
+        ..clear()
+        ..addEntries(shared.map((e) => MapEntry(
+              e['albumId'] as int,
+              (e['myRole']?.toString() ?? 'VIEWER').toUpperCase(),
+            )));
+      notifyListeners();
+    } catch (_) {
+      // 무시
+    }
+  }
+
+  void setFavorite(int albumId, bool favorited) {
+    if (favorited) {
+      _favoritedAlbumIds.add(albumId);
+    } else {
+      _favoritedAlbumIds.remove(albumId);
+    }
+    notifyListeners();
+  }
 
   void addFromResponse(Map<String, dynamic> res) {
+    final albumId = res['albumId'] as int;
+    // 이미 존재하는 앨범인지 확인
+    final existingIdx = _albums.indexWhere((e) => e.albumId == albumId);
+    if (existingIdx != -1) {
+      // 이미 존재하면 업데이트만 수행
+      _albums[existingIdx] = AlbumItem(
+        albumId: albumId,
+        title: (res['title'] ?? '') as String,
+        description: (res['description'] ?? '') as String,
+        coverPhotoUrl: res['coverPhotoUrl'] as String?,
+        photoCount:
+            (res['photoCount'] as int?) ??
+            (res['photoIdList'] as List?)?.length ??
+            0,
+        createdAt: (res['createdAt'] as String?) ?? '',
+        photoIdList: ((res['photoIdList'] as List?)?.cast<int>()) ?? const [],
+      );
+      notifyListeners();
+      return;
+    }
+    // 새 앨범인 경우에만 추가
     final item = AlbumItem(
-      albumId: res['albumId'] as int,
+      albumId: albumId,
       title: (res['title'] ?? '') as String,
       description: (res['description'] ?? '') as String,
       coverPhotoUrl: res['coverPhotoUrl'] as String?,
@@ -127,10 +182,16 @@ class AlbumProvider extends ChangeNotifier {
   Future<void> loadDetail(int albumId) async {
     final res = await AlbumApi.getAlbum(albumId);
     final idx = _albums.indexWhere((e) => e.albumId == albumId);
+    final existing = idx != -1 ? _albums[idx] : null;
     final item = AlbumItem(
       albumId: albumId,
-      title: (res['title'] ?? '') as String,
-      description: (res['description'] ?? '') as String,
+      // 모킹/서버 응답이 부정확한 경우 기존 값을 우선 유지
+      title: (existing?.title.isNotEmpty == true)
+          ? existing!.title
+          : ((res['title'] ?? '') as String),
+      description: (existing?.description.isNotEmpty == true)
+          ? existing!.description
+          : ((res['description'] ?? '') as String),
       coverPhotoUrl: res['coverPhotoUrl'] as String?,
       photoCount:
           (res['photoCount'] as int?) ??
@@ -175,11 +236,16 @@ class AlbumProvider extends ChangeNotifier {
       if (content.isEmpty) {
         _hasMore = false;
       } else {
+        // 중복 체크 추가
+        final existingIds = _albums.map((e) => e.albumId).toSet();
         for (final m in content) {
           final map = (m as Map).cast<String, dynamic>();
+          final albumId = map['albumId'] as int;
+          // 이미 존재하는 앨범은 건너뛰기
+          if (existingIds.contains(albumId)) continue;
           _albums.add(
             AlbumItem(
-              albumId: map['albumId'] as int,
+              albumId: albumId,
               title: (map['title'] ?? '') as String,
               description: (map['description'] ?? '') as String,
               coverPhotoUrl: map['coverPhotoUrl'] as String?,

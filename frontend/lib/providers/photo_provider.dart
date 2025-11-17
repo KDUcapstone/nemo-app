@@ -63,9 +63,18 @@ class PhotoProvider extends ChangeNotifier {
   }
 
   void addFromResponse(Map<String, dynamic> res) {
+    final photoId = res['photoId'] as int;
+    // 이미 존재하는 사진인지 확인
+    final existingIdx = _items.indexWhere((e) => e.photoId == photoId);
+    if (existingIdx != -1) {
+      // 이미 존재하면 업데이트만 수행
+      updateFromResponse(res);
+      return;
+    }
+    // 새 사진인 경우에만 추가
     add(
       PhotoItem(
-        photoId: res['photoId'] as int,
+        photoId: photoId,
         imageUrl: (res['imageUrl'] ?? '') as String,
         takenAt: res['takenAt'] as String? ?? '',
         location: res['location'] as String? ?? '',

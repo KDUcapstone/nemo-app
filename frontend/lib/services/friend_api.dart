@@ -109,42 +109,50 @@ class FriendApi {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      if (targetUserId <= 0) {
-        throw Exception('USER_NOT_FOUND');
-      }
-      // 더미: 이미 친구인 경우
-      if (targetUserId == 2) {
-        throw Exception('ALREADY_FRIEND');
-      }
+      if (targetUserId <= 0) throw Exception('USER_NOT_FOUND');
+      if (targetUserId == 2) throw Exception('ALREADY_FRIEND');
       return {
-        'message': '친구 요청이 완료되었습니다.',
-        'friend': {
+        'requestId': 12,
+        'status': 'PENDING',
+        'message': '친구 요청이 전송되었습니다.',
+        'target': {
           'userId': targetUserId,
-          'nickname': '친구$targetUserId',
-          'profileImageUrl': null,
+          'nickname': '네컷러버',
+          'profileImageUrl':
+              'https://picsum.photos/seed/user$targetUserId/200/200',
         },
       };
     }
 
-    // 🔹 쿼리 파라미터로 targetId 전달
-    final uri = _uri('/api/friends').replace(
-      queryParameters: {
-        'targetId': targetUserId.toString(),
-      },
-    );
-
-    // 🔹 body 필요 없음 (백엔드는 @RequestParam만 사용)
+    // 명세: POST /api/friends with JSON body { targetUserId }
     final res = await http.post(
-      uri,
+      _uri('/api/friends'),
       headers: _headers(),
+      body: jsonEncode({'targetUserId': targetUserId}),
     );
 
-    if (res.statusCode == 200 || res.statusCode == 201) {
+    if (res.statusCode == 201 || res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
-    if (res.statusCode == 409) throw Exception('ALREADY_FRIEND');
+    if (res.statusCode == 409) {
+      final body = jsonDecode(res.body);
+      final err = (body is Map && body['error'] is String)
+          ? body['error'] as String
+          : '';
+      if (err == 'ALREADY_FRIEND' || err == 'REQUEST_ALREADY_EXISTS') {
+        throw Exception(err);
+      }
+      throw Exception('CONFLICT');
+    }
     if (res.statusCode == 404) throw Exception('USER_NOT_FOUND');
     if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    if (res.statusCode == 400) {
+      final body = jsonDecode(res.body);
+      if (body is Map && body['error'] == 'CANNOT_ADD_SELF') {
+        throw Exception('CANNOT_ADD_SELF');
+      }
+      throw Exception('BAD_REQUEST');
+    }
     throw Exception('Failed to add friend (${res.statusCode})');
   }
 
@@ -167,17 +175,12 @@ class FriendApi {
       };
     }
 
-    final uri = _uri('/api/friends/accept').replace(
-      queryParameters: {
-        'requesterId': requesterUserId.toString(),
-      },
-    );
+    final uri = _uri(
+      '/api/friends/accept',
+    ).replace(queryParameters: {'requesterId': requesterUserId.toString()});
 
     // 🔹 body 제거 (쿼리 파라미터만 전달)
-    final res = await http.put(
-      uri,
-      headers: _headers(),
-    );
+    final res = await http.put(uri, headers: _headers());
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -195,6 +198,7 @@ class FriendApi {
       );
       return [
         {
+          'requestId': 12,
           'userId': 7,
           'nickname': '신규친구7',
           'email': 'new7@example.com',
@@ -204,6 +208,7 @@ class FriendApi {
               .toIso8601String(),
         },
         {
+          'requestId': 15,
           'userId': 8,
           'nickname': '신규친구8',
           'email': 'new8@example.com',
@@ -214,21 +219,68 @@ class FriendApi {
         },
       ];
     }
-    final uri = _uri(
-      '/api/friends',
-    ).replace(queryParameters: {'status': 'PENDING'});
-    final res = await http.get(uri, headers: _headers());
+    // 명세: GET /api/friends/requests
+    final res = await http.get(
+      _uri('/api/friends/requests'),
+      headers: _headers(),
+    );
     if (res.statusCode == 200) {
-      final decoded = jsonDecode(res.body);
-      if (decoded is List) return decoded.cast<Map<String, dynamic>>();
-      if (decoded is Map<String, dynamic>) {
-        final List list = decoded['content'] ?? decoded['requests'] ?? [];
-        return list.cast<Map<String, dynamic>>();
-      }
-      return const <Map<String, dynamic>>[];
+      final List list = jsonDecode(res.body) as List;
+      return list.cast<Map<String, dynamic>>();
     }
     if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
     throw Exception('Failed to fetch requests (${res.statusCode})');
+  }
+
+  // 명세: POST /api/friends/{requestId}/accept
+  static Future<Map<String, dynamic>> acceptRequest(int requestId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'message': '친구 요청을 수락했습니다.',
+        'requestId': requestId,
+        'status': 'ACCEPTED',
+      };
+    }
+    final res = await http.post(
+      _uri('/api/friends/$requestId/accept'),
+      headers: _headers(),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    if (res.statusCode == 404) throw Exception('REQUEST_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 400) throw Exception('ALREADY_PROCESSED');
+    throw Exception('Failed to accept request (${res.statusCode})');
+  }
+
+  // 명세: POST /api/friends/{requestId}/reject
+  static Future<Map<String, dynamic>> rejectRequest(int requestId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'message': '친구 요청이 거절되었습니다.',
+        'requestId': requestId,
+        'status': 'REJECTED',
+      };
+    }
+    final res = await http.post(
+      _uri('/api/friends/$requestId/reject'),
+      headers: _headers(),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    if (res.statusCode == 404) throw Exception('REQUEST_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    throw Exception('Failed to reject request (${res.statusCode})');
   }
 
   // GET /api/friends → friends array
