@@ -106,13 +106,21 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
     try {
       final authService = AuthService();
-      final response = await authService.getUserInfo();
+      final response = await authService.getUserInfo(); // { userId, email, nickname, profileImageUrl, createdAt }
 
       setState(() {
         _userInfo = response;
-        _nicknameController.text = response['nickname'] as String;
+        _nicknameController.text = response['nickname'] as String? ?? '';
         _isLoading = false;
       });
+
+      // 선택: Provider에 최신 닉네임/이미지도 반영하고 싶으면
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        userProvider.nickname = response['nickname'] as String?;
+        userProvider.profileImageUrl = response['profileImageUrl'] as String?;
+        userProvider.notifyListeners();
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -244,35 +252,43 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   Future<void> _updateUserInfo() async {
     final formState = _formKey.currentState;
-    if (formState != null) {
-      if (!formState.validate()) return;
-    }
+    if (formState != null && !formState.validate()) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // TODO: 사용자 정보 수정 API 호출
-      // PUT /api/users/me
-      // Authorization: Bearer {JWT_TOKEN}
-      // Content-Type: multipart/form-data
-      // {
-      //   "nickname": _nicknameController.text,
-      //   "profileImage": _selectedImage (optional)
-      // }
+      final authService = AuthService();
 
-      // 임시 딜레이 (실제 API 호출 시 제거)
-      await Future.delayed(const Duration(seconds: 2));
+      // 1) 서버에 실제로 프로필 업데이트 요청 (multipart)
+      final updated = await authService.updateUserProfile(
+        nickname: _nicknameController.text.trim(),
+        image: _selectedImage, // null이면 서버에서 무시
+      );
 
+      // 2) 서버에서 응답 온 값으로 다시 세팅
       setState(() {
-        _userInfo['nickname'] = _nicknameController.text;
-        if (_selectedImage != null) {
-          _userInfo['profileImage'] = _selectedImage!.path;
-        }
+        _userInfo = {
+          'userId': updated['userId'],
+          'email': updated['email'],
+          'nickname': updated['nickname'],
+          'profileImageUrl': updated['profileImageUrl'],
+          'createdAt': _userInfo['createdAt'], // 가입일은 그대로
+        };
+
         _isEditing = false;
+        _selectedImage = null;
         _isLoading = false;
       });
+
+      // 3) Provider에도 반영 (상단 앱바/다른 화면에서 쓸 때)
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        userProvider.nickname = updated['nickname'] as String?;
+        userProvider.profileImageUrl = updated['profileImageUrl'] as String?;
+        userProvider.notifyListeners();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -699,7 +715,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           nicknameController: _nicknameController,
                           email: _userInfo['email'],
                           nickname: _userInfo['nickname'],
-                          profileImageUrl: _userInfo['profileImage'],
+                          profileImageUrl: _userInfo['profileImageUrl'], // ✅ 여기!!
                           selectedImage: _selectedImage,
                           onEdit: () => setState(() => _isEditing = true),
                           onCancel: () => setState(() {
