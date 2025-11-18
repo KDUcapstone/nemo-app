@@ -1,12 +1,15 @@
+// backend/src/main/java/com/nemo/backend/domain/photo/controller/PhotoController.java
 package com.nemo.backend.domain.photo.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nemo.backend.domain.auth.util.AuthExtractor;          // 🔐 공통 인증 유틸
+import com.nemo.backend.domain.auth.util.AuthExtractor;
 import com.nemo.backend.domain.photo.dto.PhotoListItemDto;
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 import com.nemo.backend.domain.photo.dto.PhotoUploadRequest;
 import com.nemo.backend.domain.photo.service.PhotoService;
+import com.nemo.backend.domain.user.entity.User;
+import com.nemo.backend.domain.user.repository.UserRepository;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 import com.nemo.backend.web.PageMetaDto;
@@ -24,23 +27,26 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @SecurityRequirement(name = "BearerAuth")
 @RestController
-@RequestMapping("/api/photos")
+@RequestMapping(
+        value = "/api/photos",
+        produces = "application/json; charset=UTF-8"
+)
 @RequiredArgsConstructor
 public class PhotoController {
 
     private final PhotoService photoService;
     private final AuthExtractor authExtractor;
+    private final UserRepository userRepository;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
     // ========================================================
     // 1) QR 기반 사진 업로드  (POST /api/photos)
-    //    - 명세 기준: qrCode + image + 메타데이터
-    //    - 구현: qrCode / image 둘 중 최소 하나는 필수
     // ========================================================
     @Operation(
             summary = "QR 사진 업로드",
@@ -55,30 +61,32 @@ public class PhotoController {
     )
     public ResponseEntity<PhotoUploadResponse> uploadByQr(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-
-            // 명세서 기준 필드명
-            @RequestPart(value = "qrCode", required = false) String qrCode,
             @RequestPart(value = "image", required = false) MultipartFile image,
-            @RequestPart(value = "takenAt", required = false)
+            @RequestParam(value = "qrUrl", required = false) String qrUrl,
+            @RequestParam(value = "qrCode", required = false) String qrCode,
+            @RequestParam(value = "takenAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime takenAt,
-            @RequestPart(value = "location", required = false) String location,
-            @RequestPart(value = "brand", required = false) String brand,
-            @RequestPart(value = "tagList", required = false) String tagListJson,
-            @RequestPart(value = "friendIdList", required = false) String friendIdListJson,
-            @RequestPart(value = "memo", required = false) String memo
+            @RequestParam(value = "location", required = false) String location,
+            @RequestParam(value = "brand", required = false) String brand,
+            @RequestParam(value = "tagList", required = false) String tagListJson,
+            @RequestParam(value = "friendIdList", required = false) String friendIdListJson,
+            @RequestParam(value = "memo", required = false) String memo
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        // ✅ 최소 조건 체크: qrCode 또는 image 둘 중 하나는 있어야 함
-        if ((qrCode == null || qrCode.isBlank())
+        String effectiveQr = (qrUrl != null && !qrUrl.isBlank()) ? qrUrl : qrCode;
+
+        if ((effectiveQr == null || effectiveQr.isBlank())
                 && (image == null || image.isEmpty())) {
-            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "image 또는 qrCode 중 하나는 필수입니다. (IMAGE_REQUIRED)");
+            throw new ApiException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "image 또는 qrCode/qrUrl 중 하나는 필수입니다. (IMAGE_OR_QR_REQUIRED)"
+            );
         }
 
-        // 하나의 DTO로 합성(필요하면 서비스에서 더 세부 분기)
         PhotoUploadRequest req = new PhotoUploadRequest(
                 image,
-                qrCode,    // qrUrlOrPayload 용도로 사용
+                effectiveQr,
                 qrCode,
                 (takenAt != null) ? takenAt.toString() : null,
                 location,
@@ -88,7 +96,7 @@ public class PhotoController {
 
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                req.qrUrl(),      // qrUrlOrPayload
+                req.qrUrl(),
                 req.image(),
                 brand,
                 location,
@@ -98,7 +106,6 @@ public class PhotoController {
                 memo
         );
 
-        // 응답 DTO 구성 (명세서 기준)
         String isoTakenAt = (dto.getTakenAt() != null)
                 ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                 : (takenAt != null ? takenAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
@@ -110,11 +117,11 @@ public class PhotoController {
                 dto.getId(),
                 dto.getImageUrl(),
                 isoTakenAt,
-                (location != null ? location : null),
-                (dto.getBrand() != null ? dto.getBrand() : brand),
+                dto.getLocationName(),
+                dto.getBrand(),
                 tagList,
                 friendList,
-                (memo != null ? memo : "")
+                dto.getMemo() != null ? dto.getMemo() : ""
         );
 
         return ResponseEntity
@@ -141,13 +148,13 @@ public class PhotoController {
     public ResponseEntity<PhotoUploadResponse> uploadFromGallery(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestPart(value = "image", required = true) MultipartFile image,
-            @RequestPart(value = "takenAt", required = false)
+            @RequestParam(value = "takenAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime takenAt,
-            @RequestPart(value = "location", required = false) String location,
-            @RequestPart(value = "brand", required = false) String brand,
-            @RequestPart(value = "tagList", required = false) String tagListJson,
-            @RequestPart(value = "friendIdList", required = false) String friendIdListJson,
-            @RequestPart(value = "memo", required = false) String memo
+            @RequestParam(value = "location", required = false) String location,
+            @RequestParam(value = "brand", required = false) String brand,
+            @RequestParam(value = "tagList", required = false) String tagListJson,
+            @RequestParam(value = "friendIdList", required = false) String friendIdListJson,
+            @RequestParam(value = "memo", required = false) String memo
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
@@ -157,7 +164,7 @@ public class PhotoController {
 
         PhotoUploadRequest req = new PhotoUploadRequest(
                 image,
-                null,           // qrUrl 없음 (갤러리 업로드)
+                null,
                 null,
                 (takenAt != null) ? takenAt.toString() : null,
                 location,
@@ -167,7 +174,7 @@ public class PhotoController {
 
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                null,           // qrUrlOrPayload 없음
+                null,
                 req.image(),
                 brand,
                 location,
@@ -188,11 +195,11 @@ public class PhotoController {
                 dto.getId(),
                 dto.getImageUrl(),
                 isoTakenAt,
-                (location != null ? location : null),
-                (dto.getBrand() != null ? dto.getBrand() : brand),
+                dto.getLocationName(),
+                dto.getBrand(),
                 tagList,
                 friendList,
-                (memo != null ? memo : "")
+                dto.getMemo() != null ? dto.getMemo() : ""
         );
 
         return ResponseEntity
@@ -215,7 +222,6 @@ public class PhotoController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        // 정렬 처리 (takenAt / createdAt / id)
         Sort sort = Sort.by(Sort.Direction.DESC, "takenAt");
         if (sortBy != null && !sortBy.isBlank()) {
             String[] parts = sortBy.split(",");
@@ -232,18 +238,16 @@ public class PhotoController {
         }
 
         Pageable pageable = PageRequest.of(page, size, sort);
-        var pageDto = photoService.list(userId, pageable);
+        var pageDto = photoService.list(userId, pageable, favorite);
         DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
         List<PhotoListItemDto> items = pageDto.map(p -> PhotoListItemDto.builder()
                 .photoId(p.getId())
                 .imageUrl(p.getImageUrl())
                 .takenAt(p.getTakenAt() != null ? p.getTakenAt().format(ISO) : null)
-                // TODO: locationId → 실제 장소명 매핑 필요 시 Location 엔티티와 연동
-                .location(null)
+                .location(p.getLocationName())
                 .brand(p.getBrand())
-                // TODO: 즐겨찾기 테이블 연결 시 실제 값으로 교체
-                .isFavorite(false)
+                .isFavorite(p.isFavorite())
                 .build()
         ).getContent();
 
@@ -258,7 +262,118 @@ public class PhotoController {
     }
 
     // ========================================================
-    // 4) 사진 삭제  (DELETE /api/photos/{id})
+    // 4) 사진 상세 조회  (GET /api/photos/{photoId})
+    // ========================================================
+    @GetMapping(value = "/{photoId}",
+            produces = "application/json; charset=UTF-8")
+    public ResponseEntity<PhotoDetailResponse> getDetail(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long photoId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        PhotoResponseDto dto = photoService.getDetail(userId, photoId);
+
+        User owner = userRepository.findById(dto.getUserId())
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "소유자를 찾을 수 없습니다."));
+
+        PhotoDetailResponse resp = new PhotoDetailResponse(
+                dto.getId(),
+                dto.getImageUrl(),
+                dto.getTakenAt() != null
+                        ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        : null,
+                dto.getLocationName(),
+                dto.getBrand(),
+                Collections.emptyList(),     // tagList – 아직 별도 테이블 미구현
+                Collections.emptyList(),     // friendList – 아직 미구현
+                dto.getMemo() != null ? dto.getMemo() : "",
+                dto.isFavorite(),
+                new OwnerDto(
+                        owner.getId(),
+                        owner.getNickname() != null ? owner.getNickname() : "",
+                        owner.getProfileImageUrl() != null ? owner.getProfileImageUrl() : ""
+                )
+        );
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // ========================================================
+    // 5) 사진 상세정보 수정  (PATCH /api/photos/{photoId}/details)
+    // ========================================================
+    @PatchMapping(value = "/{photoId}/details", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<PhotoDetailResponse> updateDetails(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long photoId,
+            @RequestBody PhotoDetailsUpdateRequest body
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        LocalDateTime takenAt = null;
+        if (body.takenAt() != null && !body.takenAt().isBlank()) {
+            try {
+                takenAt = LocalDateTime.parse(body.takenAt(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            } catch (DateTimeParseException e) {
+                throw new ApiException(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "촬영 날짜 형식이 잘못되었습니다. ISO 8601 형식을 사용해주세요."
+                );
+            }
+        }
+
+        PhotoResponseDto dto = photoService.updateDetails(
+                userId,
+                photoId,
+                takenAt,
+                body.location(),
+                body.brand(),
+                body.memo()
+        );
+
+        User owner = userRepository.findById(dto.getUserId())
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "소유자를 찾을 수 없습니다."));
+
+        PhotoDetailResponse resp = new PhotoDetailResponse(
+                dto.getId(),
+                dto.getImageUrl(),
+                dto.getTakenAt() != null
+                        ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        : null,
+                dto.getLocationName(),
+                dto.getBrand(),
+                body.tagList() != null ? body.tagList() : Collections.emptyList(),
+                Collections.emptyList(), // friendList 실제 매핑은 추후 구현
+                dto.getMemo() != null ? dto.getMemo() : "",
+                dto.isFavorite(),
+                new OwnerDto(
+                        owner.getId(),
+                        owner.getNickname() != null ? owner.getNickname() : "",
+                        owner.getProfileImageUrl() != null ? owner.getProfileImageUrl() : ""
+                )
+        );
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // ========================================================
+    // 6) 사진 즐겨찾기 토글  (POST /api/photos/{photoId}/favorite)
+    // ========================================================
+    @PostMapping("/{photoId}/favorite")
+    public ResponseEntity<FavoriteToggleResponse> toggleFavorite(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long photoId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        boolean nowFavorite = photoService.toggleFavorite(userId, photoId);
+
+        String message = nowFavorite ? "즐겨찾기 설정 완료" : "즐겨찾기 해제 완료";
+        FavoriteToggleResponse resp = new FavoriteToggleResponse(photoId, nowFavorite, message);
+        return ResponseEntity.ok(resp);
+    }
+
+    // ========================================================
+    // 7) 사진 삭제  (DELETE /api/photos/{id})
     // ========================================================
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> delete(
@@ -275,7 +390,7 @@ public class PhotoController {
     }
 
     // ========================================================
-    // 내부용 DTO & 유틸
+    // 내부 DTO & 유틸
     // ========================================================
     public static record PhotoUploadResponse(
             long photoId,
@@ -293,12 +408,45 @@ public class PhotoController {
             String nickname
     ) {}
 
+    public static record OwnerDto(
+            long userId,
+            String nickname,
+            String profileImageUrl
+    ) {}
+
+    public static record PhotoDetailResponse(
+            long photoId,
+            String imageUrl,
+            String takenAt,
+            String location,
+            String brand,
+            List<String> tagList,
+            List<FriendDto> friendList,
+            String memo,
+            boolean isFavorite,
+            OwnerDto owner
+    ) {}
+
+    public static record FavoriteToggleResponse(
+            long photoId,
+            boolean isFavorite,
+            String message
+    ) {}
+
+    public static record PhotoDetailsUpdateRequest(
+            String takenAt,
+            String location,
+            String brand,
+            List<String> tagList,
+            List<Long> friendIdList,
+            String memo
+    ) {}
+
     private List<String> parseStringArray(String jsonArray) {
         if (jsonArray == null || jsonArray.isBlank()) return Collections.emptyList();
         try {
             return JSON.readValue(jsonArray, new TypeReference<List<String>>() {});
         } catch (Exception e) {
-            // 형식 이상이면 무시하고 빈 리스트로
             return Collections.emptyList();
         }
     }
@@ -309,7 +457,6 @@ public class PhotoController {
             List<Long> ids = JSON.readValue(friendIdListJson, new TypeReference<List<Long>>() {});
             List<FriendDto> result = new ArrayList<>();
             for (Long id : ids) {
-                // TODO: UserRepository 통해 닉네임 조회 후 세팅
                 result.add(new FriendDto(id, ""));
             }
             return result;

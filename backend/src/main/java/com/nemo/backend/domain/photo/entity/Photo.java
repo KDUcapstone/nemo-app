@@ -1,3 +1,4 @@
+// com.nemo.backend.domain.photo.entity.Photo
 package com.nemo.backend.domain.photo.entity;
 
 import com.nemo.backend.domain.album.entity.Album;
@@ -27,12 +28,28 @@ public class Photo {
     private String imageUrl;
     private String thumbnailUrl;
     private String videoUrl;
+
     private LocalDateTime takenAt;
+
+    /** 장소 ID (추후 Location 엔티티용) */
     private Long locationId;
+
+    /** 장소명(문자열) – 명세서의 location 필드용 */
+    @Column(name = "location_name")
+    private String locationName;
+
     private String brand;
 
     @Column(unique = true)
     private String qrHash;
+
+    /** 즐겨찾기 여부 (기본 false) */
+    @Column(name = "favorite")
+    private Boolean favorite = false;
+
+    /** 메모(상세 편집에서 사용하는 필드) */
+    @Column(name = "memo", length = 300)
+    private String memo;
 
     private LocalDateTime createdAt = LocalDateTime.now();
     private Boolean deleted = false;
@@ -67,20 +84,37 @@ public class Photo {
 
     public String getImageUrl() { return imageUrl; }
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+
     public String getThumbnailUrl() { return thumbnailUrl; }
     public void setThumbnailUrl(String thumbnailUrl) { this.thumbnailUrl = thumbnailUrl; }
+
     public String getVideoUrl() { return videoUrl; }
     public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
+
     public LocalDateTime getTakenAt() { return takenAt; }
     public void setTakenAt(LocalDateTime takenAt) { this.takenAt = takenAt; }
+
     public Long getLocationId() { return locationId; }
     public void setLocationId(Long locationId) { this.locationId = locationId; }
+
+    public String getLocationName() { return locationName; }
+    public void setLocationName(String locationName) { this.locationName = locationName; }
+
     public String getBrand() { return brand; }
     public void setBrand(String brand) { this.brand = brand; }
+
     public String getQrHash() { return qrHash; }
     public void setQrHash(String qrHash) { this.qrHash = qrHash; }
+
+    public Boolean getFavorite() { return favorite; }
+    public void setFavorite(Boolean favorite) { this.favorite = favorite; }
+
+    public String getMemo() { return memo; }
+    public void setMemo(String memo) { this.memo = memo; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
     public Boolean getDeleted() { return deleted; }
     public void setDeleted(Boolean deleted) { this.deleted = deleted; }
 }

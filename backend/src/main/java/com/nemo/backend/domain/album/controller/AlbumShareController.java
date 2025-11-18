@@ -16,7 +16,8 @@ import java.util.List;
  */
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/albums")
+@RequestMapping(value ="/api/albums",
+        produces = "application/json; charset=UTF-8")
 public class AlbumShareController {
 
     private final AlbumShareService albumShareService;
@@ -125,5 +126,16 @@ public class AlbumShareController {
         Long meId = authExtractor.extractUserId(authorizationHeader);
         AlbumShareLinkResponse resp = albumShareService.createShareLink(albumId, meId);
         return ResponseEntity.ok(resp);
+    }
+
+    // 🔹 내가 공유받은 앨범 목록
+    // GET /api/albums/shared
+    @GetMapping("/shared")
+    public ResponseEntity<List<SharedAlbumSummaryResponse>> getMySharedAlbums(
+            @RequestHeader("Authorization") String authorizationHeader
+    ) {
+        Long meId = authExtractor.extractUserId(authorizationHeader);
+        List<SharedAlbumSummaryResponse> list = albumShareService.getMySharedAlbums(meId);
+        return ResponseEntity.ok(list);
     }
 }
