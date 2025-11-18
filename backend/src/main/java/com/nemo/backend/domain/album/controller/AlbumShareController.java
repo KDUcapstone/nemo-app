@@ -22,7 +22,8 @@ public class AlbumShareController {
     private final AlbumShareService albumShareService;
     private final AuthExtractor authExtractor;
 
-    // 🔹 공유 요청 보내기
+    // 🔹 앨범 공유 요청 보내기
+    // POST /api/albums/{albumId}/share
     @PostMapping("/{albumId}/share")
     public ResponseEntity<AlbumShareResponse> shareAlbum(
             @RequestHeader("Authorization") String authorizationHeader,
@@ -34,9 +35,10 @@ public class AlbumShareController {
         return ResponseEntity.ok(resp);
     }
 
-    // 🔹 특정 앨범의 공유 대상 목록 조회
-    @GetMapping("/{albumId}/share/targets")
-    public ResponseEntity<AlbumShareTargetsResponse> getShareTargets(
+    // 🔹 공유 멤버 목록 조회 (신 명세)
+    // GET /api/albums/{albumId}/share/members
+    @GetMapping("/{albumId}/share/members")
+    public ResponseEntity<AlbumShareTargetsResponse> getShareMembers(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long albumId
     ) {
@@ -45,34 +47,42 @@ public class AlbumShareController {
         return ResponseEntity.ok(resp);
     }
 
-    // 🔹 공유 대상 권한(Role) 변경
-    @PutMapping("/{albumId}/share/{shareId}/role")
-    public ResponseEntity<Void> updateShareRole(
+    // 🔹 공유 멤버 권한 변경 (신 명세: targetUserId 기반)
+    // PUT /api/albums/{albumId}/share/permission
+    @PutMapping("/{albumId}/share/permission")
+    public ResponseEntity<Void> updateSharePermission(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long albumId,
-            @PathVariable Long shareId,
-            @RequestParam("role") AlbumShare.Role role
+            @RequestBody UpdateSharePermissionRequest request
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
-        albumShareService.updateShareRole(albumId, shareId, meId, role);
-        return ResponseEntity.noContent().build();
+        albumShareService.updateShareRoleByUserId(
+                albumId,
+                request.targetUserId(),
+                meId,
+                request.role()
+        );
+        // 명세서는 200 OK 예시라 OK로 응답
+        return ResponseEntity.ok().build();
     }
 
     // 🔹 공유 해제 (OWNER가 강퇴 or 본인이 나가기)
-    @DeleteMapping("/{albumId}/share/{userId}")
+    // DELETE /api/albums/{albumId}/share/{targetUserId}
+    @DeleteMapping("/{albumId}/share/{targetUserId}")
     public ResponseEntity<Void> unshare(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long albumId,
-            @PathVariable Long userId
+            @PathVariable("targetUserId") Long targetUserId
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
-        albumShareService.unshare(albumId, userId, meId);
+        albumShareService.unshare(albumId, targetUserId, meId);
         return ResponseEntity.noContent().build();
     }
 
-    // 🔹 내가 "대기 중(PENDING)"인 공유 요청 목록
-    @GetMapping("/shared/pending")
-    public ResponseEntity<List<PendingShareResponse>> getPendingShares(
+    // 🔹 공유 요청 목록 조회 (신 명세)
+    // GET /api/albums/share/requests
+    @GetMapping("/share/requests")
+    public ResponseEntity<List<PendingShareResponse>> getShareRequests(
             @RequestHeader("Authorization") String authorizationHeader
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
@@ -80,39 +90,33 @@ public class AlbumShareController {
         return ResponseEntity.ok(list);
     }
 
-    // 🔹 공유 요청 수락
-    @PostMapping("/shared/{shareId}/accept")
-    public ResponseEntity<Void> acceptShare(
+    // 🔹 공유 요청 수락 (신 명세: albumId 기반)
+    // POST /api/albums/{albumId}/share/accept
+    @PostMapping("/{albumId}/share/accept")
+    public ResponseEntity<Void> acceptShareByAlbum(
             @RequestHeader("Authorization") String authorizationHeader,
-            @PathVariable Long shareId
+            @PathVariable Long albumId
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
-        albumShareService.acceptShare(shareId, meId);
-        return ResponseEntity.noContent().build();
+        albumShareService.acceptShareByAlbum(albumId, meId);
+        // 명세 예시는 200 OK
+        return ResponseEntity.ok().build();
     }
 
-    // 🔹 공유 요청 거절
-    @PostMapping("/shared/{shareId}/reject")
-    public ResponseEntity<Void> rejectShare(
+    // 🔹 공유 요청 거절 (신 명세: albumId 기반)
+    // POST /api/albums/{albumId}/share/reject
+    @PostMapping("/{albumId}/share/reject")
+    public ResponseEntity<Void> rejectShareByAlbum(
             @RequestHeader("Authorization") String authorizationHeader,
-            @PathVariable Long shareId
+            @PathVariable Long albumId
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
-        albumShareService.rejectShare(shareId, meId);
-        return ResponseEntity.noContent().build();
+        albumShareService.rejectShareByAlbum(albumId, meId);
+        return ResponseEntity.ok().build();
     }
 
-    // 🔹 내가 공유받은 앨범 목록
-    @GetMapping("/shared/me")
-    public ResponseEntity<List<SharedAlbumSummaryResponse>> getMySharedAlbums(
-            @RequestHeader("Authorization") String authorizationHeader
-    ) {
-        Long meId = authExtractor.extractUserId(authorizationHeader);
-        List<SharedAlbumSummaryResponse> list = albumShareService.getMySharedAlbums(meId);
-        return ResponseEntity.ok(list);
-    }
-
-    // 🔹 공유 링크 생성
+    // 🔹 공유 링크 생성 (명세 참고용 / 실제 배포 시 토큰 기반 링크로 개선 필요)
+    // POST /api/albums/{albumId}/share/link
     @PostMapping("/{albumId}/share/link")
     public ResponseEntity<AlbumShareLinkResponse> createShareLink(
             @RequestHeader("Authorization") String authorizationHeader,

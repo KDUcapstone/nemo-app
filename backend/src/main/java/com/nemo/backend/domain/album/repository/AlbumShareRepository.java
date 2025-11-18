@@ -9,8 +9,6 @@ import java.util.Optional;
 
 public interface AlbumShareRepository extends JpaRepository<AlbumShare, Long> {
 
-    List<AlbumShare> findByAlbumIdAndStatusAndActiveTrue(Long albumId, Status status);
-
     List<AlbumShare> findByAlbumIdAndActiveTrue(Long albumId);
 
     Optional<AlbumShare> findByAlbumIdAndUserIdAndStatusAndActiveTrue(
@@ -19,10 +17,9 @@ public interface AlbumShareRepository extends JpaRepository<AlbumShare, Long> {
 
     List<AlbumShare> findByUserIdAndStatusAndActiveTrue(Long userId, Status status);
 
-    List<AlbumShare> findByUserIdAndActiveTrue(Long userId);
-
     boolean existsByAlbumIdAndUserIdAndActiveTrue(Long albumId, Long userId);
 
     // ⭐ 추가해야 하는 부분
     Optional<AlbumShare> findByAlbumIdAndUserIdAndActiveTrue(Long albumId, Long userId);
+
 }
