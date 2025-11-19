@@ -1,7 +1,9 @@
 package com.nemo.backend.domain.photo.service;
 
-/** 만료된 QR 또는 연동 자원이 더 이상 존재하지 않는 경우 */
-public class ExpiredQrException extends RuntimeException {
-    public ExpiredQrException(String message) { super(message); }
-    public ExpiredQrException(String message, Throwable cause) { super(message, cause); }
+import com.nemo.backend.global.exception.ApiException;
+import com.nemo.backend.global.exception.ErrorCode;
+
+public class ExpiredQrException extends ApiException {
+    public ExpiredQrException(String message) { super(ErrorCode.EXPIRED_QR, message); }
+    public ExpiredQrException(String message, Throwable cause) { super(ErrorCode.EXPIRED_QR, message, cause); }
 }

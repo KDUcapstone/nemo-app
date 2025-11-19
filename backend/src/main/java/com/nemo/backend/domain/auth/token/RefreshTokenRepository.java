@@ -15,4 +15,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     /** userId로 현재 유효한(미삭제) 리프레시 토큰 존재 여부 확인용 */
     Optional<RefreshToken> findFirstByUserId(Long userId);
+
+
+    void deleteByToken(String token);
 }

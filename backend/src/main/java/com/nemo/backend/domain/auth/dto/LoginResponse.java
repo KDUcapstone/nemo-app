@@ -1,9 +1,12 @@
 package com.nemo.backend.domain.auth.dto;
 
+import lombok.Getter;
+
 /**
  * Response returned upon successful login.  Contains basic user details and
  * both access and refresh tokens.
  */
+@Getter
 public class LoginResponse {
     private Long id;
     private String email;
@@ -22,27 +25,4 @@ public class LoginResponse {
         this.refreshToken = refreshToken;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getNickname() {
-        return nickname;
-    }
-
-    public String getProfileImageUrl() {
-        return profileImageUrl;
-    }
-
-    public String getAccessToken() {
-        return accessToken;
-    }
-
-    public String getRefreshToken() {
-        return refreshToken;
-    }
 }
