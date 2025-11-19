@@ -498,7 +498,25 @@ class AlbumApi {
       return {'albumId': albumId, 'role': 'VIEWER', 'message': '앨범 공유를 수락했습니다.'};
     }
     final res = await http.post(_uri('/api/albums/$albumId/share/accept'), headers: _headersJson());
-    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    // 모든 2xx 상태 코드를 성공으로 처리
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      // 빈 body 체크
+      if (res.body.isEmpty || res.body.trim().isEmpty) {
+        return {'albumId': albumId, 'message': '앨범 공유를 수락했습니다.'};
+      }
+      // 안전한 JSON 파싱
+      try {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        // Map이 아니면 기본값 반환
+        return {'albumId': albumId, 'message': '앨범 공유를 수락했습니다.'};
+      } catch (e) {
+        // JSON 파싱 실패해도 성공으로 처리 (백엔드가 정상 작동했다면)
+        return {'albumId': albumId, 'message': '앨범 공유를 수락했습니다.'};
+      }
+    }
     if (res.statusCode == 404) throw Exception('INVITE_NOT_FOUND');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     if (res.statusCode == 409) throw Exception('ALREADY_ACCEPTED');
@@ -514,7 +532,25 @@ class AlbumApi {
       return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
     }
     final res = await http.post(_uri('/api/albums/$albumId/share/reject'), headers: _headersJson());
-    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    // 모든 2xx 상태 코드를 성공으로 처리
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      // 빈 body 체크
+      if (res.body.isEmpty || res.body.trim().isEmpty) {
+        return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
+      }
+      // 안전한 JSON 파싱
+      try {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        // Map이 아니면 기본값 반환
+        return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
+      } catch (e) {
+        // JSON 파싱 실패해도 성공으로 처리 (백엔드가 정상 작동했다면)
+        return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
+      }
+    }
     if (res.statusCode == 404) throw Exception('INVITE_NOT_FOUND');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     throw Exception('Failed to reject share (${res.statusCode})');
