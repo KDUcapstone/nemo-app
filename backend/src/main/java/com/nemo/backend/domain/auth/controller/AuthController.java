@@ -9,7 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping(value ="/api/auth",
+        produces = "application/json; charset=UTF-8")
 @RequiredArgsConstructor
 public class AuthController {
 

@@ -5,28 +5,22 @@ import java.util.List;
 
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.service.AlbumService;
+import com.nemo.backend.domain.album.service.AlbumShareService;
 import com.nemo.backend.domain.auth.util.AuthExtractor;  // 🔥 공통 인증 유틸
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping("/api/albums")
+@RequestMapping(value ="/api/albums",
+        produces = "application/json; charset=UTF-8")
 @RequiredArgsConstructor // ⭐ 생성자 자동 생성 (final 필드만)
 public class AlbumController {
 
-    // --------------------------------------------------------
-    // ⭐ 의존성 주입
-    // --------------------------------------------------------
     private final AlbumService albumService;
-
-    /**
-     * 🔐 AuthExtractor
-     * - Authorization 헤더에서 userId를 뽑는 공통 로직
-     *   (JWT 검증 + RefreshToken 존재 여부까지 포함)
-     * - UserAuthController, PhotoController 등과 동일하게 사용
-     */
     private final AuthExtractor authExtractor;
 
     // ========================================================
@@ -40,7 +34,6 @@ public class AlbumController {
 
         List<AlbumSummaryResponse> content = albumService.getAlbums(userId);
 
-        // 간단한 페이징 형식으로 감싸서 반환
         return ResponseEntity.ok(
                 java.util.Map.of(
                         "content", content,
@@ -132,5 +125,31 @@ public class AlbumController {
         Long userId = authExtractor.extractUserId(authorizationHeader);
         albumService.deleteAlbum(userId, albumId);
         return ResponseEntity.noContent().build();
+    }
+
+    // ========================================================
+    // 8) POST /api/albums/{albumId}/thumbnail : 썸네일 생성/지정
+    // ========================================================
+    @PostMapping(
+            value = "/{albumId}/thumbnail",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<AlbumThumbnailResponse> updateThumbnail(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long albumId,
+
+            // 예시 1: 앨범 내 사진 선택 (JSON Part, e.g. {"photoId": 125})
+            @RequestPart(value = "photoId", required = false) Long photoId,
+
+            // 예시 2: 직접 업로드 (Multipart file)
+            @RequestPart(value = "file", required = false) MultipartFile file
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        AlbumThumbnailResponse resp =
+                albumService.updateThumbnail(userId, albumId, photoId, file);
+
+        return ResponseEntity.ok(resp);
     }
 }

@@ -41,4 +41,15 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
      * 예: 특정 친구 요청을 수락하거나 취소할 때
      */
     Optional<Friend> findByUserIdAndFriendId(Long userId, Long friendId);
+
+    /**
+     * 두 사용자 사이에 특정 상태(FriendStatus)의 관계가 존재하는지 여부
+     */
+    boolean existsByUserIdAndFriendIdAndStatus(Long userId, Long friendId, FriendStatus status);
+
+    /**
+     * 특정 사용자가 친구로 등록한 사용자들 중에서 특정 상태(FriendStatus)를 가진 친구 목록 조회
+     */
+    List<Friend> findAllByFriendIdAndStatus(Long friendId, FriendStatus status);
+
 }
