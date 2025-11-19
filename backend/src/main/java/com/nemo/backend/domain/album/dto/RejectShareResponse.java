@@ -1,4 +1,4 @@
-// backend/src/main/java/com/nemo/backend/domain/album/dto/AcceptShareResponse.java
+// backend/src/main/java/com/nemo/backend/domain/album/dto/RejectShareResponse.java
 package com.nemo.backend.domain.album.dto;
 
 import lombok.AllArgsConstructor;
@@ -7,15 +7,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 공유 수락 응답
+ * 공유 거절 응답
  */
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AcceptShareResponse {
+public class RejectShareResponse {
 
     private Long albumId;
-    private String role;   // VIEWER / EDITOR / CO_OWNER
     private String message;
 }

@@ -17,13 +17,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.*;
 
-/**
- * 앨범 공유(초대/수락/거절/권한 변경) 비즈니스 로직
- * - HTTP 엔드포인트는 AlbumShareController 에서 처리
- * - "신 명세" 기준으로만 작성됨
- */
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -34,23 +29,21 @@ public class AlbumShareService {
     private final FriendRepository friendRepository;
     private final UserRepository userRepository;
 
-    /** 앨범 단건 조회 (없으면 404) */
     @Transactional(readOnly = true)
     public Album getAlbum(Long albumId) {
         return albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
     }
 
-    /** OWNER 또는 CO_OWNER 권한 확인용 헬퍼 */
     private Album getAlbumWithManagePermission(Long albumId, Long meId) {
         Album album = getAlbum(albumId);
 
-        // OWNER 이면 바로 통과
+        // OWNER
         if (album.getUser().getId().equals(meId)) {
             return album;
         }
 
-        // CO_OWNER 권한이 있는지 검사
+        // CO_OWNER 인지 확인
         AlbumShare myShare = albumShareRepository
                 .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, meId, Status.ACCEPTED)
                 .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN, "앨범 공유 관리 권한이 없습니다."));
@@ -65,7 +58,9 @@ public class AlbumShareService {
     /**
      * ✅ 앨범 공유 요청 보내기
      * - POST /api/albums/{albumId}/share
-     * - 명세상 응답: { "albumId": ..., "message": "..." }
+     * - Request: { "friendIdList": [3, 5] }
+     * - 기본 권한 = VIEWER (명세 고정)
+     * - 강퇴된 사용자(isActive=false)는 기존 레코드를 재활성화(PENDING + active=true)
      */
     public AlbumShareResponse shareAlbum(Long albumId, Long meId, AlbumShareRequest req) {
         Album album = getAlbumWithManagePermission(albumId, meId);
@@ -74,27 +69,19 @@ public class AlbumShareService {
             throw new ApiException(ErrorCode.INVALID_REQUEST, "friendIdList 가 비어 있습니다.");
         }
 
-        Role defaultRole = (req.defaultRole() != null) ? req.defaultRole() : Role.VIEWER;
+        Role defaultRole = Role.VIEWER;
 
-        // 중복 제거 + 이미 공유된 사용자 제거
-        List<Long> targetIds = req.friendIdList().stream()
-                .distinct()
-                .filter(id -> !albumShareRepository.existsByAlbumIdAndUserIdAndActiveTrue(albumId, id))
-                .toList();
+        // 중복 제거
+        List<Long> friendIds = req.friendIdList().stream().distinct().toList();
 
-        if (targetIds.isEmpty()) {
-            throw new ApiException(ErrorCode.INVALID_REQUEST, "이미 모두 공유된 사용자입니다.");
-        }
+        List<AlbumShare> toSave = new ArrayList<>();
 
-        // 대상 사용자 조회 및 존재 여부 확인
-        List<User> targets = userRepository.findAllById(targetIds);
-        if (targets.size() != targetIds.size()) {
-            throw new ApiException(ErrorCode.NOT_FOUND, "존재하지 않는 사용자가 포함되어 있습니다.");
-        }
+        for (Long targetId : friendIds) {
+            // 1) 대상 유저 존재 여부 확인
+            User target = userRepository.findById(targetId)
+                    .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "존재하지 않는 사용자가 포함되어 있습니다."));
 
-        // 친구 상태(ACCEPTED)인지 확인 (양방향 모두 검사)
-        for (User target : targets) {
-            Long targetId = target.getId();
+            // 2) 친구 관계인지 확인 (양방향)
             boolean isFriend =
                     friendRepository.existsByUserIdAndFriendIdAndStatus(meId, targetId, FriendStatus.ACCEPTED) ||
                             friendRepository.existsByUserIdAndFriendIdAndStatus(targetId, meId, FriendStatus.ACCEPTED);
@@ -105,40 +92,65 @@ public class AlbumShareService {
                         "친구 관계가 아닌 사용자에게는 앨범을 공유할 수 없습니다. userId=" + targetId
                 );
             }
-        }
 
-        // AlbumShare row 생성
-        List<AlbumShare> shares = targets.stream()
-                .map(target -> AlbumShare.builder()
+            // 3) 기존 공유 레코드 여부 확인 (active 상관 X)
+            Optional<AlbumShare> existingOpt =
+                    albumShareRepository.findByAlbumIdAndUserId(albumId, targetId);
+
+            if (existingOpt.isPresent()) {
+                AlbumShare existing = existingOpt.get();
+
+                // 이미 활성 + PENDING/ACCEPTED 상태면 새로 만들 필요 없음
+                if (Boolean.TRUE.equals(existing.getActive()) &&
+                        (existing.getStatus() == Status.PENDING || existing.getStatus() == Status.ACCEPTED)) {
+                    // 이미 공유 요청 중이거나 공유된 사용자 → 이번 요청에서는 무시
+                    continue;
+                }
+
+                // 🔁 강퇴/거절 등으로 inactive 된 사용자 재초대:
+                // isActive=false 이던 레코드를 재활성화 + PENDING + VIEWER
+                existing.setActive(true);
+                existing.setStatus(Status.PENDING);
+                existing.setRole(defaultRole);
+
+                toSave.add(existing);
+            } else {
+                // 4) 완전히 처음 공유하는 사용자 → 새로 생성
+                AlbumShare share = AlbumShare.builder()
                         .album(album)
                         .user(target)
                         .role(defaultRole)
                         .status(Status.PENDING)
                         .active(true)
+                        .build();
+                toSave.add(share);
+            }
+        }
+
+        if (toSave.isEmpty()) {
+            // 모든 대상이 이미 공유 중인 경우
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "이미 모두 공유된 사용자입니다.");
+        }
+
+        albumShareRepository.saveAll(toSave);
+
+        // 응답용 sharedTo 구성 (이번 요청으로 실제로 초대/재초대된 사용자만)
+        List<AlbumShareResponse.SharedTarget> sharedTo = toSave.stream()
+                .map(share -> AlbumShareResponse.SharedTarget.builder()
+                        .userId(share.getUser().getId())
+                        .nickname(share.getUser().getNickname())
                         .build())
                 .toList();
 
-        albumShareRepository.saveAll(shares);
-
-        // 명세: albumId + message 만 응답
         return AlbumShareResponse.builder()
                 .albumId(album.getId())
-                .message("공유 요청을 전송했습니다.")
+                .sharedTo(sharedTo)
+                .message("앨범이 선택한 친구들에게 성공적으로 공유되었습니다.")
                 .build();
     }
 
-    /**
-     * ✅ 공유 멤버 목록 조회
-     * - GET /api/albums/{albumId}/share/members
-     * - 응답 예시:
-     *   [
-     *     { "userId": 1, "nickname": "앨범주인", "role": "OWNER" },
-     *     { "userId": 7, "nickname": "네컷러버", "role": "EDITOR" }
-     *   ]
-     */
     @Transactional(readOnly = true)
     public List<AlbumShareResponse.SharedUser> getShareTargets(Long albumId, Long meId) {
-        // OWNER / CO_OWNER 권한 검증
         getAlbumWithManagePermission(albumId, meId);
 
         return albumShareRepository
@@ -146,16 +158,15 @@ public class AlbumShareService {
                 .map(share -> AlbumShareResponse.SharedUser.builder()
                         .userId(share.getUser().getId())
                         .nickname(share.getUser().getNickname())
-                        .role(share.getRole())
+                        .role(share.getRole().name())
                         .build())
                 .toList();
     }
 
     /**
-     * ✅ 공유 멤버 권한 변경 (targetUserId 기준)
-     * - PUT /api/albums/{albumId}/share/permission
+     * 공유 멤버 권한 변경 (targetUserId 기준)
      */
-    public void updateShareRoleByUserId(Long albumId, Long targetUserId, Long meId, Role newRole) {
+    public AlbumShare updateShareRoleByUserId(Long albumId, Long targetUserId, Long meId, Role newRole) {
         Album album = getAlbumWithManagePermission(albumId, meId);
 
         AlbumShare share = albumShareRepository
@@ -170,13 +181,13 @@ public class AlbumShareService {
         }
 
         share.setRole(newRole);
+        return share;
     }
 
     /**
-     * ✅ 공유 해제 (OWNER/CO_OWNER가 강퇴 or 본인이 나가기)
-     * - DELETE /api/albums/{albumId}/share/{targetUserId}
+     * 공유 해제 (OWNER/CO_OWNER가 강퇴 or 본인이 나가기)
      */
-    public void unshare(Long albumId, Long targetUserId, Long meId) {
+    public Long unshare(Long albumId, Long targetUserId, Long meId) {
         Album album = getAlbum(albumId);
 
         AlbumShare share = albumShareRepository
@@ -204,14 +215,13 @@ public class AlbumShareService {
             throw new ApiException(ErrorCode.INVALID_REQUEST, "이미 비활성화된 공유입니다.");
         }
 
+        Long removedUserId = share.getUser().getId();
         share.setActive(false);
         share.setStatus(Status.REJECTED);
+
+        return removedUserId;
     }
 
-    /**
-     * ✅ 내가 받은 공유 요청 목록 (PENDING)
-     * - GET /api/albums/share/requests
-     */
     @Transactional(readOnly = true)
     public List<PendingShareResponse> getPendingShares(Long meId) {
         return albumShareRepository
@@ -221,7 +231,6 @@ public class AlbumShareService {
                 .toList();
     }
 
-    /** 내부 공통: 공유 수락 처리 */
     private void acceptShareInternal(AlbumShare share, Long meId) {
         if (!share.getUser().getId().equals(meId)) {
             throw new ApiException(ErrorCode.FORBIDDEN, "본인에게 온 공유만 수락할 수 있습니다.");
@@ -233,7 +242,6 @@ public class AlbumShareService {
         share.setStatus(Status.ACCEPTED);
     }
 
-    /** 내부 공통: 공유 거절 처리 */
     private void rejectShareInternal(AlbumShare share, Long meId) {
         if (!share.getUser().getId().equals(meId)) {
             throw new ApiException(ErrorCode.FORBIDDEN, "본인에게 온 공유만 거절할 수 있습니다.");
@@ -246,12 +254,6 @@ public class AlbumShareService {
         share.setActive(false);
     }
 
-    /**
-     * ✅ 공유 요청 수락 (albumId 기준)
-     * - POST /api/albums/{albumId}/share/accept
-     * - 응답 예시:
-     *   { "albumId": 20, "role": "VIEWER", "message": "앨범 공유를 수락했습니다." }
-     */
     public AcceptShareResponse acceptShareByAlbum(Long albumId, Long meId) {
         AlbumShare share = albumShareRepository
                 .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, meId, Status.PENDING)
@@ -261,27 +263,24 @@ public class AlbumShareService {
 
         return AcceptShareResponse.builder()
                 .albumId(albumId)
-                .role(share.getRole())
+                .role(share.getRole().name())
                 .message("앨범 공유를 수락했습니다.")
                 .build();
     }
 
-    /**
-     * ✅ 공유 요청 거절 (albumId 기준)
-     * - POST /api/albums/{albumId}/share/reject
-     * - (명세에 따라 필요하면 별도 DTO 만들어서 응답해도 됨)
-     */
-    public void rejectShareByAlbum(Long albumId, Long meId) {
+    public RejectShareResponse rejectShareByAlbum(Long albumId, Long meId) {
         AlbumShare share = albumShareRepository
                 .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, meId, Status.PENDING)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "SHARE_NOT_FOUND"));
 
         rejectShareInternal(share, meId);
+
+        return RejectShareResponse.builder()
+                .albumId(albumId)
+                .message("앨범 공유 요청을 거절했습니다.")
+                .build();
     }
 
-    /**
-     * ✅ 내가 공유받은 앨범 목록
-     */
     @Transactional(readOnly = true)
     public List<SharedAlbumSummaryResponse> getMySharedAlbums(Long meId) {
         List<AlbumShare> shares = albumShareRepository
@@ -297,13 +296,9 @@ public class AlbumShareService {
                 .toList();
     }
 
-    /**
-     * ✅ 공유 링크 생성 (임시 구현)
-     * - POST /api/albums/{albumId}/share/link
-     */
     public AlbumShareLinkResponse createShareLink(Long albumId, Long meId) {
         Album album = getAlbumWithManagePermission(albumId, meId);
-        String url = "https://nemo.app/share/albums/" + album.getId(); // TODO: 토큰 기반 링크로 교체
+        String url = "https://nemo.app/share/albums/" + album.getId();
         return new AlbumShareLinkResponse(album.getId(), url);
     }
 }

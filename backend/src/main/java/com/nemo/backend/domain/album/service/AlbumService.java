@@ -3,16 +3,22 @@ package com.nemo.backend.domain.album.service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.beans.factory.annotation.Value;   // ✅ 이것만 남기기
 
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.entity.Album;
+import com.nemo.backend.domain.album.entity.AlbumShare;
+import com.nemo.backend.domain.album.entity.AlbumShare.Status;
+import com.nemo.backend.domain.album.entity.AlbumFavorite;
+import com.nemo.backend.domain.album.repository.AlbumFavoriteRepository;
 import com.nemo.backend.domain.album.repository.AlbumRepository;
+import com.nemo.backend.domain.album.repository.AlbumShareRepository;
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.photo.repository.PhotoRepository;
@@ -29,46 +35,106 @@ import jakarta.persistence.PersistenceContext;
 public class AlbumService {
 
     private final AlbumRepository albumRepository;
+    private final AlbumShareRepository albumShareRepository;
     private final PhotoRepository photoRepository;
-    private final PhotoStorage photoStorage;   // ✅ 추가
+    private final AlbumFavoriteRepository albumFavoriteRepository; // ✅ 즐겨찾기 리포지토리
+    private final PhotoStorage photoStorage;
 
     private final String publicBaseUrl;
 
     @PersistenceContext
     private EntityManager em;
 
-    /** 생성자 주입 (PhotoStorage + publicBaseUrl) */
     public AlbumService(
             AlbumRepository albumRepository,
+            AlbumShareRepository albumShareRepository,
             PhotoRepository photoRepository,
+            AlbumFavoriteRepository albumFavoriteRepository,
             PhotoStorage photoStorage,
             @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl
     ) {
         this.albumRepository = albumRepository;
-        this.photoRepository = photoRepository;  // ✅ 여기 한 번만
+        this.albumShareRepository = albumShareRepository;
+        this.photoRepository = photoRepository;
+        this.albumFavoriteRepository = albumFavoriteRepository;
         this.photoStorage = photoStorage;
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
-    /** 로그인 사용자 앨범 목록 조회 */
-    public List<AlbumSummaryResponse> getAlbums(Long userId) {
-        return albumRepository.findAll().stream()
+    /**
+     * 로그인 사용자의 앨범 목록 조회 (명세: ownership = ALL/OWNED/SHARED)
+     */
+    public List<AlbumSummaryResponse> getAlbums(Long userId, String ownership) {
+        // 1) 내가 만든 앨범
+        List<AlbumSummaryResponse> owned = albumRepository.findAll().stream()
                 .filter(a -> a.getUser() != null && userId.equals(a.getUser().getId()))
-                .map(this::toSummary)
+                .map(a -> toSummary(a, "OWNER"))
+                .collect(Collectors.toList());
+
+        // 2) 내가 공유받은 앨범 (ACCEPTED + active)
+        List<AlbumSummaryResponse> shared = albumShareRepository
+                .findByUserIdAndStatusAndActiveTrue(userId, Status.ACCEPTED).stream()
+                .map(share -> {
+                    Album a = share.getAlbum();
+                    String role = share.getRole().name(); // VIEWER / EDITOR / CO_OWNER
+                    return toSummary(a, role);
+                })
+                .collect(Collectors.toList());
+
+        if ("OWNED".equalsIgnoreCase(ownership)) {
+            return owned;
+        } else if ("SHARED".equalsIgnoreCase(ownership)) {
+            return shared;
+        } else { // ALL (기본값)
+            owned.addAll(shared);
+            return owned;
+        }
+    }
+
+    /**
+     * 로그인 사용자의 앨범 목록 조회 + favoriteOnly 필터
+     */
+    public List<AlbumSummaryResponse> getAlbums(Long userId, String ownership, boolean favoriteOnly) {
+        List<AlbumSummaryResponse> base = getAlbums(userId, ownership);
+
+        if (!favoriteOnly) {
+            return base;
+        }
+
+        // ✅ 내가 즐겨찾기한 앨범 ID 목록
+        Set<Long> favIds = albumFavoriteRepository.findByUserId(userId).stream()
+                .map(f -> f.getAlbum().getId())
+                .collect(Collectors.toSet());
+
+        return base.stream()
+                .filter(a -> favIds.contains(a.getAlbumId()))
                 .collect(Collectors.toList());
     }
 
-    /** 특정 앨범 상세 조회 */
+    /**
+     * 특정 앨범 상세 조회 (소유자 + 공유받은 사용자까지)
+     */
     public AlbumDetailResponse getAlbum(Long userId, Long albumId) {
         Album a = albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
-        if (a.getUser() == null || !userId.equals(a.getUser().getId())) {
-            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
+
+        String role;
+
+        if (a.getUser() != null && userId.equals(a.getUser().getId())) {
+            role = "OWNER";
+        } else {
+            AlbumShare share = albumShareRepository
+                    .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, userId, Status.ACCEPTED)
+                    .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다."));
+            role = share.getRole().name(); // VIEWER / EDITOR / CO_OWNER
         }
-        return toDetail(a);
+
+        return toDetail(a, role);
     }
 
-    /** 앨범 생성 */
+    /**
+     * 앨범 생성
+     */
     @Transactional
     public AlbumDetailResponse createAlbum(Long userId, CreateAlbumRequest req) {
         if (req.getTitle() == null || req.getTitle().isBlank()) {
@@ -79,33 +145,32 @@ public class AlbumService {
         a.setName(req.getTitle());
         a.setDescription(req.getDescription());
 
-        // User#setId 불가 → 프록시로 주입
         User ownerRef = em.getReference(User.class, userId);
         a.setUser(ownerRef);
 
         Album saved = albumRepository.save(a);
 
-        // 사진 연결
         if (req.getPhotoIds() != null && !req.getPhotoIds().isEmpty()) {
             List<Photo> photos = photoRepository.findAllById(req.getPhotoIds());
             for (Photo p : photos) {
                 p.setAlbum(saved);
             }
             photoRepository.saveAll(photos);
-
-            // 🔥 추가: 앨범 입장에서도 사진 리스트를 채워줌
             saved.setPhotos(photos);
         }
 
-        // ✅ 자동 썸네일: 앨범에 사진이 있고 아직 coverPhotoUrl 이 없으면
         autoSetThumbnailIfMissing(saved);
 
-        return toDetail(saved);
+        // 생성 직후에는 항상 OWNER
+        return toDetail(saved, "OWNER");
     }
 
-    /** 앨범에 사진 추가 */
+    /**
+     * 앨범에 사진 추가
+     * @return 실제 추가된 사진 수
+     */
     @Transactional
-    public void addPhotos(Long userId, Long albumId, List<Long> photoIds) {
+    public int addPhotos(Long userId, Long albumId, List<Long> photoIds) {
         Album a = albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
         if (a.getUser() == null || !userId.equals(a.getUser().getId())) {
@@ -113,39 +178,52 @@ public class AlbumService {
         }
 
         List<Photo> photos = photoRepository.findAllById(photoIds);
+        int count = 0;
         for (Photo p : photos) {
-            p.setAlbum(a);
-        }
-        photoRepository.saveAll(photos);
-
-        // 새로 사진이 추가되고 썸네일이 비어 있으면 자동 지정
-        autoSetThumbnailIfMissing(a);
-    }
-
-    /** 앨범에서 사진 제거 */
-    @Transactional
-    public void removePhotos(Long userId, Long albumId, List<Long> photoIds) {
-        Album a = albumRepository.findById(albumId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
-        if (a.getUser() == null || !userId.equals(a.getUser().getId())) {
-            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
-        }
-
-        List<Photo> photos = photoRepository.findAllById(photoIds);
-        for (Photo p : photos) {
-            if (p.getAlbum() != null && albumId.equals(p.getAlbum().getId())) {
-                p.setAlbum(null);
+            if (p.getAlbum() == null || !albumId.equals(p.getAlbum().getId())) {
+                p.setAlbum(a);
+                count++;
             }
         }
         photoRepository.saveAll(photos);
 
-        // 사진이 다 빠져버리면 썸네일도 비워 줌
+        autoSetThumbnailIfMissing(a);
+
+        return count;
+    }
+
+    /**
+     * 앨범에서 사진 제거
+     * @return 실제 제거된 사진 수
+     */
+    @Transactional
+    public int removePhotos(Long userId, Long albumId, List<Long> photoIds) {
+        Album a = albumRepository.findById(albumId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
+        if (a.getUser() == null || !userId.equals(a.getUser().getId())) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
+        }
+
+        List<Photo> photos = photoRepository.findAllById(photoIds);
+        int count = 0;
+        for (Photo p : photos) {
+            if (p.getAlbum() != null && albumId.equals(p.getAlbum().getId())) {
+                p.setAlbum(null);
+                count++;
+            }
+        }
+        photoRepository.saveAll(photos);
+
         if (a.getPhotos() == null || a.getPhotos().isEmpty()) {
             a.setCoverPhotoUrl(null);
         }
+
+        return count;
     }
 
-    /** 앨범 수정 */
+    /**
+     * 앨범 수정
+     */
     @Transactional
     public AlbumDetailResponse updateAlbum(Long userId, Long albumId, UpdateAlbumRequest req) {
         Album a = albumRepository.findById(albumId)
@@ -156,25 +234,33 @@ public class AlbumService {
 
         if (req.getTitle() != null) a.setName(req.getTitle());
         if (req.getDescription() != null) a.setDescription(req.getDescription());
-        // coverPhotoId 는 별도 썸네일 API에서 처리
 
-        return toDetail(a);
+        return toDetail(a, "OWNER");
     }
 
-    /** 앨범 삭제 */
+    /**
+     * 앨범 삭제
+     */
     @Transactional
     public void deleteAlbum(Long userId, Long albumId) {
         Album a = albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
         if (a.getUser() == null || !userId.equals(a.getUser().getId())) {
-            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범을 삭제할 권한이 없습니다.");
         }
+
+        // ✅ 1) 앨범-사진 관계만 끊기 (사진 레코드는 그대로 유지)
+        if (a.getPhotos() != null && !a.getPhotos().isEmpty()) {
+            a.getPhotos().forEach(photo -> photo.setAlbum(null));
+            photoRepository.saveAll(a.getPhotos());
+        }
+
+        // ✅ 2) 그 다음 앨범만 삭제
         albumRepository.delete(a);
     }
 
-    // ========================================================
-    // ✅ 썸네일 생성/지정 API 로직
-    // ========================================================
+    // ===== 썸네일 로직은 기존 그대로 =====
+
     @Transactional
     public AlbumThumbnailResponse updateThumbnail(
             Long userId,
@@ -231,11 +317,63 @@ public class AlbumService {
         );
     }
 
-    // ========================================================
-    // 내부 유틸 메서드들
-    // ========================================================
+    // ===== 즐겨찾기 관련 유틸 =====
 
-    /** PhotoServiceImpl과 동일한 규칙으로 URL 생성 */
+    /** OWNER 또는 공유 수락 멤버인지 확인 */
+    private boolean canAccessAlbum(Long userId, Album album) {
+        // OWNER
+        if (album.getUser() != null && userId.equals(album.getUser().getId())) {
+            return true;
+        }
+
+        // 공유 멤버 (ACCEPTED + active)
+        return albumShareRepository
+                .findByAlbumIdAndUserIdAndStatusAndActiveTrue(album.getId(), userId, Status.ACCEPTED)
+                .isPresent();
+    }
+
+    /**
+     * 즐겨찾기 설정/해제 공통 메서드
+     */
+    @Transactional
+    public AlbumFavoriteResponse setFavorite(Long userId, Long albumId, boolean favorite) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
+
+        if (!canAccessAlbum(userId, album)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
+        }
+
+        boolean exists = albumFavoriteRepository.existsByAlbumIdAndUserId(albumId, userId);
+
+        if (favorite) {
+            if (!exists) {
+                User userRef = em.getReference(User.class, userId);
+                AlbumFavorite fav = AlbumFavorite.builder()
+                        .album(album)
+                        .user(userRef)
+                        .build();
+                albumFavoriteRepository.save(fav);
+            }
+            return AlbumFavoriteResponse.builder()
+                    .albumId(albumId)
+                    .favorited(true)
+                    .message("앨범이 즐겨찾기에 추가되었습니다.")
+                    .build();
+        } else {
+            if (exists) {
+                albumFavoriteRepository.deleteByAlbumIdAndUserId(albumId, userId);
+            }
+            return AlbumFavoriteResponse.builder()
+                    .albumId(albumId)
+                    .favorited(false)
+                    .message("앨범 즐겨찾기가 해제되었습니다.")
+                    .build();
+        }
+    }
+
+    // ===== 내부 유틸 =====
+
     private String toPublicUrl(String key) {
         if (key == null) return null;
         if (key.startsWith("http://") || key.startsWith("https://")) {
@@ -244,14 +382,12 @@ public class AlbumService {
         return String.format("%s/files/%s", publicBaseUrl, key);
     }
 
-    /** 앨범에 썸네일이 비어 있고 사진이 있으면 자동으로 채워 준다. */
     private void autoSetThumbnailIfMissing(Album album) {
         if (album.getCoverPhotoUrl() != null && !album.getCoverPhotoUrl().isBlank()) return;
         String url = pickAutoThumbnailUrl(album);
         album.setCoverPhotoUrl(url);
     }
 
-    /** 앨범 내 사진 목록에서 자동 썸네일 선택 (가장 최신 createdAt 기준) */
     private String pickAutoThumbnailUrl(Album album) {
         if (album.getPhotos() == null || album.getPhotos().isEmpty()) return null;
 
@@ -265,18 +401,23 @@ public class AlbumService {
                 .orElse(null);
     }
 
-    /** 엔티티 → 요약 DTO */
-    private AlbumSummaryResponse toSummary(Album a) {
+    private AlbumSummaryResponse toSummary(Album a, String role) {
         String coverUrl = (a.getCoverPhotoUrl() != null && !a.getCoverPhotoUrl().isBlank())
                 ? a.getCoverPhotoUrl()
-                : pickAutoThumbnailUrl(a);  // fallback
+                : pickAutoThumbnailUrl(a);
 
         int count = (a.getPhotos() == null) ? 0 : a.getPhotos().size();
-        return new AlbumSummaryResponse(a.getId(), a.getName(), coverUrl, count, a.getCreatedAt());
+        return AlbumSummaryResponse.builder()
+                .albumId(a.getId())
+                .title(a.getName())
+                .coverPhotoUrl(coverUrl)
+                .photoCount(count)
+                .createdAt(a.getCreatedAt())
+                .role(role)
+                .build();
     }
 
-    /** 엔티티 → 상세 DTO */
-    private AlbumDetailResponse toDetail(Album a) {
+    private AlbumDetailResponse toDetail(Album a, String role) {
         List<Long> idList = (a.getPhotos() == null) ? List.of() :
                 a.getPhotos().stream()
                         .map(Photo::getId)
@@ -284,7 +425,7 @@ public class AlbumService {
 
         List<PhotoResponseDto> list = (a.getPhotos() == null) ? List.of() :
                 a.getPhotos().stream()
-                        .map(PhotoResponseDto::new) // Photo 엔티티 기반 생성자 존재
+                        .map(PhotoResponseDto::new)
                         .collect(Collectors.toList());
 
         String coverUrl = (a.getCoverPhotoUrl() != null && !a.getCoverPhotoUrl().isBlank())
@@ -293,15 +434,16 @@ public class AlbumService {
 
         int count = list.size();
 
-        return new AlbumDetailResponse(
-                a.getId(),
-                a.getName(),
-                a.getDescription(),
-                coverUrl,
-                count,
-                a.getCreatedAt(),
-                idList,
-                list
-        );
+        return AlbumDetailResponse.builder()
+                .albumId(a.getId())
+                .title(a.getName())
+                .description(a.getDescription())
+                .coverPhotoUrl(coverUrl)
+                .photoCount(count)
+                .createdAt(a.getCreatedAt())
+                .role(role)
+                .photoIdList(idList)
+                .photoList(list)
+                .build();
     }
 }
