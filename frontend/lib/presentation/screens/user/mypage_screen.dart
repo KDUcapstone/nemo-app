@@ -187,10 +187,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  // QR 스캔 진입은 하단 탭에서 제공되며, 마이페이지에서는 제거되었습니다.
-
-  // QR 가져오기는 현재 마이페이지에서 직접 호출하지 않습니다. (탭 구조 적용)
+  // QR 가져오기 기능은 하단 탭의 QR 스캔 화면에서 제공됩니다.
+  // 마이페이지에서는 더 이상 사용하지 않습니다.
   // ignore: unused_element
+  @Deprecated('QR 가져오기는 QR 스캔 화면에서 처리합니다.')
   Future<void> _importFromQr(String payload) async {
     final match = RegExp(r'https?://[^\s]+').firstMatch(payload);
     if (match == null) {
@@ -255,14 +255,21 @@ class _MyPageScreenState extends State<MyPageScreen> {
     try {
       final authService = AuthService();
 
-      // 프로필 이미지가 선택된 경우, 먼저 업로드해야 함
-      // TODO: 프로필 이미지 업로드 API가 별도로 있다면 여기서 호출
-      // 현재는 닉네임만 업데이트
+      // 프로필 이미지 업로드 처리
+      // 명세서: 프로필 이미지는 S3/Firebase Storage에 먼저 업로드한 후 URL만 백엔드에 전달
+      // 현재는 선택된 이미지가 있어도 업로드 로직이 없으므로 기존 URL 유지
+      // TODO: 프로필 이미지 업로드 API 구현 시 _selectedImage가 있으면 먼저 업로드하고 URL 받아오기
+      String? profileImageUrl = _userInfo['profileImageUrl'] as String?;
+      if (_selectedImage != null) {
+        // 프로필 이미지 업로드 API 호출 필요
+        // 예: final uploadResult = await uploadProfileImage(_selectedImage!);
+        // profileImageUrl = uploadResult['imageUrl'];
+      }
 
-      // PATCH /api/users/me
+      // PUT /api/users/me - 사용자 정보 수정
       final response = await authService.updateUserInfo(
         nickname: _nicknameController.text,
-        profileImageUrl: _userInfo['profileImageUrl'] as String?, // 기존 URL 유지
+        profileImageUrl: profileImageUrl,
       );
 
       // 업데이트된 정보로 상태 갱신
