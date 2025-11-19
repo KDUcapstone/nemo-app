@@ -25,7 +25,8 @@ import java.util.List;
  */
 @Tag(name = "Friend", description = "친구 검색 · 요청 · 수락 · 거절 · 목록 · 삭제 API")
 @RestController
-@RequestMapping("/api/friends")
+@RequestMapping(value ="/api/friends",
+        produces = "application/json; charset=UTF-8")
 @RequiredArgsConstructor
 public class FriendController {
 
