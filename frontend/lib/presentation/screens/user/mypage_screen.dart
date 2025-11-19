@@ -48,7 +48,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     'id': 1,
     'email': 'user@example.com',
     'nickname': '사용자',
-    'profileImage': null,
+    'profileImageUrl': null,
     'createdAt': '2024-01-01',
   };
 
@@ -253,23 +253,23 @@ class _MyPageScreenState extends State<MyPageScreen> {
     });
 
     try {
-      // TODO: 사용자 정보 수정 API 호출
-      // PUT /api/users/me
-      // Authorization: Bearer {JWT_TOKEN}
-      // Content-Type: multipart/form-data
-      // {
-      //   "nickname": _nicknameController.text,
-      //   "profileImage": _selectedImage (optional)
-      // }
+      final authService = AuthService();
 
-      // 임시 딜레이 (실제 API 호출 시 제거)
-      await Future.delayed(const Duration(seconds: 2));
+      // 프로필 이미지가 선택된 경우, 먼저 업로드해야 함
+      // TODO: 프로필 이미지 업로드 API가 별도로 있다면 여기서 호출
+      // 현재는 닉네임만 업데이트
 
+      // PATCH /api/users/me
+      final response = await authService.updateUserInfo(
+        nickname: _nicknameController.text,
+        profileImageUrl: _userInfo['profileImageUrl'] as String?, // 기존 URL 유지
+      );
+
+      // 업데이트된 정보로 상태 갱신
       setState(() {
-        _userInfo['nickname'] = _nicknameController.text;
-        if (_selectedImage != null) {
-          _userInfo['profileImage'] = _selectedImage!.path;
-        }
+        _userInfo['nickname'] = response['nickname'] as String;
+        _userInfo['profileImageUrl'] = response['profileImageUrl'] as String?;
+        _selectedImage = null; // 선택된 이미지 초기화
         _isEditing = false;
         _isLoading = false;
       });
@@ -699,7 +699,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           nicknameController: _nicknameController,
                           email: _userInfo['email'],
                           nickname: _userInfo['nickname'],
-                          profileImageUrl: _userInfo['profileImage'],
+                          profileImageUrl: _userInfo['profileImageUrl'],
                           selectedImage: _selectedImage,
                           onEdit: () => setState(() => _isEditing = true),
                           onCancel: () => setState(() {
@@ -716,7 +716,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         FutureBuilder<StorageQuota>(
                           future: _quotaFuture,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
                               return const Card(
                                 elevation: 0,
                                 child: Padding(
@@ -732,18 +733,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                   padding: const EdgeInsets.all(16),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.info_outline, color: AppColors.textSecondary),
+                                      const Icon(
+                                        Icons.info_outline,
+                                        color: AppColors.textSecondary,
+                                      ),
                                       const SizedBox(width: 8),
                                       const Expanded(
                                         child: Text(
                                           '저장 한도 정보를 불러오지 못했습니다.',
-                                          style: TextStyle(color: AppColors.textSecondary),
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                          ),
                                         ),
                                       ),
                                       TextButton(
                                         onPressed: () {
                                           setState(() {
-                                            _quotaFuture = StorageApi.fetchQuota();
+                                            _quotaFuture =
+                                                StorageApi.fetchQuota();
                                           });
                                         },
                                         child: const Text('다시 시도'),
@@ -759,7 +766,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               onUpgrade: () {
                                 // 업그레이드 플로우 진입 (추후 결제/구독 화면 연결)
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('업그레이드 준비 중입니다.')),
+                                  const SnackBar(
+                                    content: Text('업그레이드 준비 중입니다.'),
+                                  ),
                                 );
                               },
                               capFreeAtTwenty: true,
