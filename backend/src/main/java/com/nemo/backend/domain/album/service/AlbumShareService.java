@@ -65,6 +65,7 @@ public class AlbumShareService {
     /**
      * ✅ 앨범 공유 요청 보내기
      * - POST /api/albums/{albumId}/share
+     * - 명세상 응답: { "albumId": ..., "message": "..." }
      */
     public AlbumShareResponse shareAlbum(Long albumId, Long meId, AlbumShareRequest req) {
         Album album = getAlbumWithManagePermission(albumId, meId);
@@ -119,52 +120,35 @@ public class AlbumShareService {
 
         albumShareRepository.saveAll(shares);
 
-        // 응답 DTO 구성
-        List<AlbumShareResponse.SharedUser> sharedUsers = shares.stream()
-                .map(share -> AlbumShareResponse.SharedUser.builder()
-                        .shareId(share.getId())
-                        .userId(share.getUser().getId())
-                        .nickname(share.getUser().getNickname())
-                        .email(share.getUser().getEmail())
-                        .role(share.getRole())
-                        .status(share.getStatus())
-                        .invitedAt(share.getCreatedAt())
-                        .build())
-                .toList();
-
+        // 명세: albumId + message 만 응답
         return AlbumShareResponse.builder()
                 .albumId(album.getId())
-                .sharedTo(sharedUsers)
-                .message(null) // 현재 명세에는 별도 메시지 필드 없음
+                .message("공유 요청을 전송했습니다.")
                 .build();
     }
 
     /**
      * ✅ 공유 멤버 목록 조회
      * - GET /api/albums/{albumId}/share/members
+     * - 응답 예시:
+     *   [
+     *     { "userId": 1, "nickname": "앨범주인", "role": "OWNER" },
+     *     { "userId": 7, "nickname": "네컷러버", "role": "EDITOR" }
+     *   ]
      */
     @Transactional(readOnly = true)
-    public AlbumShareTargetsResponse getShareTargets(Long albumId, Long meId) {
+    public List<AlbumShareResponse.SharedUser> getShareTargets(Long albumId, Long meId) {
         // OWNER / CO_OWNER 권한 검증
         getAlbumWithManagePermission(albumId, meId);
 
-        List<AlbumShareResponse.SharedUser> list = albumShareRepository
+        return albumShareRepository
                 .findByAlbumIdAndActiveTrue(albumId).stream()
                 .map(share -> AlbumShareResponse.SharedUser.builder()
-                        .shareId(share.getId())
                         .userId(share.getUser().getId())
                         .nickname(share.getUser().getNickname())
-                        .email(share.getUser().getEmail())
                         .role(share.getRole())
-                        .status(share.getStatus())
-                        .invitedAt(share.getCreatedAt())
                         .build())
                 .toList();
-
-        return AlbumShareTargetsResponse.builder()
-                .albumId(albumId)
-                .sharedTo(list)
-                .build();
     }
 
     /**
@@ -265,18 +249,27 @@ public class AlbumShareService {
     /**
      * ✅ 공유 요청 수락 (albumId 기준)
      * - POST /api/albums/{albumId}/share/accept
+     * - 응답 예시:
+     *   { "albumId": 20, "role": "VIEWER", "message": "앨범 공유를 수락했습니다." }
      */
-    public void acceptShareByAlbum(Long albumId, Long meId) {
+    public AcceptShareResponse acceptShareByAlbum(Long albumId, Long meId) {
         AlbumShare share = albumShareRepository
                 .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, meId, Status.PENDING)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "SHARE_NOT_FOUND"));
 
         acceptShareInternal(share, meId);
+
+        return AcceptShareResponse.builder()
+                .albumId(albumId)
+                .role(share.getRole())
+                .message("앨범 공유를 수락했습니다.")
+                .build();
     }
 
     /**
      * ✅ 공유 요청 거절 (albumId 기준)
      * - POST /api/albums/{albumId}/share/reject
+     * - (명세에 따라 필요하면 별도 DTO 만들어서 응답해도 됨)
      */
     public void rejectShareByAlbum(Long albumId, Long meId) {
         AlbumShare share = albumShareRepository
@@ -288,7 +281,6 @@ public class AlbumShareService {
 
     /**
      * ✅ 내가 공유받은 앨범 목록
-     * - 실제 HTTP 엔드포인트는 AlbumController 에서 통합 처리 가능
      */
     @Transactional(readOnly = true)
     public List<SharedAlbumSummaryResponse> getMySharedAlbums(Long meId) {

@@ -1,7 +1,6 @@
 package com.nemo.backend.domain.album.controller;
 
 import com.nemo.backend.domain.album.dto.*;
-import com.nemo.backend.domain.album.entity.AlbumShare;
 import com.nemo.backend.domain.album.service.AlbumShareService;
 import com.nemo.backend.domain.auth.util.AuthExtractor;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +15,10 @@ import java.util.List;
  */
 @RestController
 @RequiredArgsConstructor
-@RequestMapping(value ="/api/albums",
-        produces = "application/json; charset=UTF-8")
+@RequestMapping(
+        value = "/api/albums",
+        produces = "application/json; charset=UTF-8"
+)
 public class AlbumShareController {
 
     private final AlbumShareService albumShareService;
@@ -39,12 +40,12 @@ public class AlbumShareController {
     // 🔹 공유 멤버 목록 조회 (신 명세)
     // GET /api/albums/{albumId}/share/members
     @GetMapping("/{albumId}/share/members")
-    public ResponseEntity<AlbumShareTargetsResponse> getShareMembers(
+    public ResponseEntity<List<AlbumShareResponse.SharedUser>> getShareMembers(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long albumId
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
-        AlbumShareTargetsResponse resp = albumShareService.getShareTargets(albumId, meId);
+        List<AlbumShareResponse.SharedUser> resp = albumShareService.getShareTargets(albumId, meId);
         return ResponseEntity.ok(resp);
     }
 
@@ -63,7 +64,7 @@ public class AlbumShareController {
                 meId,
                 request.role()
         );
-        // 명세서는 200 OK 예시라 OK로 응답
+        // 명세는 200 OK
         return ResponseEntity.ok().build();
     }
 
@@ -94,14 +95,13 @@ public class AlbumShareController {
     // 🔹 공유 요청 수락 (신 명세: albumId 기반)
     // POST /api/albums/{albumId}/share/accept
     @PostMapping("/{albumId}/share/accept")
-    public ResponseEntity<Void> acceptShareByAlbum(
+    public ResponseEntity<AcceptShareResponse> acceptShareByAlbum(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long albumId
     ) {
         Long meId = authExtractor.extractUserId(authorizationHeader);
-        albumShareService.acceptShareByAlbum(albumId, meId);
-        // 명세 예시는 200 OK
-        return ResponseEntity.ok().build();
+        AcceptShareResponse resp = albumShareService.acceptShareByAlbum(albumId, meId);
+        return ResponseEntity.ok(resp);
     }
 
     // 🔹 공유 요청 거절 (신 명세: albumId 기반)
