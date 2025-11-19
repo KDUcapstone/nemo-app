@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping(value = "/api/users", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(
+        value = "/api/users",
+        produces = "application/json; charset=UTF-8")
 @RequiredArgsConstructor // 🔥 final 필드 자동 생성자
 public class UserAuthController {
 

@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping("/api/albums")
+@RequestMapping(value ="/api/albums",
+        produces = "application/json; charset=UTF-8")
 @RequiredArgsConstructor // ⭐ 생성자 자동 생성 (final 필드만)
 public class AlbumController {
 

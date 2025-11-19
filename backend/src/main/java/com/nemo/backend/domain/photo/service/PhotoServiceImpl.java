@@ -66,6 +66,9 @@ public class PhotoServiceImpl implements PhotoService {
         return String.format("%s/files/%s", publicBaseUrl, key);
     }
 
+    // ========================================================
+    // 1) QR/갤러리 혼합 업로드 (기존 로직 유지 + location/memo 저장)
+    // ========================================================
     @Override
     public PhotoResponseDto uploadHybrid(Long userId,
                                          String qrUrlOrPayload,
@@ -143,27 +146,116 @@ public class PhotoServiceImpl implements PhotoService {
         String qrHash = (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) ? sha256Hex(qrUrlOrPayload) : null;
 
         Photo photo = new Photo(userId, null, storedImage, storedThumb, storedVideo, qrHash, brand, takenAt, null);
+        // ✅ 위치명 / 메모 저장 (엔티티에 필드가 있어야 함)
+        photo.setLocationName(location);
+        photo.setMemo(memo);
+
         Photo saved = photoRepository.save(photo);
         return new PhotoResponseDto(saved);
     }
 
+    // ========================================================
+    // 2) 사진 목록 조회 (favorite 필터 지원)
+    // ========================================================
     @Override
     @Transactional(readOnly = true)
-    public Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
-        return photoRepository.findByUserIdAndDeletedIsFalseOrderByCreatedAtDesc(userId, pageable)
-                .map(PhotoResponseDto::new);
+    public Page<PhotoResponseDto> list(Long userId, Pageable pageable, Boolean favorite) {
+        Page<Photo> page;
+        if (Boolean.TRUE.equals(favorite)) {
+            page = photoRepository.findByUserIdAndDeletedIsFalseAndFavoriteTrueOrderByCreatedAtDesc(userId, pageable);
+        } else {
+            page = photoRepository.findByUserIdAndDeletedIsFalseOrderByCreatedAtDesc(userId, pageable);
+        }
+        return page.map(PhotoResponseDto::new);
     }
 
+    // 혹시 인터페이스에 옛날 시그니처가 남아있다면, 이렇게 위임해도 됨.
+    @Transactional(readOnly = true)
+    public Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
+        return list(userId, pageable, null);
+    }
+
+    // ========================================================
+    // 3) 사진 삭제
+    // ========================================================
     @Override
     public void delete(Long userId, Long photoId) {
-        Photo photo = photoRepository.findById(photoId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사진입니다."));
-        if (!photo.getUserId().equals(userId)) throw new IllegalStateException("삭제 권한이 없습니다.");
+        Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "존재하지 않는 사진입니다."));
+        if (!photo.getUserId().equals(userId)) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED, "삭제 권한이 없습니다.");
+        }
         photo.setDeleted(true);
         photoRepository.save(photo);
     }
 
-    // ===================== 네트워크/QR 파싱 =====================
+    // ========================================================
+    // 4) 사진 상세 조회
+    // ========================================================
+    @Override
+    @Transactional(readOnly = true)
+    public PhotoResponseDto getDetail(Long userId, Long photoId) {
+        Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
+        if (!photo.getUserId().equals(userId)) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED, "해당 사진에 접근할 권한이 없습니다.");
+        }
+        return new PhotoResponseDto(photo);
+    }
+
+    // ========================================================
+    // 5) 사진 상세 정보 수정 (촬영일시, 위치, 브랜드, 메모)
+    // ========================================================
+    @Override
+    public PhotoResponseDto updateDetails(Long userId,
+                                          Long photoId,
+                                          LocalDateTime takenAt,
+                                          String location,
+                                          String brand,
+                                          String memo) {
+
+        Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
+        if (!photo.getUserId().equals(userId)) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED, "이 사진을 수정할 권한이 없습니다.");
+        }
+
+        if (takenAt != null) {
+            photo.setTakenAt(takenAt);
+        }
+        if (location != null) {
+            photo.setLocationName(location);
+        }
+        if (brand != null && !brand.isBlank()) {
+            photo.setBrand(brand);
+        }
+        if (memo != null) {
+            photo.setMemo(memo);
+        }
+
+        Photo saved = photoRepository.save(photo);
+        return new PhotoResponseDto(saved);
+    }
+
+    // ========================================================
+    // 6) 즐겨찾기 토글
+    // ========================================================
+    @Override
+    public boolean toggleFavorite(Long userId, Long photoId) {
+        Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
+        if (!photo.getUserId().equals(userId)) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED, "즐겨찾기 권한이 없습니다.");
+        }
+
+        boolean current = Boolean.TRUE.equals(photo.getFavorite());
+        boolean next = !current;
+        photo.setFavorite(next);
+        photoRepository.save(photo);
+        return next;
+    }
+
+    // ===================== 네트워크/QR 파싱 (기존 코드 그대로) =====================
 
     /**
      * QR 에서 얻은 URL(또는 payload)을 시작점으로,
@@ -213,14 +305,12 @@ public class PhotoServiceImpl implements PhotoService {
                 boolean isAttachment = cd != null && cd.toLowerCase(Locale.ROOT).contains("attachment");
 
                 // ================================
-                // 🔥 life4cut 전용: webQr → webQrJson 강제 우선 시도
-                //   (content-type 이 text/html 이 아니더라도 항상 먼저 체크)
+                // 🔥 life4cut 전용: webQr → direct S3 URL 강제 시도
                 // ================================
                 String specialNext = resolveLife4cutNextUrl(url);
                 if (specialNext != null && !isSamePage(specialNext, current)) {
                     log.info("[QR][life4cut][forceJump] {} -> {}", current, specialNext);
                     current = specialNext;
-                    // webQrJson 혹은 S3 직결 URL로 다시 루프를 돈다
                     continue;
                 }
 
@@ -301,10 +391,10 @@ public class PhotoServiceImpl implements PhotoService {
         }
     }
 
-    // ===================== life4cut 전용 webQr → webQrJson 처리 =====================
+    // ===================== life4cut 전용 webQr → S3 처리 =====================
 
-    /// 인생네컷 전용: download.life4cut.net/webQr 의 쿼리 파라미터에서
-// bucket + folderPath 를 뽑아서 S3 직결 이미지 URL을 만든다.
+    // 인생네컷 전용: download.life4cut.net/webQr 의 쿼리 파라미터에서
+    // bucket + folderPath 를 뽑아서 S3 직결 이미지 URL을 만든다.
     private String resolveLife4cutNextUrl(URL webQrUrl) {
         try {
             String host  = webQrUrl.getHost();
@@ -344,13 +434,10 @@ public class PhotoServiceImpl implements PhotoService {
                 return null;
             }
 
-            // folderPath 는 보통 "/QRimage/..." 형식인데, 혹시 / 없으면 붙여준다
             if (!folderPath.startsWith("/")) {
                 folderPath = "/" + folderPath;
             }
 
-            // ❗ 인생네컷 패턴:
-            //   https://{bucket}.s3.ap-northeast-2.amazonaws.com{folderPath}/image.jpg
             String s3Url = "https://" + bucket + ".s3.ap-northeast-2.amazonaws.com"
                     + folderPath
                     + "/image.jpg";
@@ -418,10 +505,8 @@ public class PhotoServiceImpl implements PhotoService {
         if (s == null) return false;
         String lower = s.toLowerCase(Locale.ROOT);
 
-        // QRimage 경로가 포함돼 있고
         if (!lower.contains("qrimage")) return false;
 
-        // 이미지/영상 확장자가 하나라도 포함돼 있으면 미디어로 본다
         return lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
                 lower.endsWith(".png") || lower.endsWith(".webp") ||
                 lower.endsWith(".mp4") || lower.endsWith(".webm") ||
@@ -540,7 +625,6 @@ public class PhotoServiceImpl implements PhotoService {
             Matcher mDirect = directImg.matcher(html);
             while (mDirect.find()) {
                 String candidate = mDirect.group();
-                // life4cut 페이지면 /QRimage/ 포함된 것만 우선 채택
                 if (!looksLife4cut || candidate.toLowerCase(Locale.ROOT).contains("/qrimage/")) {
                     out.imageUrl = candidate;
                     break;
@@ -555,13 +639,11 @@ public class PhotoServiceImpl implements PhotoService {
                 );
                 Matcher mEnc = encoded.matcher(html);
                 if (mEnc.find()) {
-                    // 상대 경로 그대로 넘기면 fetchAssetsFromQrPayload 에서 baseUrl 기준으로 절대 URL로 변환됨
                     out.imageUrl = mEnc.group(1);
                 }
             }
         }
 
-        // 자기 자신 페이지면 무시
         if (out.imageUrl != null && isSamePage(out.imageUrl, baseUrl)) {
             out.imageUrl = null;
         }
@@ -605,7 +687,6 @@ public class PhotoServiceImpl implements PhotoService {
 
     // ===================== 기타 유틸 =====================
 
-    // 파일명 추출(중복 방지용: 래퍼 + 오버로드 한 쌍만 유지)
     private String filenameFromHeadersOrUrl(URL base, String cdHeader, String contentType) {
         return filenameFromHeadersOrUrl(base, cdHeader, contentType, true);
     }

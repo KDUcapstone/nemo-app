@@ -47,4 +47,9 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
      */
     boolean existsByUserIdAndFriendIdAndStatus(Long userId, Long friendId, FriendStatus status);
 
+    /**
+     * 특정 사용자가 친구로 등록한 사용자들 중에서 특정 상태(FriendStatus)를 가진 친구 목록 조회
+     */
+    List<Friend> findAllByFriendIdAndStatus(Long friendId, FriendStatus status);
+
 }

@@ -25,6 +25,12 @@ spring:
     properties:
       hibernate.format_sql: true
 
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true            # 요청/응답 모두 UTF-8로 강제
+
 app:
   jwt:
     secret: "dev-very-secret-key-change-me-32bytes-min"   # ★로컬 전용 키 (운영에선 환경변수로)
@@ -48,3 +54,7 @@ naver:
       endpoint: https://openapi.naver.com/v1/search/local.json
       client-id: ${NAVER_LOCAL_CLIENT_ID:dev-dummy}
       client-secret: ${NAVER_LOCAL_CLIENT_SECRET:dev-dummy}
+
+server:
+  tomcat:
+    uri-encoding: UTF-8      # 쿼리/폼 파라미터 UTF-8 처리
