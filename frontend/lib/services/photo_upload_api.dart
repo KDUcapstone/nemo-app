@@ -255,9 +255,11 @@ class PhotoUploadApi {
       if (!await imageFile.exists()) {
         throw Exception('IMAGE_REQUIRED');
       }
+      // 모킹 모드: 실제 URL 형식 반환 (로컬 경로 대신)
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
       return {
-        'photoId': DateTime.now().millisecondsSinceEpoch,
-        'imageUrl': imageFile.path,
+        'photoId': timestamp,
+        'imageUrl': 'https://cdn.nemo.app/photos/gallery_$timestamp.jpg',
         'takenAt': takenAtIso ?? DateTime.now().toIso8601String(),
         'location': location ?? '',
         'brand': brand ?? '',

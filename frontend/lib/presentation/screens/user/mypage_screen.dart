@@ -257,13 +257,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
       // 프로필 이미지 업로드 처리
       // 명세서: 프로필 이미지는 S3/Firebase Storage에 먼저 업로드한 후 URL만 백엔드에 전달
-      // 현재는 선택된 이미지가 있어도 업로드 로직이 없으므로 기존 URL 유지
-      // TODO: 프로필 이미지 업로드 API 구현 시 _selectedImage가 있으면 먼저 업로드하고 URL 받아오기
       String? profileImageUrl = _userInfo['profileImageUrl'] as String?;
       if (_selectedImage != null) {
-        // 프로필 이미지 업로드 API 호출 필요
-        // 예: final uploadResult = await uploadProfileImage(_selectedImage!);
-        // profileImageUrl = uploadResult['imageUrl'];
+        // 사진 업로드 API를 사용하여 이미지 업로드 후 URL 받아오기
+        final uploadApi = PhotoUploadApi();
+        final uploadResult = await uploadApi.uploadPhotoFromGallery(
+          imageFile: _selectedImage!,
+          takenAtIso: DateTime.now().toIso8601String(),
+        );
+        // 업로드 결과에서 imageUrl 추출
+        final uploadedImageUrl = uploadResult['imageUrl'] as String?;
+        if (uploadedImageUrl != null && uploadedImageUrl.isNotEmpty) {
+          profileImageUrl = uploadedImageUrl;
+        } else {
+          // 업로드는 성공했지만 imageUrl이 없는 경우 (예외 처리)
+          throw Exception('이미지 업로드는 성공했지만 URL을 받아오지 못했습니다.');
+        }
       }
 
       // PUT /api/users/me - 사용자 정보 수정
