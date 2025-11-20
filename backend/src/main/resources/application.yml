@@ -7,7 +7,7 @@ spring:
     # ✅ 개발 중엔 local (CloudType DB 외부 접속)
     # ✅ 테스트용 H2는 dev
     # ✅ 실제 배포는 prod
-    active: dev
+    active: local
 
   h2:
     console:
@@ -97,3 +97,8 @@ naver:
       endpoint: https://openapi.naver.com/v1/search/local.json
       client-id: ${NAVER_LOCAL_CLIENT_ID}
       client-secret: ${NAVER_LOCAL_CLIENT_SECRET}
+    map:
+      client-id: ${NAVER_MAP_CLIENT_ID}
+      client-secret: ${NAVER_MAP_CLIENT_SECRET}
+    reverse:
+      endpoint: https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc

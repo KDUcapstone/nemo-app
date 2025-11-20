@@ -5,72 +5,139 @@ import com.nemo.backend.domain.map.dto.PhotoboothDto;
 import com.nemo.backend.domain.map.dto.ViewportRequest;
 import com.nemo.backend.domain.map.util.NaverApiClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 📌 PhotoboothService
+ * ─────────────────────────────────────────────────────────────────────
+ * 1) 클라이언트가 보낸 '현재 지도 뷰포트(화면)' 정보를 받는다.
+ * 2) 뷰포트 중심 좌표를 기준으로 네이버 Reverse Geocoding 호출 → "강남구 역삼동"
+ * 3) 이 지역명을 기반으로 네이버 Local Search(장소 검색) 실행
+ *     예) "강남구 역삼동 인생네컷", "강남구 역삼동 포토부스"
+ * 4) 검색 결과 중 실제 뷰포트 안에 포함되는 포토부스만 필터링
+ * 5) 중복 제거(50m 이내 + 이름 유사)
+ * 6) 거리 기준 정렬
+ * 7) 브랜드 필터 / LIMIT 적용
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PhotoboothService {
 
     private final NaverApiClient naverApiClient;
 
-    // ✅ 검색 키워드(브랜드 + 일반 키워드)
+    // 🔍 기본 검색 키워드(브랜드 + 일반 키워드)
     private static final List<String> KEYWORDS = List.of(
             "포토부스", "인생네컷", "하루필름", "포토이즘", "포토시그널", "포토그레이", "돈룩업"
     );
 
-    // ✅ 네이버 Local API 제약: display 최대 5
-    private static final int PAGE_SIZE = 5;
-
-    // ✅ 한 키워드당 최대 페이지 수(너무 많이 긁지 않도록 안전 장치)
-    //   → 4면 최대 20개(5×4), 필요 시 늘리되 429 위험 고려
-    private static final int MAX_PAGES_PER_KEYWORD = 4;
+    private static final int PAGE_SIZE = 5;               // 네이버 LocalSearch 최대 display=5
+    private static final int MAX_PAGES_PER_KEYWORD = 4;   // 한 키워드당 최대 20개 수집
 
     /**
-     * 뷰포트(현재 지도 화면) 안에 있는 포토부스들 반환
+     * 📌 현재 뷰포트 안에 존재하는 포토부스 반환
      */
     public List<PhotoboothDto> getPhotoboothsInViewport(ViewportRequest req) {
 
-        // 1) 키워드별로 '페이지네이션' 하며 안전하게 수집
+        // ────────────────────────────────────────
+        // 1) 뷰포트 중심 좌표 계산
+        // ────────────────────────────────────────
+        double centerLat = (req.getNeLat() + req.getSwLat()) / 2.0;
+        double centerLng = (req.getNeLng() + req.getSwLng()) / 2.0;
+
+        // ────────────────────────────────────────
+        // 2) Reverse Geocoding → "강남구 역삼동" 같이 지역명 얻기
+        // ────────────────────────────────────────
+        Optional<String> regionOpt = naverApiClient.reverseGeocodeToRegion(centerLat, centerLng);
+        String regionName = regionOpt.orElse(null);
+
+        // ⭐ 로그(1) — 요청된 뷰포트 + 중심 + 역지오코딩 결과
+        log.info("[MAP][REQ] ne=({}, {}), sw=({}, {}), center=({}, {}), region='{}'",
+                req.getNeLat(), req.getNeLng(),
+                req.getSwLat(), req.getSwLng(),
+                centerLat, centerLng,
+                regionName
+        );
+
+        // ────────────────────────────────────────
+        // 3) 실제 네이버 검색에 사용할 키워드 구성
+        //    ▷ 위치 기반 정확한 검색을 위해 "지역명 + 키워드" 형태 선호
+        //      예: "강남구 역삼동 인생네컷"
+        // ────────────────────────────────────────
+        List<String> searchKeywords = new ArrayList<>();
+
+        if (regionName != null && !regionName.isBlank()) {
+            for (String base : KEYWORDS) {
+                searchKeywords.add(regionName + " " + base);
+            }
+            // 보조 키워드 하나 더
+            searchKeywords.add(regionName + " 포토부스");
+        } else {
+            // 역지오코딩 실패 시 → 전국 검색 fallback
+            searchKeywords.addAll(KEYWORDS);
+        }
+
+        // ⭐ 로그(2) — 사용된 검색 키워드 목록 출력
+        log.info("[MAP][KEYWORDS] {}", searchKeywords);
+
+        // ────────────────────────────────────────
+        // 4) 네이버 Local Search 호출 (키워드 × 페이지)
+        // ────────────────────────────────────────
         List<Map<String, Object>> raw = new ArrayList<>();
 
-        for (String kw : KEYWORDS) {
+        for (String kw : searchKeywords) {
             int page = 0;
             boolean hasMore = true;
 
             while (hasMore && page < MAX_PAGES_PER_KEYWORD) {
                 page++;
-                // start는 1부터 시작, display=5이면 1,6,11,... 식으로 넘김
+
+                // start는 1부터 시작 (1, 6, 11, 16...)
                 int start = 1 + (page - 1) * PAGE_SIZE;
 
                 Map<String, Object> res = naverApiClient.searchLocal(kw, PAGE_SIZE, start, "random");
                 List<Map<String, Object>> items = extractItems(res);
 
-                // 아이템 없으면 이 키워드는 더 이상 호출 안 함
                 if (items.isEmpty()) {
-                    hasMore = false;
+                    hasMore = false;  // 다음 페이지 없음
                 } else {
                     raw.addAll(items);
-                    // 마지막 페이지(5개 미만 반환)면 다음부터는 중단
-                    if (items.size() < PAGE_SIZE) hasMore = false;
+                    if (items.size() < PAGE_SIZE) hasMore = false; // 마지막 페이지
                 }
             }
         }
 
-        // 2) map → PhotoboothDto (좌표 변환/브랜드 추정/이름 클린업)
+        // ⭐ 로그(3) — 네이버 LocalSearch 결과 총합
+        log.info("[MAP][RAW] totalRawItems={}", raw.size());
+
+        // ────────────────────────────────────────
+        // 5) raw → PhotoboothDto (좌표 변환, 브랜드 추정, HTML 제거)
+        // ────────────────────────────────────────
         List<PhotoboothDto> all = raw.stream()
                 .map(this::toDto)
-                .filter(dto -> dto.getLatitude() != 0 && dto.getLongitude() != 0) // 좌표 없는건 제외
+                .filter(dto -> dto.getLatitude() != 0 && dto.getLongitude() != 0) // 좌표 없는 경우 제외
                 .collect(Collectors.toList());
 
-        // 3) 뷰포트 안에 있는 것만
+        // ────────────────────────────────────────
+        // 6) 실제 뷰포트 안에 포함되는 후보만 필터링
+        // ────────────────────────────────────────
         List<PhotoboothDto> filtered = all.stream()
                 .filter(p -> inViewport(req, p.getLatitude(), p.getLongitude()))
                 .collect(Collectors.toList());
 
-        // 4) 중복 제거: 50m 이내 & 이름 유사(공백 제거 후 포함관계)
+        // ⭐ 로그(4) — 뷰포트 안에 실제로 존재하는 결과 수
+        log.info("[MAP][FILTER] inViewport={}", filtered.size());
+
+        // ────────────────────────────────────────
+        // 7) 중복 제거 (50m 이내 + 이름 유사)
+        //    ▷ 네이버 검색 결과 특성상 동일한 지점이 여러 키워드에서 중복으로 나올 수 있음
+        // ────────────────────────────────────────
         List<PhotoboothDto> deduped = new ArrayList<>();
         for (PhotoboothDto cur : filtered) {
             boolean dup = deduped.stream().anyMatch(x ->
@@ -81,16 +148,21 @@ public class PhotoboothService {
             if (!dup) deduped.add(cur);
         }
 
-        // 5) 뷰포트 중앙과의 거리 계산 → 가까운 순 정렬
-        double centerLat = (req.getNeLat() + req.getSwLat()) / 2.0;
-        double centerLng = (req.getNeLng() + req.getSwLng()) / 2.0;
+        // ⭐ 로그(5) — dedupe 후 결과
+        log.info("[MAP][DEDUP] deduped={}", deduped.size());
 
+
+        // ────────────────────────────────────────
+        // 8) 뷰포트 중심과의 거리 계산 후 오름차순 정렬
+        // ────────────────────────────────────────
         for (PhotoboothDto dto : deduped) {
             dto.setDistanceMeter(distanceMeter(centerLat, centerLng, dto.getLatitude(), dto.getLongitude()));
         }
         deduped.sort(Comparator.comparingInt(PhotoboothDto::getDistanceMeter));
 
-        // 6) 브랜드 필터(선택)
+        // ────────────────────────────────────────
+        // 9) 브랜드 필터 (요청 시)
+        // ────────────────────────────────────────
         if (req.getBrand() != null && !req.getBrand().isBlank()) {
             String want = req.getBrand().trim();
             deduped = deduped.stream()
@@ -98,14 +170,21 @@ public class PhotoboothService {
                     .collect(Collectors.toList());
         }
 
-        // 7) limit 적용 (기본 300)
+        // ────────────────────────────────────────
+        // 10) LIMIT 적용 (기본=300)
+        // ────────────────────────────────────────
         int max = req.getLimit() != null ? Math.max(1, req.getLimit()) : 300;
         if (deduped.size() > max) deduped = deduped.subList(0, max);
+
+        // ⭐ 로그(6) — 최종 반환 개수
+        log.info("[MAP][RETURN] finalCount={}", deduped.size());
 
         return deduped;
     }
 
-    // ─────────────── helpers ───────────────
+    // ───────────────────────────────────────────────
+    // helpers
+    // ───────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractItems(Map<String, Object> response) {
@@ -117,13 +196,10 @@ public class PhotoboothService {
         return List.of();
     }
 
-    // 네이버 지역검색 아이템 → 우리 PhotoboothDto
+    // 네이버 지역검색 응답 item → PhotoboothDto 변환
     private PhotoboothDto toDto(Map<String, Object> item) {
-        // 좌표: 네이버 Local 응답의 mapx/mapy(문자열 정수, 1e7 스케일) → 경도/위도
         double lon = parseCoord(safeStr(item.get("mapx"))); // 경도
         double lat = parseCoord(safeStr(item.get("mapy"))); // 위도
-
-        // 장소명: <b>태그 제거
         String name = removeHtml(safeStr(item.get("title")));
 
         return PhotoboothDto.builder()
@@ -134,12 +210,11 @@ public class PhotoboothService {
                 .longitude(lon)
                 .roadAddress(safeStr(item.get("roadAddress")))
                 .naverPlaceUrl(safeStr(item.get("link")))
-                .distanceMeter(0) // 나중에 채움
+                .distanceMeter(0)
                 .cluster(false)
                 .build();
     }
 
-    // 문자열 좌표("1269251342") → 126.9251342
     private double parseCoord(String v) {
         if (v == null || v.isBlank()) return 0.0;
         try {
@@ -149,17 +224,16 @@ public class PhotoboothService {
         }
     }
 
-    // '<b>인생네컷</b> 홍대점' → '인생네컷 홍대점'
+    private String safeStr(Object o) {
+        return o == null ? "" : String.valueOf(o);
+    }
+
     private String removeHtml(String s) {
         if (s == null) return "";
         return s.replaceAll("<[^>]*>", "");
     }
 
-    private String safeStr(Object o) {
-        return o == null ? "" : String.valueOf(o);
-    }
-
-    // 간단 브랜드 추정
+    // 간단 브랜드 추정 로직
     private String guessBrand(String name) {
         if (name == null) return "기타";
         if (name.contains("인생네컷")) return "인생네컷";
@@ -177,19 +251,18 @@ public class PhotoboothService {
                 && lng >= r.getSwLng() && lng <= r.getNeLng();
     }
 
-    // 두 좌표 거리(m) — 하버사인
+    // 하버사인 거리(m)
     private int distanceMeter(double lat1, double lng1, double lat2, double lng2) {
-        double R = 6371000; // m
+        double R = 6371000;
         double dLat = Math.toRadians(lat2 - lat1);
         double dLng = Math.toRadians(lng2 - lng1);
         double a = Math.sin(dLat/2) * Math.sin(dLat/2)
                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
                 * Math.sin(dLng/2) * Math.sin(dLng/2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return (int) Math.round(R * c);
     }
 
-    // 이름 비교용 핵심 문자열
     private String core(String n) {
         return n == null ? "" : n.replace(" ", "");
     }
