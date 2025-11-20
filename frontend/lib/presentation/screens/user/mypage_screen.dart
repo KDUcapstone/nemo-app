@@ -100,6 +100,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Future<void> _loadUserInfo() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -108,12 +109,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
       final authService = AuthService();
       final response = await authService.getUserInfo();
 
+      if (!mounted) return;
       setState(() {
         _userInfo = response;
         _nicknameController.text = response['nickname'] as String;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -138,6 +141,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         imageQuality: 80,
       );
 
+      if (!mounted) return;
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -161,6 +165,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         imageQuality: 80,
       );
 
+      if (!mounted) return;
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -248,6 +253,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       if (!formState.validate()) return;
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -282,6 +288,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       );
 
       // 업데이트된 정보로 상태 갱신
+      if (!mounted) return;
       setState(() {
         _userInfo['nickname'] = response['nickname'] as String;
         _userInfo['profileImageUrl'] = response['profileImageUrl'] as String?;
@@ -299,6 +306,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
