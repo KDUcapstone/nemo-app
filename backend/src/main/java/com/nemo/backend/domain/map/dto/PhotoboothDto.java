@@ -1,9 +1,12 @@
 // src/main/java/com/nemo/backend/domain/map/dto/PhotoboothDto.java
 package com.nemo.backend.domain.map.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+
+import java.time.Instant;
 
 @Data
 @Builder
@@ -33,4 +36,8 @@ public class PhotoboothDto {
     private boolean cluster;
     private Integer count;      // 클러스터에 포함된 개수(미사용)
     private Integer bucketSize; // 클러스터 반경 힌트(미사용)
+
+    //✅ 마지막 수정 시각 (내부용, 응답에 포함하지 않음)
+    @JsonIgnore
+    private Instant lastUpdated;
 }
