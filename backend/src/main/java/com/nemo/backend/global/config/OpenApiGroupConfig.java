@@ -56,4 +56,11 @@ public class OpenApiGroupConfig {
                 .pathsToExclude("/api/auth/**", "/api/users/**", "/api/albums/**")
                 .build();
     }
+    @Bean
+    public GroupedOpenApi photoApi() {
+        return GroupedOpenApi.builder()
+                .group("photo")
+                .pathsToMatch("/api/photos/**")
+                .build();
+    }
 }

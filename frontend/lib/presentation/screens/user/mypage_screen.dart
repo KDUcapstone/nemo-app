@@ -107,14 +107,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
     try {
       final authService = AuthService();
-      final response = await authService.getUserInfo();
+      final response = await authService.getUserInfo(); // { userId, email, nickname, profileImageUrl, createdAt }
 
       if (!mounted) return;
       setState(() {
         _userInfo = response;
-        _nicknameController.text = response['nickname'] as String;
+        _nicknameController.text = response['nickname'] as String? ?? '';
         _isLoading = false;
       });
+
+      // 선택: Provider에 최신 닉네임/이미지도 반영하고 싶으면
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        userProvider.nickname = response['nickname'] as String?;
+        userProvider.profileImageUrl = response['profileImageUrl'] as String?;
+        userProvider.notifyListeners();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -249,9 +257,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   Future<void> _updateUserInfo() async {
     final formState = _formKey.currentState;
-    if (formState != null) {
-      if (!formState.validate()) return;
-    }
+    if (formState != null && !formState.validate()) return;
 
     if (!mounted) return;
     setState(() {
@@ -261,41 +267,35 @@ class _MyPageScreenState extends State<MyPageScreen> {
     try {
       final authService = AuthService();
 
-      // 프로필 이미지 업로드 처리
-      // 명세서: 프로필 이미지는 S3/Firebase Storage에 먼저 업로드한 후 URL만 백엔드에 전달
-      String? profileImageUrl = _userInfo['profileImageUrl'] as String?;
-      if (_selectedImage != null) {
-        // 사진 업로드 API를 사용하여 이미지 업로드 후 URL 받아오기
-        final uploadApi = PhotoUploadApi();
-        final uploadResult = await uploadApi.uploadPhotoFromGallery(
-          imageFile: _selectedImage!,
-          takenAtIso: DateTime.now().toIso8601String(),
-        );
-        // 업로드 결과에서 imageUrl 추출
-        final uploadedImageUrl = uploadResult['imageUrl'] as String?;
-        if (uploadedImageUrl != null && uploadedImageUrl.isNotEmpty) {
-          profileImageUrl = uploadedImageUrl;
-        } else {
-          // 업로드는 성공했지만 imageUrl이 없는 경우 (예외 처리)
-          throw Exception('이미지 업로드는 성공했지만 URL을 받아오지 못했습니다.');
-        }
-      }
-
-      // PUT /api/users/me - 사용자 정보 수정
-      final response = await authService.updateUserInfo(
-        nickname: _nicknameController.text,
-        profileImageUrl: profileImageUrl,
+      // 1) 서버에 실제로 프로필 업데이트 요청 (multipart)
+      final updated = await authService.updateUserProfile(
+        nickname: _nicknameController.text.trim(),
+        image: _selectedImage, // null이면 서버에서 무시
       );
 
-      // 업데이트된 정보로 상태 갱신
+      // 2) 서버에서 응답 온 값으로 다시 세팅
       if (!mounted) return;
       setState(() {
-        _userInfo['nickname'] = response['nickname'] as String;
-        _userInfo['profileImageUrl'] = response['profileImageUrl'] as String?;
-        _selectedImage = null; // 선택된 이미지 초기화
+        _userInfo = {
+          'userId': updated['userId'],
+          'email': updated['email'],
+          'nickname': updated['nickname'],
+          'profileImageUrl': updated['profileImageUrl'],
+          'createdAt': _userInfo['createdAt'], // 가입일은 그대로
+        };
+
         _isEditing = false;
+        _selectedImage = null;
         _isLoading = false;
       });
+
+      // 3) Provider에도 반영 (상단 앱바/다른 화면에서 쓸 때)
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        userProvider.nickname = updated['nickname'] as String?;
+        userProvider.profileImageUrl = updated['profileImageUrl'] as String?;
+        userProvider.notifyListeners();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -723,7 +723,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           nicknameController: _nicknameController,
                           email: _userInfo['email'],
                           nickname: _userInfo['nickname'],
-                          profileImageUrl: _userInfo['profileImageUrl'],
+                          profileImageUrl: _userInfo['profileImageUrl'], // ✅ 여기!!
                           selectedImage: _selectedImage,
                           onEdit: () => setState(() => _isEditing = true),
                           onCancel: () => setState(() {

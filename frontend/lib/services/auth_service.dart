@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../app/constants.dart';
@@ -61,17 +62,18 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final rawBody = utf8.decode(response.bodyBytes);           // ✅ 항상 UTF-8로 디코딩
+        final data = jsonDecode(rawBody) as Map<String, dynamic>;  // 기존: jsonDecode(response.body)
         // 로그인 성공 시 토큰 저장
         final access = data['accessToken'] as String;
         setAccessToken(access);
         return {
           'success': true,
           'accessToken': access,
-          'refreshToken': data['refreshToken'] as String?,   // 있으면 저장에 사용
-          'userId': (data['id'] as num).toInt(),             // ← 안전 파싱
+          'refreshToken': data['refreshToken'] as String?, // 있으면 저장에 사용
+          'userId': (data['id'] as num).toInt(), // ← 안전 파싱
           'nickname': data['nickname'] as String? ?? '',
-          'profileImageUrl': data['profileImageUrl'],        // null 허용
+          'profileImageUrl': data['profileImageUrl'], // null 허용
         };
       } else if (response.statusCode == 401) {
         throw Exception('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -191,9 +193,8 @@ class AuthService {
         if (response.statusCode == 429) {
           throw Exception('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
         }
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
+        final body =
+        response.body.isNotEmpty ? jsonDecode(response.body) : null;
         throw Exception(
           body != null && body['message'] != null
               ? body['message']
@@ -289,10 +290,66 @@ class AuthService {
     }
   }
 
+  /// ✅ 프로필(닉네임 / 이미지) 수정 – multipart/form-data
+  Future<Map<String, dynamic>> updateUserProfile({
+    required String nickname,
+    File? image,
+  }) async {
+    if (AppConstants.useMockApi) {
+      // 목업일 때는 로컬에서만 갱신했다고 치고 값 리턴
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'userId': 1,
+        'email': 'user@example.com',
+        'nickname': nickname,
+        'profileImageUrl': image?.path, // 그냥 로컬 경로 흉내
+        'updatedAt': DateTime.now().toIso8601String(),
+      };
+    }
+
+    try {
+      final uri = ApiClient.uri('/api/users/me');
+      final req = http.MultipartRequest('PUT', uri);
+
+      // 헤더: Authorization + Accept만 넣고, Content-Type은 MultipartRequest가 처리
+      if (AuthService.accessToken != null) {
+        req.headers['Authorization'] = 'Bearer ${AuthService.accessToken}';
+      }
+      req.headers['Accept'] = 'application/json;charset=UTF-8';
+
+      // 필드
+      req.fields['nickname'] = nickname;
+
+      // 파일 (선택)
+      if (image != null) {
+        req.files.add(
+          await http.MultipartFile.fromPath('image', image.path),
+        );
+      }
+
+      final streamed = await req.send();
+      final resp = await http.Response.fromStream(streamed);
+
+      if (resp.statusCode != 200) {
+        throw Exception('FAILED_${resp.statusCode}');
+      }
+
+      // 한글 안 깨지도록 bodyBytes → utf8.decode
+      final body = utf8.decode(resp.bodyBytes);
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      return data;
+    } catch (e) {
+      throw Exception('네트워크 오류: $e');
+    }
+  }
+
   /// 로그아웃 (JWT 토큰 무효화)
   Future<bool> logout() async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
+      await Future.delayed(
+          Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       clearAccessToken();
       return true;
     }
@@ -494,9 +551,8 @@ class AuthService {
         throw Exception('INVALID_CURRENT_PASSWORD');
       }
       if (response.statusCode == 400) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
+        final body =
+        response.body.isNotEmpty ? jsonDecode(response.body) : null;
         final err = body is Map ? (body['error'] as String?) : null;
         if (err == 'PASSWORD_CONFIRM_MISMATCH') {
           throw Exception('PASSWORD_CONFIRM_MISMATCH');

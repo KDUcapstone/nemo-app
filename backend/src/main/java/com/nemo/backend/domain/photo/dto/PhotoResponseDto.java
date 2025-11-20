@@ -5,7 +5,7 @@ import com.nemo.backend.domain.photo.entity.Photo;
 import java.time.LocalDateTime;
 
 /**
- * 사진 상세/목록 조회용 DTO. 기존 스키마를 유지한다.
+ * 사진 상세/목록 조회용 DTO.
  */
 public class PhotoResponseDto {
     private Long id;
@@ -17,8 +17,11 @@ public class PhotoResponseDto {
     private String brand;
     private LocalDateTime takenAt;
     private Long locationId;
+    private String locationName;
     private String qrHash;
     private LocalDateTime createdAt;
+    private boolean favorite;
+    private String memo;
 
     public PhotoResponseDto(Photo photo) {
         this.id = photo.getId();
@@ -30,52 +33,25 @@ public class PhotoResponseDto {
         this.brand = photo.getBrand();
         this.takenAt = photo.getTakenAt();
         this.locationId = photo.getLocationId();
+        this.locationName = photo.getLocationName();
         this.qrHash = photo.getQrHash();
         this.createdAt = photo.getCreatedAt();
+        this.favorite = Boolean.TRUE.equals(photo.getFavorite());
+        this.memo = photo.getMemo();
     }
 
-    // getters
-    public Long getId() {
-        return id;
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public Long getAlbumId() {
-        return albumId;
-    }
-
-    public String getImageUrl() {
-        return imageUrl;
-    }
-
-    public String getThumbnailUrl() {
-        return thumbnailUrl;
-    }
-
-    public String getVideoUrl() {
-        return videoUrl;
-    }
-
-    public String getBrand() {
-        return brand;
-    }
-
-    public LocalDateTime getTakenAt() {
-        return takenAt;
-    }
-
-    public Long getLocationId() {
-        return locationId;
-    }
-
-    public String getQrHash() {
-        return qrHash;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
+    public Long getId() { return id; }
+    public Long getUserId() { return userId; }
+    public Long getAlbumId() { return albumId; }
+    public String getImageUrl() { return imageUrl; }
+    public String getThumbnailUrl() { return thumbnailUrl; }
+    public String getVideoUrl() { return videoUrl; }
+    public String getBrand() { return brand; }
+    public LocalDateTime getTakenAt() { return takenAt; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
+    public String getQrHash() { return qrHash; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public boolean isFavorite() { return favorite; }
+    public String getMemo() { return memo; }
 }

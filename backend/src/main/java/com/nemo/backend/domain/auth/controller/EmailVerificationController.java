@@ -9,7 +9,10 @@ import org.springframework.web.bind.annotation.*;
 import com.nemo.backend.domain.auth.service.EmailVerificationService;
 
 @RestController
-@RequestMapping("/api/auth/email/verification")
+@RequestMapping(
+        value = "/api/auth/email/verification",
+        produces = "application/json; charset=UTF-8"
+)
 @RequiredArgsConstructor
 public class EmailVerificationController {
 
