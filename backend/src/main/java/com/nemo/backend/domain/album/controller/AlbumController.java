@@ -117,7 +117,7 @@ public class AlbumController {
             @Valid @RequestBody PhotoIdListRequest req
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
-        int added = albumService.addPhotos(userId, albumId, req.getPhotoIdList());
+        int added = albumService.addPhotos(userId, albumId, req.getPhotoIds());
 
         AlbumPhotosAddResponse resp = AlbumPhotosAddResponse.builder()
                 .albumId(albumId)
@@ -136,7 +136,7 @@ public class AlbumController {
             @Valid @RequestBody PhotoIdListRequest req
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
-        int deleted = albumService.removePhotos(userId, albumId, req.getPhotoIdList());
+        int deleted = albumService.removePhotos(userId, albumId, req.getPhotoIds());
 
         AlbumPhotosDeleteResponse resp = AlbumPhotosDeleteResponse.builder()
                 .albumId(albumId)

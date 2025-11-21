@@ -1,6 +1,7 @@
 // backend/src/main/java/com/nemo/backend/domain/album/service/AlbumService.java
 package com.nemo.backend.domain.album.service;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -61,11 +62,9 @@ public class AlbumService {
     }
 
     // 1) 앨범 목록 조회 (ownership + favoriteOnly)
-    public List<AlbumSummaryResponse> getAlbums(Long userId, String ownership) {
-        // enum으로 정규화
-        AlbumOwnershipFilter filter = AlbumOwnershipFilter.from(ownership);
+    // ownership: ALL / OWNED / SHARED
+    public List<AlbumSummaryResponse> getAlbums(Long userId, AlbumOwnershipFilter ownership) {
 
-        // 1) 내가 만든 앨범
         List<AlbumSummaryResponse> owned = albumRepository.findByUserId(userId).stream()
                 .map(album -> {
                     autoSetThumbnailIfMissing(album);
@@ -79,9 +78,8 @@ public class AlbumService {
                             .role("OWNER")
                             .build();
                 })
-                .toList();
+                .collect(Collectors.toList()); // 변할 수 있는 리스트
 
-        // 2) 내가 공유받은 앨범 (ACCEPTED + active)
         List<AlbumSummaryResponse> shared = albumShareRepository
                 .findByUserIdAndStatusAndActiveTrue(userId, Status.ACCEPTED).stream()
                 .map(share -> {
@@ -94,38 +92,43 @@ public class AlbumService {
                             .coverPhotoUrl(album.getCoverPhotoUrl())
                             .photoCount(photoCount)
                             .createdAt(album.getCreatedAt())
-                            .role(share.getRole().name()) // VIEWER / EDITOR / CO_OWNER
+                            .role(share.getRole().name())
                             .build();
                 })
-                .toList();
+                .collect(Collectors.toList());
 
-        List<AlbumSummaryResponse> base;
+        List<AlbumSummaryResponse> result;
 
-        switch (filter) {
-            case OWNED -> base = owned;
-            case SHARED -> base = shared;
+        // 🔥 switch 값은 enum
+        switch (ownership) {
+            case OWNED -> result = owned;
+            case SHARED -> result = shared;
             case ALL -> {
-                owned.addAll(shared);
-                base = owned;
+                result = new ArrayList<>(owned);
+                result.addAll(shared);
             }
-            default -> base = owned;
+            default -> throw new IllegalStateException("Unexpected value: " + ownership);
         }
 
-        // 최신 생성순 정렬 (명세에서 sort=createdAt,desc 기본)
-        return base.stream()
-                .sorted(Comparator.comparing(AlbumSummaryResponse::getCreatedAt).reversed())
-                .toList();
+        result.sort(Comparator.comparing(AlbumSummaryResponse::getCreatedAt).reversed());
+
+        return result;
     }
+
 
     // favoriteOnly까지 포함
     public List<AlbumSummaryResponse> getAlbums(Long userId, String ownership, boolean favoriteOnly) {
-        List<AlbumSummaryResponse> base = getAlbums(userId, ownership);
+
+        // ❗ String → Enum 변환
+        AlbumOwnershipFilter filter = AlbumOwnershipFilter.from(ownership);
+
+        // 🚀 enum으로 getAlbums 호출
+        List<AlbumSummaryResponse> base = getAlbums(userId, filter);
 
         if (!favoriteOnly) {
             return base;
         }
 
-        // 내가 즐겨찾기한 앨범 ID 목록
         Set<Long> favIds = albumFavoriteRepository.findByUserId(userId).stream()
                 .map(f -> f.getAlbum().getId())
                 .collect(Collectors.toSet());
@@ -134,6 +137,8 @@ public class AlbumService {
                 .filter(a -> favIds.contains(a.getAlbumId()))
                 .toList();
     }
+
+
 
     // 2) 앨범 상세 조회
     public AlbumDetailResponse getAlbum(Long userId, Long albumId) {
@@ -171,8 +176,8 @@ public class AlbumService {
         Album saved = albumRepository.save(album);
 
         // 초기 사진 지정
-        if (req.getPhotoIdList() != null && !req.getPhotoIdList().isEmpty()) {
-            List<Photo> photos = photoRepository.findAllById(req.getPhotoIdList());
+        if (req.getPhotoIds() != null && !req.getPhotoIds().isEmpty()) {
+            List<Photo> photos = photoRepository.findAllById(req.getPhotoIds());
             for (Photo p : photos) {
                 p.setAlbum(saved);
             }

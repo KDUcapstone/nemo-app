@@ -1,23 +1,32 @@
-// backend/src/main/java/com/nemo/backend/domain/album/dto/CreateAlbumRequest.java
 package com.nemo.backend.domain.album.dto;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.validation.constraints.NotBlank;
+import lombok.*;
 
 import java.util.List;
 
 /**
- * 앨범 생성 요청
- * 명세: title, description, coverPhotoId, photoIdList
+ * 앨범 생성 요청 DTO
+ * 명세:
+ *  - title: string (필수)
+ *  - description: string (선택)
+ *  - coverPhotoId: number (선택)
+ *  - photoIds: number[] (선택)
  */
 @Getter
 @Setter
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class CreateAlbumRequest {
 
-    private String title;              // ✅ 필수 (서버에서 검증)
-    private String description;        // ❌ 선택
-    private Long coverPhotoId;         // ❌ 선택
-    private List<Long> photoIdList;    // ❌ 선택
+    @NotBlank
+    private String title;
+
+    private String description;
+
+    private Long coverPhotoId;
+
+    // ✅ 명세에 맞춰 이름 변경
+    private List<Long> photoIds;
 }
