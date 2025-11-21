@@ -16,5 +16,5 @@ import java.util.List;
 public class PhotoIdListRequest {
 
     // ✅ 명세에 맞춰 이름 변경
-    private List<Long> photoIds;
+    private List<Long> photoIdList;
 }

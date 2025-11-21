@@ -176,8 +176,8 @@ public class AlbumService {
         Album saved = albumRepository.save(album);
 
         // 초기 사진 지정
-        if (req.getPhotoIds() != null && !req.getPhotoIds().isEmpty()) {
-            List<Photo> photos = photoRepository.findAllById(req.getPhotoIds());
+        if (req.getPhotoIdList() != null && !req.getPhotoIdList().isEmpty()) {
+            List<Photo> photos = photoRepository.findAllById(req.getPhotoIdList());
             for (Photo p : photos) {
                 p.setAlbum(saved);
             }
@@ -192,7 +192,7 @@ public class AlbumService {
 
     // 4) 앨범에 사진 추가 / 제거
     @Transactional
-    public int addPhotos(Long userId, Long albumId, List<Long> photoIds) {
+    public int addPhotos(Long userId, Long albumId, List<Long> photoIdList) {
         Album album = albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
 
@@ -200,7 +200,7 @@ public class AlbumService {
             throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 사진을 추가할 권한이 없습니다.");
         }
 
-        List<Photo> photos = photoRepository.findAllById(photoIds);
+        List<Photo> photos = photoRepository.findAllById(photoIdList);
         int count = 0;
         for (Photo p : photos) {
             if (p.getAlbum() == null || !albumId.equals(p.getAlbum().getId())) {
@@ -215,7 +215,7 @@ public class AlbumService {
     }
 
     @Transactional
-    public int removePhotos(Long userId, Long albumId, List<Long> photoIds) {
+    public int removePhotos(Long userId, Long albumId, List<Long> photoIdList) {
         Album album = albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
 
@@ -223,7 +223,7 @@ public class AlbumService {
             throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에서 사진을 삭제할 권한이 없습니다.");
         }
 
-        List<Photo> photos = photoRepository.findAllById(photoIds);
+        List<Photo> photos = photoRepository.findAllById(photoIdList);
         int count = 0;
         for (Photo p : photos) {
             if (p.getAlbum() != null && albumId.equals(p.getAlbum().getId())) {

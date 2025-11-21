@@ -19,14 +19,8 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class CreateAlbumRequest {
-
-    @NotBlank
     private String title;
-
     private String description;
-
     private Long coverPhotoId;
-
-    // ✅ 명세에 맞춰 이름 변경
-    private List<Long> photoIds;
+    private List<Long> photoIdList;
 }
