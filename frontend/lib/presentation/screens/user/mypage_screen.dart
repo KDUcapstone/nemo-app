@@ -718,7 +718,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         FutureBuilder<StorageQuota>(
                           future: _quotaFuture,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
                               return const Card(
                                 elevation: 0,
                                 child: Padding(
@@ -734,18 +735,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                   padding: const EdgeInsets.all(16),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.info_outline, color: AppColors.textSecondary),
+                                      const Icon(
+                                        Icons.info_outline,
+                                        color: AppColors.textSecondary,
+                                      ),
                                       const SizedBox(width: 8),
                                       const Expanded(
                                         child: Text(
                                           '저장 한도 정보를 불러오지 못했습니다.',
-                                          style: TextStyle(color: AppColors.textSecondary),
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                          ),
                                         ),
                                       ),
                                       TextButton(
                                         onPressed: () {
                                           setState(() {
-                                            _quotaFuture = StorageApi.fetchQuota();
+                                            _quotaFuture =
+                                                StorageApi.fetchQuota();
                                           });
                                         },
                                         child: const Text('다시 시도'),
@@ -761,7 +768,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               onUpgrade: () {
                                 // 업그레이드 플로우 진입 (추후 결제/구독 화면 연결)
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('업그레이드 준비 중입니다.')),
+                                  const SnackBar(
+                                    content: Text('업그레이드 준비 중입니다.'),
+                                  ),
                                 );
                               },
                               capFreeAtTwenty: true,
