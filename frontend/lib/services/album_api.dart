@@ -19,21 +19,15 @@ class AlbumApi {
   }
 
   // GET /api/albums
-  // API 명세서: 쿼리 파라미터 지원 (sort, page, size, favoriteOnly, ownership)
+  // API 명세서: 쿼리 파라미터 없음, 모든 앨범 반환
   // 응답: { content: AlbumSummaryResponse[], page: { size, totalElements, totalPages, number } }
   // content 각 항목에 role 필드 포함
-  static Future<Map<String, dynamic>> getAlbums({
-    String sort = 'createdAt,desc',
-    int page = 0,
-    int size = 10,
-    bool? favoriteOnly,
-    String ownership = 'ALL', // ALL, OWNED, SHARED
-  }) async {
+  static Future<Map<String, dynamic>> getAlbums() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      // mock content: 6개 고정 더미에서 페이징
+      // mock content: 6개 고정 더미
       const names = ['인생네컷', '하루필름', '포토이즘', '포토그레이', '포토랩', '엑시트'];
       final mock = List.generate(6, (i) {
         final id = 20 - i;
@@ -63,29 +57,16 @@ class AlbumApi {
       return {
         'content': mock,
         'page': {
-          'size': size,
+          'size': mock.length,
           'totalElements': mock.length,
-          'totalPages': (mock.length / size).ceil(),
-          'number': page,
+          'totalPages': 1,
+          'number': 0,
         },
       };
     }
 
-    // API 명세서: 쿼리 파라미터 지원
-    final queryParams = <String, String>{
-      'sort': sort,
-      'page': '$page',
-      'size': '$size',
-      'ownership': ownership,
-    };
-    if (favoriteOnly != null) {
-      queryParams['favoriteOnly'] = favoriteOnly.toString();
-    }
-
-    final res = await ApiClient.get(
-      '/api/albums',
-      queryParameters: queryParams,
-    );
+    // API 명세서: 쿼리 파라미터 없음
+    final res = await ApiClient.get('/api/albums');
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
