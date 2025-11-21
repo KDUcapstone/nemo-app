@@ -41,13 +41,11 @@ class MapApi {
 
     print('🗺️ [MapApi] /api/map/init status=${res.statusCode}');
 
-    if (res.statusCode == 200) {
-      return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw Exception('map init 실패: ${res.statusCode}');
     }
     if (res.statusCode == 401) {
-      final body = res.body.isNotEmpty
-          ? jsonDecode(utf8.decode(res.bodyBytes))
-          : {};
+      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
       throw Exception(body['message'] ?? '유효한 액세스 토큰이 필요합니다.');
     }
     throw Exception('map init 실패: ${res.statusCode}');
@@ -66,9 +64,7 @@ class MapApi {
           'latitude': 37.5567,
           'longitude': 126.9234,
           'imageUrl': 'https://picsum.photos/seed/photo101/800/1066',
-          'takenAt': DateTime.now()
-              .subtract(const Duration(days: 1))
-              .toIso8601String(),
+          'takenAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
           'brand': '인생네컷',
           'location': '홍대 포토그레이',
         },
@@ -77,9 +73,7 @@ class MapApi {
           'latitude': 37.5389,
           'longitude': 127.0732,
           'imageUrl': 'https://picsum.photos/seed/photo104/800/1066',
-          'takenAt': DateTime.now()
-              .subtract(const Duration(days: 6))
-              .toIso8601String(),
+          'takenAt': DateTime.now().subtract(const Duration(days: 6)).toIso8601String(),
           'brand': '포토시그널',
           'location': '건대입구역 포토시그널',
         },
@@ -94,9 +88,7 @@ class MapApi {
       return const <Map<String, dynamic>>[];
     }
     if (res.statusCode == 401) {
-      final body = res.body.isNotEmpty
-          ? jsonDecode(utf8.decode(res.bodyBytes))
-          : {};
+      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
       throw Exception(body['message'] ?? '로그인이 필요합니다.');
     }
     throw Exception('지도용 사진 위치 조회 실패 (${res.statusCode})');
@@ -122,17 +114,13 @@ class MapApi {
           {
             'photoId': 101,
             'imageUrl': 'https://picsum.photos/seed/photo101/800/1066',
-            'takenAt': DateTime.now()
-                .subtract(const Duration(days: 1))
-                .toIso8601String(),
+            'takenAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
             'brand': '인생네컷',
           },
           {
             'photoId': 102,
             'imageUrl': 'https://picsum.photos/seed/photo102/800/1066',
-            'takenAt': DateTime.now()
-                .subtract(const Duration(days: 1, hours: 1))
-                .toIso8601String(),
+            'takenAt': DateTime.now().subtract(const Duration(days: 1, hours: 1)).toIso8601String(),
             'brand': '인생네컷',
           },
         ],
@@ -146,11 +134,11 @@ class MapApi {
       query['latitude'] = latitude.toString();
       query['longitude'] = longitude.toString();
     }
-
+    
     if (query.isEmpty) {
       throw Exception('장소 이름 또는 좌표 정보가 필요합니다.');
     }
-
+    
     final res = await ApiClient.get(
       '/api/map/photos/detail',
       queryParameters: query,
@@ -159,9 +147,7 @@ class MapApi {
       return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     }
     if (res.statusCode == 400) {
-      final body = res.body.isNotEmpty
-          ? jsonDecode(utf8.decode(res.bodyBytes))
-          : {};
+      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
       final error = body['error'] as String?;
       if (error == 'LOCATION_REQUIRED') {
         throw Exception(body['message'] ?? '장소 이름 또는 좌표 정보가 필요합니다.');
@@ -196,7 +182,7 @@ class MapApi {
       // 🔍 로그: mock 모드에서의 뷰포트 정보
       print(
         '🧭 [MapApi-mock] viewport ne=($neLat, $neLng), '
-        'sw=($swLat, $swLng), center=($centerLat, $centerLng), zoom=$zoom',
+            'sw=($swLat, $swLng), center=($centerLat, $centerLng), zoom=$zoom',
       );
 
       return {
@@ -270,8 +256,8 @@ class MapApi {
     final centerLng = (neLng + swLng) / 2;
     print(
       '🧭 [MapApi] viewport ne=($neLat, $neLng), '
-      'sw=($swLat, $swLng), center=($centerLat, $centerLng), '
-      'zoom=$zoom, brand=$brand, limit=$limit, cluster=$cluster',
+          'sw=($swLat, $swLng), center=($centerLat, $centerLng), '
+          'zoom=$zoom, brand=$brand, limit=$limit, cluster=$cluster',
     );
     print('🌐 [MapApi] GET /api/map/photobooths/viewport query=$query');
 
@@ -290,7 +276,7 @@ class MapApi {
     }
 
     final decoded =
-        jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
 
     // 🔍 로그: 응답 items 개수
     final items = decoded['items'] as List<dynamic>? ?? const [];
@@ -314,9 +300,7 @@ class MapApi {
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
 
-      print(
-        '🧭 [MapApi-mock] delta sinceTs=$sinceTs, knownIds=${knownIds.length}개',
-      );
+      print('🧭 [MapApi-mock] delta sinceTs=$sinceTs, knownIds=${knownIds.length}개');
 
       return {
         'added': [
@@ -366,8 +350,8 @@ class MapApi {
     // 🔍 로그: delta 요청 바디
     print(
       '🔁 [MapApi] POST /api/map/photobooths/viewport/delta '
-      'body={ne=($neLat,$neLng), sw=($swLat,$swLng), sinceTs=$sinceTs, '
-      'knownIds=${knownIds.length}, brand=$brand, cluster=$cluster}',
+          'body={ne=($neLat,$neLng), sw=($swLat,$swLng), sinceTs=$sinceTs, '
+          'knownIds=${knownIds.length}, brand=$brand, cluster=$cluster}',
     );
 
     final res = await ApiClient.post(
@@ -375,9 +359,7 @@ class MapApi {
       body: body,
     );
 
-    print(
-      '📡 [MapApi] /api/map/photobooths/viewport/delta status=${res.statusCode}',
-    );
+    print('📡 [MapApi] /api/map/photobooths/viewport/delta status=${res.statusCode}');
 
     if (res.statusCode != 200) {
       final bodyText = utf8.decode(res.bodyBytes);
@@ -386,7 +368,7 @@ class MapApi {
     }
 
     final decoded =
-        jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
 
     // 🔍 로그: delta 응답 요약
     final added = decoded['added'] as List<dynamic>? ?? const [];
@@ -394,7 +376,7 @@ class MapApi {
     final removedIds = decoded['removedIds'] as List<dynamic>? ?? const [];
     print(
       '📍 [MapApi] delta 응답: added=${added.length}, '
-      'updated=${updated.length}, removed=${removedIds.length}',
+          'updated=${updated.length}, removed=${removedIds.length}',
     );
 
     return decoded;

@@ -307,7 +307,12 @@ class AlbumProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final res = await AlbumApi.getAlbums();
+      final res = await AlbumApi.getAlbums(
+        sort: _sort,
+        page: _page,
+        size: _size,
+        favoriteOnly: _favoriteOnly ? true : null,
+      );
       final List content = (res['content'] as List? ?? []);
       if (content.isEmpty) {
         _hasMore = false;
