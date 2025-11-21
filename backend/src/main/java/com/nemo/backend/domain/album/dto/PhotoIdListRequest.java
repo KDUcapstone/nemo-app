@@ -1,20 +1,20 @@
-// backend/src/main/java/com/nemo/backend/domain/album/dto/PhotoIdListRequest.java
 package com.nemo.backend.domain.album.dto;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.constraints.NotEmpty;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
 
+/**
+ * 앨범 사진 추가/삭제 요청
+ * 명세: photoIds: number[]
+ */
+@Getter
+@Setter
+@NoArgsConstructor
 public class PhotoIdListRequest {
-    @NotEmpty
-    @JsonProperty("photoIds")
-    @JsonAlias({"photoIdList"})
-    private List<Long> photoIds;
 
-    public PhotoIdListRequest() {}
-
-    public List<Long> getPhotoIds() { return photoIds; }
-    public void setPhotoIds(List<Long> photoIds) { this.photoIds = photoIds; }
+    // ✅ 명세에 맞춰 이름 변경
+    private List<Long> photoIdList;
 }

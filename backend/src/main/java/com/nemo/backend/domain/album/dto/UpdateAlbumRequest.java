@@ -1,22 +1,20 @@
 // backend/src/main/java/com/nemo/backend/domain/album/dto/UpdateAlbumRequest.java
 package com.nemo.backend.domain.album.dto;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 /**
- * 앨범 수정 요청 DTO. 모두 선택.
+ * 앨범 수정 요청
+ * 명세: title, description, coverPhotoId (모두 선택)
  */
+@Getter
+@Setter
+@NoArgsConstructor
 public class UpdateAlbumRequest {
-    private String title;
-    private String description;
-    private Long coverPhotoId;
 
-    public UpdateAlbumRequest() {}
-
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
-
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-
-    public Long getCoverPhotoId() { return coverPhotoId; }
-    public void setCoverPhotoId(Long coverPhotoId) { this.coverPhotoId = coverPhotoId; }
+    private String title;        // ❌ 선택
+    private String description;  // ❌ 선택
+    private Long coverPhotoId;   // ❌ 선택
 }

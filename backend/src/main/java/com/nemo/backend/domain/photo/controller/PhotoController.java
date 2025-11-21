@@ -117,7 +117,7 @@ public class PhotoController {
                 dto.getId(),
                 dto.getImageUrl(),
                 isoTakenAt,
-                dto.getLocationName(),
+                dto.getLocation(),
                 dto.getBrand(),
                 tagList,
                 friendList,
@@ -195,7 +195,7 @@ public class PhotoController {
                 dto.getId(),
                 dto.getImageUrl(),
                 isoTakenAt,
-                dto.getLocationName(),
+                dto.getLocation(),
                 dto.getBrand(),
                 tagList,
                 friendList,
@@ -245,7 +245,7 @@ public class PhotoController {
                 .photoId(p.getId())
                 .imageUrl(p.getImageUrl())
                 .takenAt(p.getTakenAt() != null ? p.getTakenAt().format(ISO) : null)
-                .location(p.getLocationName())
+                .location(p.getLocation())
                 .brand(p.getBrand())
                 .isFavorite(p.isFavorite())
                 .build()
@@ -283,7 +283,7 @@ public class PhotoController {
                 dto.getTakenAt() != null
                         ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                         : null,
-                dto.getLocationName(),
+                dto.getLocation(),
                 dto.getBrand(),
                 Collections.emptyList(),     // tagList – 아직 별도 테이블 미구현
                 Collections.emptyList(),     // friendList – 아직 미구현
@@ -340,7 +340,7 @@ public class PhotoController {
                 dto.getTakenAt() != null
                         ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                         : null,
-                dto.getLocationName(),
+                dto.getLocation(),
                 dto.getBrand(),
                 body.tagList() != null ? body.tagList() : Collections.emptyList(),
                 Collections.emptyList(), // friendList 실제 매핑은 추후 구현

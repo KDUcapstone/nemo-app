@@ -1,14 +1,19 @@
+// backend/src/main/java/com/nemo/backend/domain/album/dto/AlbumShareRequest.java
 package com.nemo.backend.domain.album.dto;
 
-import com.nemo.backend.domain.album.entity.AlbumShare.Role;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
 
 /**
- * 앨범 공유 요청 DTO
+ * 앨범 공유 요청
+ * 명세: friendIdList
  */
-public record AlbumShareRequest(
-        List<Long> friendIdList,   // 공유할 친구 userId 목록
-        Role defaultRole           // 기본 권한 (없으면 VIEWER)
-) {
+@Getter
+@Setter
+@NoArgsConstructor
+public class AlbumShareRequest {
+    private List<Long> friendIdList;
 }
