@@ -715,7 +715,23 @@ class _FavoriteBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Icon(Icons.favorite, color: Colors.white, size: 18);
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 테두리용 검은색 하트 (약간 크게)
+        Icon(
+          Icons.favorite,
+          color: Colors.black.withOpacity(0.5),
+          size: 20,
+        ),
+        // 앞에 배치할 흰색 하트
+        const Icon(
+          Icons.favorite,
+          color: Colors.white,
+          size: 18,
+        ),
+      ],
+    );
   }
 }
 

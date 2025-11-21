@@ -18,12 +18,16 @@ class AlbumApi {
     };
   }
 
-  // GET /api/albums?sort=&page=&size=&favoriteOnly=
+  // GET /api/albums
+  // API 명세서: 쿼리 파라미터 지원 (sort, page, size, favoriteOnly, ownership)
+  // 응답: { content: AlbumSummaryResponse[], page: { size, totalElements, totalPages, number } }
+  // content 각 항목에 role 필드 포함
   static Future<Map<String, dynamic>> getAlbums({
     String sort = 'createdAt,desc',
     int page = 0,
     int size = 10,
     bool? favoriteOnly,
+    String ownership = 'ALL', // ALL, OWNED, SHARED
   }) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -49,58 +53,34 @@ class AlbumApi {
             10,
             0,
           ).subtract(Duration(days: i * 5)).toIso8601String(),
+          'role': i == 0 ? 'OWNER' : (i % 3 == 0 ? 'EDITOR' : 'VIEWER'), // API 명세서: role 필드
         };
       });
 
-      // sort 파라미터에 따라 정렬 적용
-      final sortedMock = List<Map<String, dynamic>>.from(mock);
-      if (sort == 'createdAt,asc') {
-        // 오래된순: createdAt 오름차순
-        sortedMock.sort((a, b) {
-          final aDate = DateTime.parse(a['createdAt'] as String);
-          final bDate = DateTime.parse(b['createdAt'] as String);
-          return aDate.compareTo(bDate);
-        });
-      } else if (sort == 'title,asc') {
-        // 이름순: title 오름차순 (가나다순)
-        sortedMock.sort((a, b) {
-          final aTitle = (a['title'] as String?) ?? '';
-          final bTitle = (b['title'] as String?) ?? '';
-          return aTitle.compareTo(bTitle);
-        });
-      } else {
-        // 기본값: createdAt,desc (최신순) - 이미 mock이 최신순으로 생성됨
-        // 추가 정렬 불필요하지만 명시적으로 유지
-        sortedMock.sort((a, b) {
-          final aDate = DateTime.parse(a['createdAt'] as String);
-          final bDate = DateTime.parse(b['createdAt'] as String);
-          return bDate.compareTo(aDate);
-        });
-      }
-
-      final start = page * size;
-      final end = (start + size).clamp(0, sortedMock.length);
-      final content = start < sortedMock.length
-          ? sortedMock.sublist(start, end)
-          : <Map<String, dynamic>>[];
+      // API 명세서에 맞게 content와 page 구조로 반환
       return {
-        'content': content,
+        'content': mock,
         'page': {
           'size': size,
-          'totalElements': sortedMock.length,
-          'totalPages': (sortedMock.length / size).ceil(),
+          'totalElements': mock.length,
+          'totalPages': (mock.length / size).ceil(),
           'number': page,
         },
       };
     }
 
-    final q = <String, String>{
+    // API 명세서: 쿼리 파라미터 지원
+    final queryParams = <String, String>{
       'sort': sort,
       'page': '$page',
       'size': '$size',
-      if (favoriteOnly != null) 'favoriteOnly': favoriteOnly.toString(),
+      'ownership': ownership,
     };
-    final res = await ApiClient.get('/api/albums', queryParameters: q);
+    if (favoriteOnly != null) {
+      queryParams['favoriteOnly'] = favoriteOnly.toString();
+    }
+    
+    final res = await ApiClient.get('/api/albums', queryParameters: queryParams);
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -136,6 +116,7 @@ class AlbumApi {
     final res = await http.post(
       _uri('/api/albums'),
       headers: _headersJson(),
+      // API 명세서: photoIdList 필드명 사용
       body: jsonEncode({
         'title': title,
         if (description != null) 'description': description,
@@ -150,7 +131,8 @@ class AlbumApi {
     throw Exception('Failed to create album (${res.statusCode})');
   }
 
-  // POST /api/albums/{albumId}/favorite  -> { albumId, favorited: true, message }
+  // POST /api/albums/{albumId}/favorite
+  // API 명세서: 즐겨찾기 추가
   static Future<Map<String, dynamic>> favoriteAlbum(int albumId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -174,7 +156,8 @@ class AlbumApi {
     throw Exception('Failed to favorite album (${res.statusCode})');
   }
 
-  // DELETE /api/albums/{albumId}/favorite -> { albumId, favorited: false, message }
+  // DELETE /api/albums/{albumId}/favorite
+  // API 명세서: 즐겨찾기 제거
   static Future<Map<String, dynamic>> unfavoriteAlbum(int albumId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -199,7 +182,8 @@ class AlbumApi {
   }
 
   // POST /api/albums/{albumId}/photos
-  static Future<void> addPhotos({
+  // API 명세서: photoIdList 필드명 사용, 응답에 albumId, addedCount, message 포함
+  static Future<Map<String, dynamic>> addPhotos({
     required int albumId,
     required List<int> photoIds,
   }) async {
@@ -207,21 +191,44 @@ class AlbumApi {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return;
+      return {
+        'albumId': albumId,
+        'addedCount': photoIds.length,
+        'message': '사진이 앨범에 추가되었습니다.',
+      };
     }
 
+    // API 명세서: photoIdList 필드명 사용
     final res = await http.post(
       _uri('/api/albums/$albumId/photos'),
       headers: _headersJson(),
       body: jsonEncode({'photoIdList': photoIds}),
     );
 
-    if (res.statusCode == 200 || res.statusCode == 204) return;
+    if (res.statusCode == 200 || res.statusCode == 204) {
+      // API 명세서: 응답에 albumId, addedCount, message 포함
+      if (res.statusCode == 200 && res.body.isNotEmpty) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+      return {
+        'albumId': albumId,
+        'addedCount': photoIds.length,
+        'message': '사진이 앨범에 추가되었습니다.',
+      };
+    }
+    if (res.statusCode == 400) {
+      final data = jsonDecode(res.body);
+      final error = data['error'] as String?;
+      if (error == 'PHOTO_NOT_FOUND') throw Exception('PHOTO_NOT_FOUND');
+    }
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
     throw Exception('Failed to add photos (${res.statusCode})');
   }
 
   // DELETE /api/albums/{albumId}/photos
-  static Future<void> removePhotos({
+  // API 명세서: photoIdList 필드명 사용, 응답에 albumId, deletedCount, message 포함
+  static Future<Map<String, dynamic>> removePhotos({
     required int albumId,
     required List<int> photoIds,
   }) async {
@@ -229,15 +236,38 @@ class AlbumApi {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return;
+      return {
+        'albumId': albumId,
+        'deletedCount': photoIds.length,
+        'message': '사진이 앨범에서 삭제되었습니다.',
+      };
     }
 
+    // API 명세서: photoIdList 필드명 사용
     final req = http.Request('DELETE', _uri('/api/albums/$albumId/photos'));
     req.headers.addAll(_headersJson());
     req.body = jsonEncode({'photoIdList': photoIds});
     final streamed = await req.send();
     final res = await http.Response.fromStream(streamed);
-    if (res.statusCode == 200 || res.statusCode == 204) return;
+    
+    if (res.statusCode == 200 || res.statusCode == 204) {
+      // API 명세서: 응답에 albumId, deletedCount, message 포함
+      if (res.statusCode == 200 && res.body.isNotEmpty) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+      return {
+        'albumId': albumId,
+        'deletedCount': photoIds.length,
+        'message': '사진이 앨범에서 삭제되었습니다.',
+      };
+    }
+    if (res.statusCode == 400) {
+      final data = jsonDecode(res.body);
+      final error = data['error'] as String?;
+      if (error == 'PHOTO_NOT_FOUND') throw Exception('PHOTO_NOT_FOUND');
+    }
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
+    if (res.statusCode == 403) throw Exception('FORBIDDEN');
     throw Exception('Failed to remove photos (${res.statusCode})');
   }
 
@@ -254,6 +284,7 @@ class AlbumApi {
         'coverPhotoUrl': 'https://picsum.photos/seed/album$albumId/600/800',
         'photoCount': 6,
         'createdAt': DateTime.now().toIso8601String(),
+        'role': 'OWNER', // API 명세서: role 필드 추가
         'photoIdList': [1001, 1002, 1003, 1004, 1005, 1006],
         'photoList': [
           {
@@ -399,27 +430,12 @@ class AlbumApi {
     throw Exception('Failed to fetch shared albums (${res.statusCode})');
   }
 
-  // PUT /api/albums/{albumId}/cover
-  static Future<void> setCoverPhoto({
-    required int albumId,
-    required int photoId,
-  }) async {
-    if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
-      return;
-    }
-    final res = await http.put(
-      _uri('/api/albums/$albumId/cover'),
-      headers: _headersJson(),
-      body: jsonEncode({'photoId': photoId}),
-    );
-    if (res.statusCode == 200 || res.statusCode == 204) return;
-    throw Exception('Failed to set cover (${res.statusCode})');
-  }
+  // ⚠️ PUT /api/albums/{albumId}/cover API는 백엔드에 구현되어 있지 않습니다.
+  // 대신 PUT /api/albums/{albumId}에서 coverPhotoId를 설정할 수 있습니다.
+  // static Future<void> setCoverPhoto({ ... }) async { ... }
 
-  // POST /api/albums/{albumId}/thumbnail (JSON: { photoId })
+  // POST /api/albums/{albumId}/thumbnail (multipart: photoId 또는 file)
+  // 백엔드 명세: multipart/form-data에서 photoId (Long) 또는 file (MultipartFile) 사용
   static Future<Map<String, dynamic>> setThumbnail({
     required int albumId,
     int? photoId,
@@ -434,10 +450,19 @@ class AlbumApi {
         'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
       };
     }
+    // 백엔드 명세: multipart/form-data로 photoId 전송
     final uri = _uri('/api/albums/$albumId/thumbnail');
-    final headers = _headersJson();
-    final body = photoId != null ? jsonEncode({'photoId': photoId}) : null;
-    final res = await http.post(uri, headers: headers, body: body);
+    final req = http.MultipartRequest('POST', uri);
+    final token = AuthService.accessToken;
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    
+    if (photoId != null) {
+      // photoId를 multipart field로 전송
+      req.fields['photoId'] = photoId.toString();
+    }
+    
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -467,6 +492,7 @@ class AlbumApi {
         'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
       };
     }
+    // 백엔드 명세: multipart/form-data에서 file 필드명 사용
     final uri = _uri('/api/albums/$albumId/thumbnail');
     final req = http.MultipartRequest('POST', uri);
     final token = AuthService.accessToken;
@@ -668,7 +694,10 @@ class AlbumApi {
     final res = await http.post(
       _uri('/api/albums/$albumId/share'),
       headers: _headersJson(),
-      body: jsonEncode({'friendIdList': friendIdList}),
+      // API 명세서: friendIdList만 전송 (defaultRole은 명세서에 없음)
+      body: jsonEncode({
+        'friendIdList': friendIdList,
+      }),
     );
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -697,6 +726,7 @@ class AlbumApi {
     final res = await http.post(
       _uri('/api/albums/$albumId/share/link'),
       headers: _headersJson(),
+      // 백엔드 명세: 공유 링크 생성 (expiryHours는 선택적, permission은 기본값 'view')
       body: jsonEncode({
         if (expiryHours != null) 'expiryHours': expiryHours,
         'permission': permission,

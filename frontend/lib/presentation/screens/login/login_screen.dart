@@ -214,8 +214,17 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
         }
       } catch (e) {
         if (mounted) {
+          final errorMsg = e.toString();
+          String message;
+          if (errorMsg.contains('401') || 
+              errorMsg.contains('비밀번호') ||
+              errorMsg.contains('틀렸습니다')) {
+            message = '비밀번호가 틀렸습니다';
+          } else {
+            message = '로그인에 실패했습니다.';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('로그인 실패: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text(message), backgroundColor: Colors.red),
           );
         }
       }

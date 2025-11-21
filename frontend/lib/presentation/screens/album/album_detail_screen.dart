@@ -37,6 +37,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   List<int>? _cachedPhotoIds;
   String? _myRole; // OWNER | CO_OWNER | EDITOR | VIEWER
   bool _roleLoading = false;
+  bool _isLoadingDetail = false; // 무한 로딩 방지 플래그
 
   @override
   void initState() {
@@ -415,19 +416,39 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         photoIdList: [],
       ),
     );
-    if (album.albumId == -1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (album.albumId == -1 && !_isLoadingDetail) {
+      _isLoadingDetail = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
-          context.read<AlbumProvider>().loadDetail(widget.albumId);
+          try {
+            await context.read<AlbumProvider>().loadDetail(widget.albumId);
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isLoadingDetail = false;
+              });
+            }
+          }
         }
       });
     }
-    // 앨범은 있으나 상세(사진 목록)가 비어 있으면 상세 재요청
-    final shouldFetchDetail = album.albumId != -1 && album.photoIdList.isEmpty;
+    // 앨범은 있으나 상세(사진 목록)가 비어 있으면 상세 재요청 (무한 로딩 방지)
+    final shouldFetchDetail = album.albumId != -1 && 
+        album.photoIdList.isEmpty && 
+        !_isLoadingDetail;
     if (shouldFetchDetail) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isLoadingDetail = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
-          context.read<AlbumProvider>().loadDetail(widget.albumId);
+          try {
+            await context.read<AlbumProvider>().loadDetail(widget.albumId);
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isLoadingDetail = false;
+              });
+            }
+          }
         }
       });
     }

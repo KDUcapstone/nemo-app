@@ -45,10 +45,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   // 임시 사용자 데이터 (실제로는 API에서 가져옴)
   Map<String, dynamic> _userInfo = {
-    'id': 1,
+    'userId': 1,
     'email': 'user@example.com',
     'nickname': '사용자',
-    'profileImage': null,
+    'profileImageUrl': null,
     'createdAt': '2024-01-01',
   };
 
@@ -120,11 +120,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '사용자 정보를 불러오지 못했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('사용자 정보를 불러오는 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -235,9 +236,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('가져오기 실패: $e')));
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '가져오기에 실패했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -254,25 +257,36 @@ class _MyPageScreenState extends State<MyPageScreen> {
     });
 
     try {
-      // TODO: 사용자 정보 수정 API 호출
-      // PUT /api/users/me
-      // Authorization: Bearer {JWT_TOKEN}
-      // Content-Type: multipart/form-data
-      // {
-      //   "nickname": _nicknameController.text,
-      //   "profileImage": _selectedImage (optional)
-      // }
+      final authService = AuthService();
+      Map<String, dynamic> updatedInfo;
 
-      // 임시 딜레이 (실제 API 호출 시 제거)
-      await Future.delayed(const Duration(seconds: 2));
+      // 이미지 파일이 있으면 multipart 방식으로 업데이트
+      if (_selectedImage != null) {
+        updatedInfo = await authService.updateProfileWithImage(
+          nickname: _nicknameController.text.trim(),
+          imageFile: _selectedImage!,
+        );
+      } else {
+        // 이미지가 없으면 JSON 방식으로 업데이트 (닉네임만)
+        updatedInfo = await authService.updateProfile(
+          nickname: _nicknameController.text.trim(),
+        );
+      }
 
+      // 업데이트된 정보로 상태 갱신
       setState(() {
-        _userInfo['nickname'] = _nicknameController.text;
-        if (_selectedImage != null) {
-          _userInfo['profileImage'] = _selectedImage!.path;
-        }
+        _userInfo = {
+          'userId': updatedInfo['userId'],
+          'email': updatedInfo['email'] ?? _userInfo['email'],
+          'nickname':
+              updatedInfo['nickname'] ?? _nicknameController.text.trim(),
+          'profileImageUrl':
+              updatedInfo['profileImageUrl'] ?? _userInfo['profileImageUrl'],
+          'createdAt': updatedInfo['createdAt'] ?? _userInfo['createdAt'],
+        };
         _isEditing = false;
         _isLoading = false;
+        _selectedImage = null; // 선택된 이미지 초기화
       });
 
       if (mounted) {
@@ -289,11 +303,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '정보 수정에 실패했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('정보 수정 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -360,11 +375,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '로그아웃에 실패했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('로그아웃 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -641,11 +657,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorMsg = e.toString();
+        String message;
+        if (errorMsg.contains('403') ||
+            errorMsg.contains('INVALID_CURRENT_PASSWORD') ||
+            errorMsg.contains('비밀번호')) {
+          message = '비밀번호가 틀렸습니다';
+        } else if (errorMsg.contains('410') || errorMsg.contains('이미 탈퇴')) {
+          message = '이미 탈퇴 처리된 사용자입니다.';
+        } else {
+          // Exception: 접두사 제거
+          if (errorMsg.startsWith('Exception: ')) {
+            message = errorMsg.substring('Exception: '.length);
+          } else {
+            message = '회원탈퇴에 실패했습니다.';
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('회원탈퇴 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     }

@@ -123,9 +123,11 @@ class _SignupScreenState extends State<SignupScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('인증 메일 발송 실패: $e')));
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '인증 메일 발송에 실패했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) {
         setState(() {
@@ -162,9 +164,18 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('인증 실패: $e')));
+      final errorStr = e.toString();
+      String msg;
+      if (errorStr.contains('INVALID_CODE') || errorStr.contains('인증 코드')) {
+        msg = '인증 코드가 올바르지 않습니다.';
+      } else if (errorStr.contains('EXPIRED') || errorStr.contains('만료')) {
+        msg = '인증 코드가 만료되었습니다.';
+      } else {
+        msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '인증에 실패했습니다.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) {
         setState(() {
@@ -338,7 +349,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
     try {
       // 명세에 맞춘 회원가입 API 호출
-      final ok = await AuthService().signup(
+      final result = await AuthService().signup(
         SignupFormModel(
           email: _emailController.text.trim(),
           password: _passwordController.text,
@@ -346,7 +357,8 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
       );
 
-      if (mounted && ok) {
+      // API 명세서: 응답에 userId 필드 사용
+      if (mounted && result['userId'] != null) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -357,9 +369,22 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final errorMsg = e.toString();
+        String message;
+        if (errorMsg.contains('EMAIL_ALREADY_EXISTS') ||
+            errorMsg.contains('이미 존재')) {
+          message = '이미 사용 중인 이메일입니다.';
+        } else if (errorMsg.contains('NICKNAME_ALREADY_EXISTS') ||
+            errorMsg.contains('닉네임')) {
+          message = '이미 사용 중인 닉네임입니다.';
+        } else if (errorMsg.contains('EMAIL_NOT_VERIFIED')) {
+          message = '이메일 인증을 완료해주세요.';
+        } else {
+          message = '회원가입에 실패했습니다.';
+        }
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('회원가입 중 오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) {

@@ -90,21 +90,34 @@ class PhotoViewerScreen extends StatelessWidget {
                       children: [
                         IconButton(
                           tooltip: '즐겨찾기',
-                          icon: Icon(
-                            isFav ? Icons.favorite : Icons.favorite_border,
-                            color: Colors.white,
+                          icon: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // 테두리용 검은색 하트 (약간 크게)
+                              Icon(
+                                isFav ? Icons.favorite : Icons.favorite_border,
+                                color: Colors.black.withOpacity(0.5),
+                                size: 26,
+                              ),
+                              // 앞에 배치할 흰색 하트
+                              Icon(
+                                isFav ? Icons.favorite : Icons.favorite_border,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ],
                           ),
                           onPressed: () async {
                             try {
                               final api = PhotoApi();
-                              final ok = await api.toggleFavorite(
-                                photoId,
-                                currentFavorite: isFav,
-                              );
+                              final response = await api.toggleFavorite(photoId);
                               if (!context.mounted) return;
+                              // API 명세서: { photoId, isFavorite, message }
+                              final isFavorite = response['isFavorite'] as bool? ?? false;
                               context.read<PhotoProvider>().updateFromResponse({
                                 'photoId': photoId,
-                                'favorite': ok,
+                                'favorite': isFavorite,
+                                'isFavorite': isFavorite,
                               });
                               // 성공 시 토스트 메시지 제거
                             } catch (e) {

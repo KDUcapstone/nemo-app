@@ -90,10 +90,21 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         if (!mounted) return;
         setState(() {
           _isLoading = false;
-          final message = e.toString();
-          _errorText = message.startsWith('Exception: ')
-              ? message.substring('Exception: '.length)
-              : message;
+          final errorMsg = e.toString();
+          if (errorMsg.contains('401') || 
+              errorMsg.contains('비밀번호') ||
+              errorMsg.contains('틀렸습니다')) {
+            _errorText = '비밀번호가 틀렸습니다';
+          } else {
+            // Exception: 접두사 제거
+            if (errorMsg.startsWith('Exception: ')) {
+              _errorText = errorMsg.substring('Exception: '.length);
+            } else if (errorMsg.contains('네트워크')) {
+              _errorText = '네트워크 오류가 발생했습니다.';
+            } else {
+              _errorText = '로그인에 실패했습니다.';
+            }
+          }
         });
       }
     }
