@@ -48,7 +48,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     'id': 1,
     'email': 'user@example.com',
     'nickname': '사용자',
-    'profileImage': null,
+    'profileImageUrl': null,
     'createdAt': '2024-01-01',
   };
 
@@ -100,6 +100,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Future<void> _loadUserInfo() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -108,6 +109,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       final authService = AuthService();
       final response = await authService.getUserInfo(); // { userId, email, nickname, profileImageUrl, createdAt }
 
+      if (!mounted) return;
       setState(() {
         _userInfo = response;
         _nicknameController.text = response['nickname'] as String? ?? '';
@@ -122,6 +124,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         userProvider.notifyListeners();
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -146,6 +149,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         imageQuality: 80,
       );
 
+      if (!mounted) return;
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -169,6 +173,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         imageQuality: 80,
       );
 
+      if (!mounted) return;
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -195,10 +200,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  // QR 스캔 진입은 하단 탭에서 제공되며, 마이페이지에서는 제거되었습니다.
-
-  // QR 가져오기는 현재 마이페이지에서 직접 호출하지 않습니다. (탭 구조 적용)
+  // QR 가져오기 기능은 하단 탭의 QR 스캔 화면에서 제공됩니다.
+  // 마이페이지에서는 더 이상 사용하지 않습니다.
   // ignore: unused_element
+  @Deprecated('QR 가져오기는 QR 스캔 화면에서 처리합니다.')
   Future<void> _importFromQr(String payload) async {
     final match = RegExp(r'https?://[^\s]+').firstMatch(payload);
     if (match == null) {
@@ -254,6 +259,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     final formState = _formKey.currentState;
     if (formState != null && !formState.validate()) return;
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -268,6 +274,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       );
 
       // 2) 서버에서 응답 온 값으로 다시 세팅
+      if (!mounted) return;
       setState(() {
         _userInfo = {
           'userId': updated['userId'],
@@ -299,6 +306,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -732,7 +740,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         FutureBuilder<StorageQuota>(
                           future: _quotaFuture,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
                               return const Card(
                                 elevation: 0,
                                 child: Padding(
@@ -748,18 +757,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                   padding: const EdgeInsets.all(16),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.info_outline, color: AppColors.textSecondary),
+                                      const Icon(
+                                        Icons.info_outline,
+                                        color: AppColors.textSecondary,
+                                      ),
                                       const SizedBox(width: 8),
                                       const Expanded(
                                         child: Text(
                                           '저장 한도 정보를 불러오지 못했습니다.',
-                                          style: TextStyle(color: AppColors.textSecondary),
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                          ),
                                         ),
                                       ),
                                       TextButton(
                                         onPressed: () {
                                           setState(() {
-                                            _quotaFuture = StorageApi.fetchQuota();
+                                            _quotaFuture =
+                                                StorageApi.fetchQuota();
                                           });
                                         },
                                         child: const Text('다시 시도'),
@@ -775,7 +790,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               onUpgrade: () {
                                 // 업그레이드 플로우 진입 (추후 결제/구독 화면 연결)
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('업그레이드 준비 중입니다.')),
+                                  const SnackBar(
+                                    content: Text('업그레이드 준비 중입니다.'),
+                                  ),
                                 );
                               },
                               capFreeAtTwenty: true,

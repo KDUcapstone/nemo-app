@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,88 @@ import 'auth_service.dart';
 
 class PhotoUploadApi {
   static Uri _endpoint(String path) => Uri.parse('${AuthService.baseUrl}$path');
+
+  /// QR 임시 등록 (QR 코드로 이미지 가져오기 + 미리보기용 imageUrl 반환)
+  /// 명세서: POST /api/photos/qr-import
+  Future<Map<String, dynamic>> qrImport({
+    required String qrCode,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      // 간단 검증
+      if (qrCode.trim().isEmpty) {
+        throw Exception('유효하지 않은 QR 코드입니다.');
+      }
+      // 중복 업로드 모킹 (특정 QR은 이미 업로드된 것으로 처리)
+      if (qrCode.contains('DUPLICATE')) {
+        throw Exception('이미 업로드된 QR 코드입니다.');
+      }
+      // 만료된 QR 모킹
+      if (qrCode.contains('EXPIRED')) {
+        throw Exception('해당 QR 코드는 만료되었습니다.');
+      }
+      return {
+        'photoId': DateTime.now().millisecondsSinceEpoch,
+        'imageUrl': 'https://cdn.nemo.app/photos/qr_photo.jpg',
+        'takenAt': DateTime.now().toIso8601String(),
+        'location': '홍대 포토그레이',
+        'brand': '인생네컷',
+        'status': 'DRAFT',
+      };
+    }
+
+    final uri = _endpoint('/api/photos/qr-import');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer ${AuthService.accessToken ?? ''}',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'qrCode': qrCode,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    // 에러 처리
+    final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+    final errorCode = body['error'] as String?;
+    final errorMessage = body['message'] as String?;
+
+    if (response.statusCode == 400) {
+      if (errorCode == 'INVALID_QR') {
+        throw Exception(errorMessage ?? '유효하지 않은 QR 코드입니다.');
+      }
+      throw Exception(errorMessage ?? '잘못된 요청입니다.');
+    }
+    if (response.statusCode == 404) {
+      if (errorCode == 'EXPIRED_QR') {
+        throw Exception(errorMessage ?? '해당 QR 코드는 만료되었습니다.');
+      }
+      throw Exception(errorMessage ?? 'QR 코드를 찾을 수 없습니다.');
+    }
+    if (response.statusCode == 409) {
+      if (errorCode == 'DUPLICATE_QR') {
+        throw Exception(errorMessage ?? '이미 업로드된 QR 코드입니다.');
+      }
+      throw Exception(errorMessage ?? '중복된 요청입니다.');
+    }
+    if (response.statusCode == 502) {
+      if (errorCode == 'QR_PROVIDER_ERROR') {
+        throw Exception(errorMessage ?? 'QR 제공 서버에서 사진을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+      }
+      throw Exception(errorMessage ?? '서버 오류가 발생했습니다.');
+    }
+    if (response.statusCode == 401) {
+      throw Exception(errorMessage ?? '로그인이 필요합니다.');
+    }
+    throw Exception(errorMessage ?? 'QR 임시 등록 실패 (${response.statusCode})');
+  }
 
   /// A) 파일 직접 업로드
   Future<Map<String, dynamic>> uploadPhotoFile({
@@ -39,7 +122,7 @@ class PhotoUploadApi {
     final uri = _endpoint('/api/photos');
     final request = http.MultipartRequest('POST', uri);
     request.headers['Authorization'] =
-    'Bearer ${AuthService.accessToken ?? ''}';
+        'Bearer ${AuthService.accessToken ?? ''}';
 
     request.fields['takenAt'] = takenAtIso;
     if (location != null) request.fields['location'] = location;
@@ -109,7 +192,7 @@ class PhotoUploadApi {
     final uri = _endpoint('/api/photos');
     final request = http.MultipartRequest('POST', uri);
     request.headers['Authorization'] =
-    'Bearer ${AuthService.accessToken ?? ''}';
+        'Bearer ${AuthService.accessToken ?? ''}';
 
     // ⚠️ 파일 없이 필드만 보냄
     request.fields['qrCode'] = qrCode;
@@ -172,9 +255,11 @@ class PhotoUploadApi {
       if (!await imageFile.exists()) {
         throw Exception('IMAGE_REQUIRED');
       }
+      // 모킹 모드: 실제 URL 형식 반환 (로컬 경로 대신)
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
       return {
-        'photoId': DateTime.now().millisecondsSinceEpoch,
-        'imageUrl': imageFile.path,
+        'photoId': timestamp,
+        'imageUrl': 'https://cdn.nemo.app/photos/gallery_$timestamp.jpg',
         'takenAt': takenAtIso ?? DateTime.now().toIso8601String(),
         'location': location ?? '',
         'brand': brand ?? '',

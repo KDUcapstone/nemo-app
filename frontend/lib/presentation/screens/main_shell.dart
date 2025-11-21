@@ -45,12 +45,12 @@ class _MainShellState extends State<MainShell> {
   Future<void> _onNavTap(int index) async {
     if (index == 2) {
       // QR 스캔은 별도 전체 화면으로 푸시하고, 결과를 업로드로 연결
-      final result = await Navigator.push<String>(
+      final result = await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const QrScannerScreen()),
       );
       if (!mounted) return;
-      if (result != null && result.isNotEmpty) {
+      if (result != null) {
         await handleQrImport(context, result);
       }
       return;

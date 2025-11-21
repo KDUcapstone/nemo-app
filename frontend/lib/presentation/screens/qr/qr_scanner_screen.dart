@@ -121,6 +121,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     final value = codes.first.rawValue;
     if (value == null || value.isEmpty) return;
     _isHandling = true;
+    // QR 코드 문자열만 반환 (이미지는 백엔드에서 QR 코드 기반으로 처리)
     if (mounted) Navigator.pop(context, value);
   }
 

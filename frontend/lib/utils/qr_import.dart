@@ -1,43 +1,62 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
+import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 import 'package:frontend/services/photo_upload_api.dart';
-import 'package:frontend/providers/photo_provider.dart';
 
-/// QR 페이로드를 받아 서버에 URL만 전달하여 업로드
-Future<void> handleQrImport(BuildContext context, String payload) async {
-  final match = RegExp(r'https?://[^\s]+').firstMatch(payload);
-  if (match == null) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('지원되지 않는 QR 형식입니다.')));
+/// QR 코드를 스캔한 후 임시 등록 API 호출하고 상세정보 입력 화면으로 이동
+/// 명세서: POST /api/photos/qr-import - QR 코드로 이미지 가져오기 + 미리보기용 imageUrl 반환
+Future<void> handleQrImport(BuildContext context, String qrCode) async {
+  if (qrCode.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('QR 코드가 비어있습니다.')));
+    }
     return;
   }
-  final sourceUrl = match.group(0)!;
+
+  if (!context.mounted) return;
+
+  // 로딩 표시
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(child: CircularProgressIndicator()),
+  );
 
   try {
-    final nowIso = DateFormat("yyyy-MM-dd'T'HH:mm:ss").format(DateTime.now());
-
+    // QR 임시 등록 API 호출
     final api = PhotoUploadApi();
-    final result = await api.uploadPhotoViaQr(
-      qrCode: sourceUrl,
-      takenAtIso: nowIso,
-      location: '포토부스(추정)',
-      brand: '인생네컷', // 필요 시 비워도 서버가 추론
-      tagList: const ['QR업로드'],
-      friendIdList: const [],
-      // imageFile: null // (호환 파라미터, 명시 불필요)
-    );
+    final result = await api.qrImport(qrCode: qrCode);
 
     if (!context.mounted) return;
-    context.read<PhotoProvider>().addFromResponse(result);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('업로드 완료 (ID: ${result['photoId']})')),
+    // 로딩 닫기
+    Navigator.pop(context);
+
+    // 상세정보 입력 화면으로 이동 (photoId, imageUrl 등 포함)
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoAddDetailScreen(
+          imageFile: null,
+          qrCode: qrCode,
+          qrImportResult:
+              result, // photoId, imageUrl, takenAt, location, brand, status 포함
+          defaultTakenAt: result['takenAt'] != null
+              ? DateTime.parse(result['takenAt'])
+              : DateTime.now(),
+        ),
+      ),
     );
   } catch (e) {
     if (!context.mounted) return;
+
+    // 로딩 닫기
+    Navigator.pop(context);
+
+    // 에러 메시지 표시
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('가져오기 실패: $e')),
+      SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
     );
   }
 }
