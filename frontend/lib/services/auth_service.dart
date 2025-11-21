@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../app/constants.dart';
@@ -62,18 +61,17 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final rawBody = utf8.decode(response.bodyBytes);           // ✅ 항상 UTF-8로 디코딩
-        final data = jsonDecode(rawBody) as Map<String, dynamic>;  // 기존: jsonDecode(response.body)
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
         // 로그인 성공 시 토큰 저장
         final access = data['accessToken'] as String;
         setAccessToken(access);
         return {
           'success': true,
           'accessToken': access,
-          'refreshToken': data['refreshToken'] as String?, // 있으면 저장에 사용
-          'userId': (data['id'] as num).toInt(), // ← 안전 파싱
+          'refreshToken': data['refreshToken'] as String?,   // 있으면 저장에 사용
+          'userId': (data['id'] as num).toInt(),             // ← 안전 파싱
           'nickname': data['nickname'] as String? ?? '',
-          'profileImageUrl': data['profileImageUrl'], // null 허용
+          'profileImageUrl': data['profileImageUrl'],        // null 허용
         };
       } else if (response.statusCode == 401) {
         throw Exception('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -89,7 +87,7 @@ class AuthService {
   }
 
   /// 회원가입 요청
-  Future<Map<String, dynamic>> signup(SignupFormModel form) async {
+  Future<bool> signup(SignupFormModel form) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
@@ -111,66 +109,31 @@ class AuthService {
       if (form.email.toLowerCase() == 'exists@example.com') {
         throw Exception('이미 존재하는 이메일입니다.');
       }
-      return {
-        'userId': 1,
-        'email': form.email,
-        'nickname': form.nickname,
-        'profileImageUrl': form.profileImageUrl,
-        'createdAt': DateTime.now().toIso8601String(),
-      };
+      return true;
     }
     try {
-      // 명세서: profileImageUrl은 선택 사항
-      final body = <String, dynamic>{
-        'email': form.email,
-        'password': form.password,
-        'nickname': form.nickname,
-      };
-      if (form.profileImageUrl != null) {
-        body['profileImageUrl'] = form.profileImageUrl;
-      }
-
       final response = await ApiClient.post(
         '/api/users/signup',
         includeAuth: false,
-        body: body,
+        body: {
+          'email': form.email,
+          'password': form.password,
+          'nickname': form.nickname,
+        },
       );
 
       if (response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        // API 응답 필드명 매핑 (백엔드는 id를 반환하지만 명세서는 userId)
-        return {
-          'userId': data['userId'] as int? ?? 
-                    (data['id'] as num?)?.toInt() ?? 
-                    (data['userId'] as num?)?.toInt(),
-          'email': data['email'] as String,
-          'nickname': data['nickname'] as String,
-          'profileImageUrl': data['profileImageUrl'] as String?,
-          'createdAt': data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
-        };
+        // 성공적으로 회원가입 완료
+        return true;
       } else if (response.statusCode == 409) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
-        final message = body is Map && body['message'] != null
-            ? body['message'] as String
-            : '이미 존재하는 이메일입니다.';
-        throw Exception(message);
+        throw Exception('이미 존재하는 이메일입니다.');
       } else if (response.statusCode == 400) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
-        final message = body is Map && body['message'] != null
-            ? body['message'] as String
-            : '잘못된 요청입니다.';
-        throw Exception(message);
+        final data = jsonDecode(response.body);
+        throw Exception(data['message'] ?? '잘못된 요청입니다.');
       } else {
         throw Exception('회원가입 실패 (${response.statusCode})');
       }
     } catch (e) {
-      if (e is Exception) {
-        rethrow;
-      }
       throw Exception('네트워크 오류: $e');
     }
   }
@@ -193,8 +156,9 @@ class AuthService {
         if (response.statusCode == 429) {
           throw Exception('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
         }
-        final body =
-        response.body.isNotEmpty ? jsonDecode(response.body) : null;
+        final body = response.body.isNotEmpty
+            ? jsonDecode(response.body)
+            : null;
         throw Exception(
           body != null && body['message'] != null
               ? body['message']
@@ -249,7 +213,6 @@ class AuthService {
         throw Exception('인증이 필요합니다.');
       }
       return {
-        'id': 1,
         'userId': 1,
         'email': 'user@example.com',
         'nickname': '네컷러버',
@@ -261,85 +224,12 @@ class AuthService {
       final response = await ApiClient.get('/api/users/me');
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        // API 응답 필드명을 내부 사용 필드명으로 매핑
-        return {
-          'id': data['userId'] as int? ?? (data['id'] as num?)?.toInt(),
-          'userId': data['userId'] as int? ?? (data['id'] as num?)?.toInt(),
-          'email': data['email'] as String,
-          'nickname': data['nickname'] as String,
-          'profileImageUrl': data['profileImageUrl'] as String?,
-          'createdAt': data['createdAt'] as String,
-        };
+        return jsonDecode(response.body);
       } else if (response.statusCode == 401) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
-        final message = body is Map && body['message'] != null
-            ? body['message'] as String
-            : '인증이 필요합니다. 토큰이 유효하지 않거나 만료되었습니다.';
-        throw Exception(message);
+        throw Exception('인증이 필요합니다.');
       } else {
         throw Exception('사용자 정보 조회 실패 (${response.statusCode})');
       }
-    } catch (e) {
-      if (e is Exception) {
-        rethrow;
-      }
-      throw Exception('네트워크 오류: $e');
-    }
-  }
-
-  /// ✅ 프로필(닉네임 / 이미지) 수정 – multipart/form-data
-  Future<Map<String, dynamic>> updateUserProfile({
-    required String nickname,
-    File? image,
-  }) async {
-    if (AppConstants.useMockApi) {
-      // 목업일 때는 로컬에서만 갱신했다고 치고 값 리턴
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
-      return {
-        'userId': 1,
-        'email': 'user@example.com',
-        'nickname': nickname,
-        'profileImageUrl': image?.path, // 그냥 로컬 경로 흉내
-        'updatedAt': DateTime.now().toIso8601String(),
-      };
-    }
-
-    try {
-      final uri = ApiClient.uri('/api/users/me');
-      final req = http.MultipartRequest('PUT', uri);
-
-      // 헤더: Authorization + Accept만 넣고, Content-Type은 MultipartRequest가 처리
-      if (AuthService.accessToken != null) {
-        req.headers['Authorization'] = 'Bearer ${AuthService.accessToken}';
-      }
-      req.headers['Accept'] = 'application/json;charset=UTF-8';
-
-      // 필드
-      req.fields['nickname'] = nickname;
-
-      // 파일 (선택)
-      if (image != null) {
-        req.files.add(
-          await http.MultipartFile.fromPath('image', image.path),
-        );
-      }
-
-      final streamed = await req.send();
-      final resp = await http.Response.fromStream(streamed);
-
-      if (resp.statusCode != 200) {
-        throw Exception('FAILED_${resp.statusCode}');
-      }
-
-      // 한글 안 깨지도록 bodyBytes → utf8.decode
-      final body = utf8.decode(resp.bodyBytes);
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      return data;
     } catch (e) {
       throw Exception('네트워크 오류: $e');
     }
@@ -348,8 +238,7 @@ class AuthService {
   /// 로그아웃 (JWT 토큰 무효화)
   Future<bool> logout() async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(
-          Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       clearAccessToken();
       return true;
     }
@@ -406,89 +295,6 @@ class AuthService {
         throw Exception('회원탈퇴 실패 (${response.statusCode})');
       }
     } catch (e) {
-      throw Exception('네트워크 오류: $e');
-    }
-  }
-
-  /// 사용자 정보 수정 (JWT 토큰 필요)
-  /// 명세서: PUT /api/users/me
-  Future<Map<String, dynamic>> updateUserInfo({
-    String? nickname,
-    String? profileImageUrl,
-  }) async {
-    if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
-      if (_accessToken == null) {
-        throw Exception('인증이 필요합니다.');
-      }
-      // 명세서 응답 형식: userId, email, nickname, profileImageUrl, updatedAt
-      return {
-        'id': 1,
-        'userId': 1,
-        'email': 'user@example.com',
-        'nickname': nickname ?? '네컷러버',
-        'profileImageUrl': profileImageUrl ?? 'https://cdn.nemo.app/profile/custom123.png',
-        'updatedAt': DateTime.now().toIso8601String(),
-      };
-    }
-    try {
-      final body = <String, dynamic>{};
-      if (nickname != null) {
-        body['nickname'] = nickname;
-      }
-      if (profileImageUrl != null) {
-        body['profileImageUrl'] = profileImageUrl;
-      }
-
-      // 명세서: 둘 중 하나 이상은 반드시 포함되어야 함
-      if (body.isEmpty) {
-        throw Exception('수정할 항목이 없습니다.');
-      }
-
-      // 명세서: PUT /api/users/me
-      final response = await ApiClient.put(
-        '/api/users/me',
-        body: body,
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        // 명세서 응답: userId, email, nickname, profileImageUrl, updatedAt
-        return {
-          'id': data['userId'] as int? ?? (data['id'] as num?)?.toInt(),
-          'userId': data['userId'] as int? ?? (data['id'] as num?)?.toInt(),
-          'email': data['email'] as String,
-          'nickname': data['nickname'] as String,
-          'profileImageUrl': data['profileImageUrl'] as String?,
-          'updatedAt': data['updatedAt'] as String,
-        };
-      } else if (response.statusCode == 401) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
-        // 명세서: error: "UNAUTHORIZED", message: "인증이 필요합니다."
-        final message = body is Map && body['message'] != null
-            ? body['message'] as String
-            : '인증이 필요합니다.';
-        throw Exception(message);
-      } else if (response.statusCode == 400) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
-        // 명세서: error: "INVALID_REQUEST", message: "수정할 항목이 없습니다."
-        final message = body is Map && body['message'] != null
-            ? body['message'] as String
-            : '수정할 항목이 없습니다.';
-        throw Exception(message);
-      } else {
-        throw Exception('사용자 정보 수정 실패 (${response.statusCode})');
-      }
-    } catch (e) {
-      if (e is Exception) {
-        rethrow;
-      }
       throw Exception('네트워크 오류: $e');
     }
   }
@@ -551,8 +357,9 @@ class AuthService {
         throw Exception('INVALID_CURRENT_PASSWORD');
       }
       if (response.statusCode == 400) {
-        final body =
-        response.body.isNotEmpty ? jsonDecode(response.body) : null;
+        final body = response.body.isNotEmpty
+            ? jsonDecode(response.body)
+            : null;
         final err = body is Map ? (body['error'] as String?) : null;
         if (err == 'PASSWORD_CONFIRM_MISMATCH') {
           throw Exception('PASSWORD_CONFIRM_MISMATCH');

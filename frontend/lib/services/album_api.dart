@@ -322,9 +322,7 @@ class AlbumApi {
           'albumId': 20,
           'albumTitle': '여름 제주 여행',
           'invitedBy': {'userId': 1, 'nickname': '앨범주인'},
-          'invitedAt': DateTime.now()
-              .subtract(const Duration(minutes: 40))
-              .toIso8601String(),
+          'invitedAt': DateTime.now().subtract(const Duration(minutes: 40)).toIso8601String(),
           'status': 'PENDING',
           'inviteRole': 'VIEWER',
         },
@@ -332,18 +330,13 @@ class AlbumApi {
           'albumId': 34,
           'albumTitle': '겨울 스키장',
           'invitedBy': {'userId': 8, 'nickname': '친구A'},
-          'invitedAt': DateTime.now()
-              .subtract(const Duration(hours: 3))
-              .toIso8601String(),
+          'invitedAt': DateTime.now().subtract(const Duration(hours: 3)).toIso8601String(),
           'status': 'PENDING',
           'inviteRole': 'EDITOR',
         },
       ];
     }
-    final res = await http.get(
-      _uri('/api/albums/share/requests'),
-      headers: _headersJson(),
-    );
+    final res = await http.get(_uri('/api/albums/share/requests'), headers: _headersJson());
     if (res.statusCode == 200) {
       final List list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();
@@ -390,9 +383,7 @@ class AlbumApi {
       ];
     }
     final res = await http.get(
-      _uri(
-        '/api/albums/shared',
-      ).replace(queryParameters: {'page': '$page', 'size': '$size'}),
+      _uri('/api/albums/shared').replace(queryParameters: {'page': '$page', 'size': '$size'}),
       headers: _headersJson(),
     );
     if (res.statusCode == 200) {
@@ -439,8 +430,7 @@ class AlbumApi {
       );
       return {
         'albumId': albumId,
-        'thumbnailUrl':
-            'https://picsum.photos/seed/album${albumId}-thumb/600/800',
+        'thumbnailUrl': 'https://picsum.photos/seed/album${albumId}-thumb/600/800',
         'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
       };
     }
@@ -453,9 +443,7 @@ class AlbumApi {
     }
     if (res.statusCode == 404) {
       final e = jsonDecode(res.body);
-      final err = e is Map<String, dynamic>
-          ? (e['error']?.toString() ?? '')
-          : '';
+      final err = e is Map<String, dynamic> ? (e['error']?.toString() ?? '') : '';
       if (err == 'ALBUM_NOT_FOUND') throw Exception('ALBUM_NOT_FOUND');
       if (err == 'PHOTO_NOT_FOUND') throw Exception('PHOTO_NOT_FOUND');
       throw Exception('NOT_FOUND');
@@ -475,8 +463,7 @@ class AlbumApi {
       );
       return {
         'albumId': albumId,
-        'thumbnailUrl':
-            'https://picsum.photos/seed/album${albumId}-upload/600/800',
+        'thumbnailUrl': 'https://picsum.photos/seed/album${albumId}-upload/600/800',
         'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
       };
     }
@@ -493,9 +480,7 @@ class AlbumApi {
     }
     if (res.statusCode == 404) {
       final e = jsonDecode(res.body);
-      final err = e is Map<String, dynamic>
-          ? (e['error']?.toString() ?? '')
-          : '';
+      final err = e is Map<String, dynamic> ? (e['error']?.toString() ?? '') : '';
       if (err == 'ALBUM_NOT_FOUND') throw Exception('ALBUM_NOT_FOUND');
       if (err == 'PHOTO_NOT_FOUND') throw Exception('PHOTO_NOT_FOUND');
       throw Exception('NOT_FOUND');
@@ -510,35 +495,10 @@ class AlbumApi {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return {
-        'albumId': albumId,
-        'role': 'VIEWER',
-        'message': '앨범 공유를 수락했습니다.',
-      };
+      return {'albumId': albumId, 'role': 'VIEWER', 'message': '앨범 공유를 수락했습니다.'};
     }
-    final res = await http.post(
-      _uri('/api/albums/$albumId/share/accept'),
-      headers: _headersJson(),
-    );
-    // 모든 2xx 상태 코드를 성공으로 처리
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      // 빈 body 체크
-      if (res.body.isEmpty || res.body.trim().isEmpty) {
-        return {'albumId': albumId, 'message': '앨범 공유를 수락했습니다.'};
-      }
-      // 안전한 JSON 파싱
-      try {
-        final decoded = jsonDecode(res.body);
-        if (decoded is Map<String, dynamic>) {
-          return decoded;
-        }
-        // Map이 아니면 기본값 반환
-        return {'albumId': albumId, 'message': '앨범 공유를 수락했습니다.'};
-      } catch (e) {
-        // JSON 파싱 실패해도 성공으로 처리 (백엔드가 정상 작동했다면)
-        return {'albumId': albumId, 'message': '앨범 공유를 수락했습니다.'};
-      }
-    }
+    final res = await http.post(_uri('/api/albums/$albumId/share/accept'), headers: _headersJson());
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 404) throw Exception('INVITE_NOT_FOUND');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     if (res.statusCode == 409) throw Exception('ALREADY_ACCEPTED');
@@ -553,29 +513,8 @@ class AlbumApi {
       );
       return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
     }
-    final res = await http.post(
-      _uri('/api/albums/$albumId/share/reject'),
-      headers: _headersJson(),
-    );
-    // 모든 2xx 상태 코드를 성공으로 처리
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      // 빈 body 체크
-      if (res.body.isEmpty || res.body.trim().isEmpty) {
-        return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
-      }
-      // 안전한 JSON 파싱
-      try {
-        final decoded = jsonDecode(res.body);
-        if (decoded is Map<String, dynamic>) {
-          return decoded;
-        }
-        // Map이 아니면 기본값 반환
-        return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
-      } catch (e) {
-        // JSON 파싱 실패해도 성공으로 처리 (백엔드가 정상 작동했다면)
-        return {'albumId': albumId, 'message': '앨범 공유 요청을 거절했습니다.'};
-      }
-    }
+    final res = await http.post(_uri('/api/albums/$albumId/share/reject'), headers: _headersJson());
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 404) throw Exception('INVITE_NOT_FOUND');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     throw Exception('Failed to reject share (${res.statusCode})');
@@ -584,52 +523,19 @@ class AlbumApi {
   // GET /api/albums/{albumId}/share/members
   static Future<List<Map<String, dynamic>>> getShareMembers(int albumId) async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       return [
         {'userId': 1, 'nickname': '앨범주인', 'role': 'OWNER'},
         {'userId': 7, 'nickname': '네컷러버', 'role': 'EDITOR'},
         {'userId': 9, 'nickname': '하루필름', 'role': 'VIEWER'},
       ];
     }
-    final res = await http.get(
-      _uri('/api/albums/$albumId/share/members'),
-      headers: _headersJson(),
-    );
+    final res = await http.get(_uri('/api/albums/$albumId/share/members'), headers: _headersJson());
     if (res.statusCode == 200) {
-      // 안전한 JSON 파싱
-      try {
-        final decoded = jsonDecode(res.body);
-        // 배열로 직접 오는 경우
-        if (decoded is List) {
-          return decoded.cast<Map<String, dynamic>>();
-        }
-        // 객체로 감싸져 있는 경우 (예: {"members": [...]})
-        if (decoded is Map<String, dynamic>) {
-          if (decoded.containsKey('members') && decoded['members'] is List) {
-            return (decoded['members'] as List).cast<Map<String, dynamic>>();
-          }
-          // 다른 키로 감싸져 있을 수도 있음
-          if (decoded.containsKey('content') && decoded['content'] is List) {
-            return (decoded['content'] as List).cast<Map<String, dynamic>>();
-          }
-        }
-        // 예상과 다른 형식이면 빈 배열 반환
-        return [];
-      } catch (e) {
-        // JSON 파싱 실패 시 빈 배열 반환
-        return [];
-      }
+      final List list = jsonDecode(res.body) as List;
+      return list.cast<Map<String, dynamic>>();
     }
-    if (res.statusCode == 403) {
-      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
-      throw Exception(body['message'] ?? '멤버 조회 권한이 없습니다.');
-    }
-    if (res.statusCode == 404) {
-      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
-      throw Exception(body['message'] ?? 'ALBUM_NOT_FOUND');
-    }
+    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to fetch members (${res.statusCode})');
   }
 
@@ -640,9 +546,7 @@ class AlbumApi {
     required String role, // VIEWER | EDITOR | CO_OWNER
   }) async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       if (!['VIEWER', 'EDITOR', 'CO_OWNER'].contains(role)) {
         throw Exception('INVALID_ROLE');
       }
@@ -658,8 +562,7 @@ class AlbumApi {
       headers: _headersJson(),
       body: jsonEncode({'targetUserId': targetUserId, 'role': role}),
     );
-    if (res.statusCode == 200)
-      return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 400) throw Exception('INVALID_ROLE');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     throw Exception('Failed to update permission (${res.statusCode})');
@@ -671,22 +574,12 @@ class AlbumApi {
     required int targetUserId,
   }) async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
+      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
       if (targetUserId == 1) throw Exception('CANNOT_REMOVE_OWNER');
-      return {
-        'albumId': albumId,
-        'removedUserId': targetUserId,
-        'message': '해당 사용자를 앨범에서 제거했습니다.',
-      };
+      return {'albumId': albumId, 'removedUserId': targetUserId, 'message': '해당 사용자를 앨범에서 제거했습니다.'};
     }
-    final res = await http.delete(
-      _uri('/api/albums/$albumId/share/$targetUserId'),
-      headers: _headersJson(),
-    );
-    if (res.statusCode == 200)
-      return jsonDecode(res.body) as Map<String, dynamic>;
+    final res = await http.delete(_uri('/api/albums/$albumId/share/$targetUserId'), headers: _headersJson());
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 400) throw Exception('CANNOT_REMOVE_OWNER');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     throw Exception('Failed to remove member (${res.statusCode})');

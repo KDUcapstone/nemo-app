@@ -58,26 +58,13 @@ class ProfileCard extends StatelessWidget {
                             fit: BoxFit.cover,
                           ),
                         )
-                      : profileImageUrl != null && profileImageUrl!.isNotEmpty
+                      : profileImageUrl != null
                       ? ClipOval(
                           child: Image.network(
                             profileImageUrl!,
                             width: 100,
                             height: 100,
                             fit: BoxFit.cover,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return const Center(
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              );
-                            },
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(
-                                Icons.person,
-                                size: 50,
-                                color: AppColors.textSecondary,
-                              );
-                            },
                           ),
                         )
                       : const Icon(

@@ -37,7 +37,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // 회원가입 요청 함수
-  Future<Map<String, dynamic>?> signup() async {
+  Future<bool> signup() async {
     isLoading = true;
     errorMessage = null;
     notifyListeners();
@@ -51,7 +51,7 @@ class AuthViewModel extends ChangeNotifier {
       errorMessage = e.toString();
       isLoading = false;
       notifyListeners();
-      return null;
+      return false;
     }
   }
 }

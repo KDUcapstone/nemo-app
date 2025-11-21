@@ -164,11 +164,6 @@ class PhotoApi {
     if (friendIdList != null) body['friendIdList'] = friendIdList;
     if (memo != null) body['memo'] = memo;
 
-    // 빈 본문 체크: 최소 하나의 필드는 수정해야 함
-    if (body.isEmpty) {
-      throw Exception('수정할 정보가 없습니다. 최소 하나의 필드는 수정해야 합니다.');
-    }
-
     final r = await http.patch(
       _u('/api/photos/$photoId/details'),
       headers: _h(json: true),
