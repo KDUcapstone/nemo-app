@@ -1,16 +1,16 @@
+// backend/src/main/java/com/nemo/backend/domain/album/dto/AlbumFavoriteResponse.java
 package com.nemo.backend.domain.album.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 
+/**
+ * 즐겨찾기 추가/제거 응답
+ * 명세: albumId, favorited, message
+ */
 @Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class AlbumFavoriteResponse {
-
     private Long albumId;
     private boolean favorited;
     private String message;

@@ -1,17 +1,17 @@
 // backend/src/main/java/com/nemo/backend/domain/album/dto/AlbumCreatedResponse.java
 package com.nemo.backend.domain.album.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * 앨범 생성 응답 (201)
+ * 명세: albumId, title, description, coverPhotoUrl, photoCount, createdAt
+ */
 @Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class AlbumCreatedResponse {
 
     private Long albumId;

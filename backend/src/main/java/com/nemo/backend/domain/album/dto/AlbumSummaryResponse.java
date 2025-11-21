@@ -1,17 +1,17 @@
 // backend/src/main/java/com/nemo/backend/domain/album/dto/AlbumSummaryResponse.java
 package com.nemo.backend.domain.album.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * 앨범 목록 조회 항목
+ * 명세: albumId, title, coverPhotoUrl, photoCount, createdAt, role
+ */
 @Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class AlbumSummaryResponse {
 
     private Long albumId;
@@ -19,8 +19,5 @@ public class AlbumSummaryResponse {
     private String coverPhotoUrl;
     private int photoCount;
     private LocalDateTime createdAt;
-    /**
-     * OWNER / CO_OWNER / EDITOR / VIEWER
-     */
-    private String role;
+    private String role;   // OWNER / CO_OWNER / EDITOR / VIEWER
 }

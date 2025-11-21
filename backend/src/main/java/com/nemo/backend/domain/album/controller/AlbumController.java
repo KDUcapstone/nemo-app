@@ -25,15 +25,7 @@ public class AlbumController {
     private final AlbumService albumService;
     private final AuthExtractor authExtractor;
 
-    // ========================================================
     // 1) GET /api/albums : 앨범 목록 조회
-    //    - query : sort, page, size, favoriteOnly, ownership
-    //    - response :
-    //      {
-    //        "content": [ AlbumSummaryResponse... ],
-    //        "page": { "size":.., "totalElements":.., "totalPages":.., "number":.. }
-    //      }
-    // ========================================================
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAlbums(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -73,11 +65,7 @@ public class AlbumController {
         );
     }
 
-    // ========================================================
     // 2) POST /api/albums : 앨범 생성
-    //    - request : CreateAlbumRequest
-    //    - response : AlbumCreatedResponse (명세 예시 그대로)
-    // ========================================================
     @PostMapping
     public ResponseEntity<AlbumCreatedResponse> create(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -85,17 +73,13 @@ public class AlbumController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        // Service는 AlbumDetailResponse를 반환 → 생성용 DTO로 변환
         AlbumDetailResponse detail = albumService.createAlbum(userId, req);
         AlbumCreatedResponse resp = AlbumCreatedResponse.from(detail);
 
         return ResponseEntity.status(201).body(resp);
     }
 
-    // ========================================================
     // 3) GET /api/albums/{albumId} : 앨범 상세 조회
-    //    - response : AlbumDetailResponse (role, photoList 포함)
-    // ========================================================
     @GetMapping("/{albumId}")
     public ResponseEntity<AlbumDetailResponse> get(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -106,11 +90,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 4) PUT /api/albums/{albumId} : 앨범 정보 수정
-    //    - request : UpdateAlbumRequest
-    //    - response : { albumId, message } → AlbumUpdateResponse
-    // ========================================================
     @PutMapping("/{albumId}")
     public ResponseEntity<AlbumUpdateResponse> update(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -119,7 +99,6 @@ public class AlbumController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        // 내부적으로는 상세 DTO로 갱신
         AlbumDetailResponse updated = albumService.updateAlbum(userId, albumId, req);
 
         AlbumUpdateResponse resp = AlbumUpdateResponse.builder()
@@ -130,11 +109,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 5) POST /api/albums/{albumId}/photos : 사진 여러 장 추가
-    //    - request : { photoIds: [...] } (PhotoIdListRequest)
-    //    - response : { albumId, addedCount, message }
-    // ========================================================
     @PostMapping("/{albumId}/photos")
     public ResponseEntity<AlbumPhotosAddResponse> addPhotos(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -142,7 +117,7 @@ public class AlbumController {
             @Valid @RequestBody PhotoIdListRequest req
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
-        int added = albumService.addPhotos(userId, albumId, req.getPhotoIds());
+        int added = albumService.addPhotos(userId, albumId, req.getPhotoIdList());
 
         AlbumPhotosAddResponse resp = AlbumPhotosAddResponse.builder()
                 .albumId(albumId)
@@ -153,11 +128,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 6) DELETE /api/albums/{albumId}/photos : 사진 여러 장 삭제
-    //    - request : { photoIds: [...] }
-    //    - response : { albumId, deletedCount, message }
-    // ========================================================
     @DeleteMapping("/{albumId}/photos")
     public ResponseEntity<AlbumPhotosDeleteResponse> removePhotos(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -165,7 +136,7 @@ public class AlbumController {
             @Valid @RequestBody PhotoIdListRequest req
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
-        int deleted = albumService.removePhotos(userId, albumId, req.getPhotoIds());
+        int deleted = albumService.removePhotos(userId, albumId, req.getPhotoIdList());
 
         AlbumPhotosDeleteResponse resp = AlbumPhotosDeleteResponse.builder()
                 .albumId(albumId)
@@ -176,10 +147,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 7) DELETE /api/albums/{albumId} : 앨범 삭제
-    //    - response : { albumId, message }
-    // ========================================================
     @DeleteMapping("/{albumId}")
     public ResponseEntity<AlbumDeleteResponse> delete(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -196,11 +164,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 8-1) POST /api/albums/{albumId}/thumbnail (JSON)
-    //      - 갤러리 내 사진 선택용
-    //      - Body: { "photoId": 101 }
-    // ========================================================
     @PostMapping(
             value = "/{albumId}/thumbnail",
             consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -218,11 +182,8 @@ public class AlbumController {
 
         return ResponseEntity.ok(resp);
     }
-    // ========================================================
+
     // 8-2) POST /api/albums/{albumId}/thumbnail (multipart/form-data)
-    //      - 파일 업로드용
-    //      - Part: photoId(선택), file(선택)
-    // ========================================================
     @PostMapping(
             value = "/{albumId}/thumbnail",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
@@ -242,11 +203,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 9) POST /api/albums/{albumId}/favorite : 앨범 즐겨찾기 추가
-    //    - Body 없음
-    //    - Response : { albumId, favorited: true, message }
-    // ========================================================
     @PostMapping("/{albumId}/favorite")
     public ResponseEntity<AlbumFavoriteResponse> addFavorite(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -257,11 +214,7 @@ public class AlbumController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========================================================
     // 10) DELETE /api/albums/{albumId}/favorite : 앨범 즐겨찾기 해제
-    //     - Body 없음
-    //     - Response : { albumId, favorited: false, message }
-    // ========================================================
     @DeleteMapping("/{albumId}/favorite")
     public ResponseEntity<AlbumFavoriteResponse> removeFavorite(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
