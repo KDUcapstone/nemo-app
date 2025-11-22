@@ -1,5 +1,5 @@
 // backend/src/main/java/com/nemo/backend/domain/photo/controller/PhotoController.java
-package com.nemo.backend.domain.photo.controller;
+        package com.nemo.backend.domain.photo.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,6 +44,63 @@ public class PhotoController {
     private final UserRepository userRepository;
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    // ========================================================
+    // 0) QR 임시 등록 (미리보기용)  (POST /api/photos/qr-import)
+    //    - QR 문자열을 받아서 원본 이미지를 조회·저장하고
+    //      미리보기용 imageUrl + photoId 등을 반환
+    //    - 이후 PATCH /api/photos/{photoId}/details 로 메타데이터 확정
+    // ========================================================
+    @Operation(
+            summary = "QR 임시 등록 (미리보기)",
+            description = "포토부스 QR 문자열을 받아 원본 이미지를 조회·저장하고 미리보기 정보를 반환합니다."
+    )
+    @PostMapping(
+            value = "/qr-import",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<QrImportResponse> qrImport(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestBody QrImportRequest body
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        if (body == null || body.qrCode() == null || body.qrCode().isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "qrCode는 필수입니다.");
+        }
+
+        // QR 기반으로만 임시 업로드 (이미지/태그/친구/메모는 아직 빈 상태)
+        PhotoResponseDto dto = photoService.uploadHybrid(
+                userId,
+                body.qrCode(),   // qrUrl 또는 qrCode 문자열
+                null,            // image (없음)
+                null,            // brand (임시 단계에서는 비움)
+                null,            // location
+                null,            // takenAt
+                null,            // tagListJson
+                null,            // friendIdListJson
+                null             // memo
+        );
+
+        String isoTakenAt = (dto.getTakenAt() != null)
+                ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                : null;
+
+        QrImportResponse resp = new QrImportResponse(
+                dto.getId(),
+                dto.getImageUrl(),
+                isoTakenAt,
+                dto.getLocation(),
+                dto.getBrand(),
+                "DRAFT" // 프론트에서 임시 상태로 사용할 수 있도록 고정값
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(resp);
+    }
 
     // ========================================================
     // 1) QR 기반 사진 업로드  (POST /api/photos)
@@ -306,7 +363,7 @@ public class PhotoController {
     public ResponseEntity<PhotoDetailResponse> updateDetails(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long photoId,
-            @RequestBody PhotoDetailsUpdateRequest body
+            @org.springframework.web.bind.annotation.RequestBody PhotoDetailsUpdateRequest body
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
@@ -392,6 +449,19 @@ public class PhotoController {
     // ========================================================
     // 내부 DTO & 유틸
     // ========================================================
+    public static record QrImportRequest(
+            String qrCode
+    ) {}
+
+    public static record QrImportResponse(
+            long photoId,
+            String imageUrl,
+            String takenAt,
+            String location,
+            String brand,
+            String status
+    ) {}
+
     public static record PhotoUploadResponse(
             long photoId,
             String imageUrl,
