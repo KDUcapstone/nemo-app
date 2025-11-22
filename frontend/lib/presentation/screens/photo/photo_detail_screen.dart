@@ -82,21 +82,21 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
         if (!f.existsSync()) return const _DetailFallback();
         return Image.file(
           f,
-          fit: BoxFit.cover,
+          fit: BoxFit.contain,
           errorBuilder: (c, e, s) => const _DetailFallback(),
           gaplessPlayback: true,
-          filterQuality: FilterQuality.low,
+          filterQuality: FilterQuality.none, // 원본 화질 유지
         );
       } else {
         return Image.network(
           _imageUrl,
-          fit: BoxFit.cover,
+          fit: BoxFit.contain,
           loadingBuilder: (c, child, p) => p == null
               ? child
               : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           errorBuilder: (c, e, s) => const _DetailFallback(),
           gaplessPlayback: true,
-          filterQuality: FilterQuality.low,
+          filterQuality: FilterQuality.none, // 원본 화질 유지
         );
       }
     }
@@ -105,125 +105,138 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
       appBar: AppBar(title: const Text('사진 상세')),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          return SingleChildScrollView(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).padding.bottom + 24,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: Container(
-                        color: Colors.black12,
-                        child: _buildImage(),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: _tags
-                            .map((t) => Chip(label: Text(t)))
-                            .toList(),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        (_memoController.text.isEmpty
-                                ? ''
-                                : _memoController.text)
-                            .toString(),
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_friendList.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: SizedBox(
-                          height: 56,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemBuilder: (_, i) {
-                              final f = _friendList[i];
-                              final url = f['profileImageUrl'] as String?;
-                              return Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundImage: url != null
-                                        ? NetworkImage(url)
-                                        : null,
-                                    child: url == null
-                                        ? const Icon(Icons.person_outline)
-                                        : null,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(f['nickname']?.toString() ?? ''),
-                                ],
-                              );
-                            },
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 12),
-                            itemCount: _friendList.length,
-                          ),
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Container(
+                      width: double.infinity,
+                      color: Colors.black12,
+                      child: InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 4.0,
+                        panEnabled: true,
+                        boundaryMargin: const EdgeInsets.all(double.infinity),
+                        child: Center(
+                          child: _buildImage(),
                         ),
                       ),
-                    if (_owner != null) ...[
+                    );
+                  },
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom + 24,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: _tags
+                              .map((t) => Chip(label: Text(t)))
+                              .toList(),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          (_memoController.text.isEmpty
+                                  ? ''
+                                  : _memoController.text)
+                              .toString(),
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
                       const SizedBox(height: 8),
+                      if (_friendList.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: SizedBox(
+                            height: 56,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemBuilder: (_, i) {
+                                final f = _friendList[i];
+                                final url = f['profileImageUrl'] as String?;
+                                return Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundImage: url != null
+                                          ? NetworkImage(url)
+                                          : null,
+                                      child: url == null
+                                          ? const Icon(Icons.person_outline)
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(f['nickname']?.toString() ?? ''),
+                                  ],
+                                );
+                              },
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 12),
+                              itemCount: _friendList.length,
+                            ),
+                          ),
+                        ),
+                      if (_owner != null) ...[
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundImage:
+                                    (_owner!['profileImageUrl'] as String?) !=
+                                        null
+                                    ? NetworkImage(
+                                        _owner!['profileImageUrl'] as String,
+                                      )
+                                    : null,
+                                child:
+                                    (_owner!['profileImageUrl'] as String?) ==
+                                        null
+                                    ? const Icon(Icons.person_outline)
+                                    : null,
+                              ),
+                              const SizedBox(width: 8),
+                              Text('소유자: ${_owner!['nickname']}'),
+                            ],
+                          ),
+                        ),
+                      ],
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Row(
                           children: [
-                            CircleAvatar(
-                              backgroundImage:
-                                  (_owner!['profileImageUrl'] as String?) !=
-                                      null
-                                  ? NetworkImage(
-                                      _owner!['profileImageUrl'] as String,
-                                    )
-                                  : null,
-                              child:
-                                  (_owner!['profileImageUrl'] as String?) ==
-                                      null
-                                  ? const Icon(Icons.person_outline)
-                                  : null,
-                            ),
+                            Expanded(child: Text('촬영 위치: $_location')),
                             const SizedBox(width: 8),
-                            Text('소유자: ${_owner!['nickname']}'),
+                            Expanded(child: Text('브랜드: $_brand')),
                           ],
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '촬영 시각: ${_takenAt?.toIso8601String() ?? ''}',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const SizedBox(height: 8),
+                      const SizedBox(height: 8),
                     ],
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text('촬영 위치: $_location')),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text('브랜드: $_brand')),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        '촬영 시각: ${_takenAt?.toIso8601String() ?? ''}',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const SizedBox(height: 8),
-                    const SizedBox(height: 8),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           );
         },
       ),

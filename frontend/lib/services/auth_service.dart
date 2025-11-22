@@ -57,11 +57,17 @@ class AuthService {
           'mock_refresh_token_${DateTime.now().millisecondsSinceEpoch}';
       setAccessToken(mockToken);
       setRefreshToken(mockRefreshToken);
+      // API 명세서와 일치하도록 user 객체와 최상위 필드 모두 포함
+      final mockUser = {'userId': 1, 'nickname': '네컷러버', 'profileImageUrl': null};
       return {
         'accessToken': mockToken,
         'refreshToken': mockRefreshToken,
         'expiresIn': 3600,
-        'user': {'userId': 1, 'nickname': '네컷러버', 'profileImageUrl': null},
+        'user': mockUser,
+        // 실제 API 응답과 동일하게 최상위에도 포함
+        'userId': 1,
+        'nickname': '네컷러버',
+        'profileImageUrl': null,
       };
     }
     try {
@@ -270,7 +276,11 @@ class AuthService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else if (response.statusCode == 401) {
-        throw Exception('인증이 필요합니다.');
+        // API 명세서: error: "UNAUTHORIZED", message: "인증이 필요합니다. 토큰이 유효하지 않거나 만료되었습니다."
+        final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        throw Exception(
+          body['message'] ?? '인증이 필요합니다. 토큰이 유효하지 않거나 만료되었습니다.',
+        );
       } else {
         throw Exception('사용자 정보 조회 실패 (${response.statusCode})');
       }
