@@ -1,4 +1,4 @@
-// com.nemo.backend.domain.photo.service.PhotoServiceImpl
+// backend/src/main/java/com/nemo/backend/domain/photo/service/PhotoServiceImpl.java
 package com.nemo.backend.domain.photo.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -43,7 +43,7 @@ public class PhotoServiceImpl implements PhotoService {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS    = 10000;
     private static final int MAX_REDIRECTS      = 5;
-    private static final int MAX_HTML_FOLLOW    = 2;   // 필요 시 4까지 늘릴 수 있음
+    private static final int MAX_HTML_FOLLOW    = 2;
     private static final long MAX_BYTES         = 50L * 1024 * 1024;
     private static final String USER_AGENT      = "Mozilla/5.0 Nemo/1.0";
     private static final int MIN_IMAGE_BYTES    = 5 * 1024;
@@ -67,7 +67,7 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     // ========================================================
-    // 1) QR/갤러리 혼합 업로드 (기존 로직 유지 + location/memo 저장)
+    // 1) QR/갤러리 혼합 업로드 (location / memo 저장, video는 DB에 안 넣음)
     // ========================================================
     @Override
     public PhotoResponseDto uploadHybrid(Long userId,
@@ -80,7 +80,6 @@ public class PhotoServiceImpl implements PhotoService {
                                          String friendIdListJson,
                                          String memo) {
 
-        // 🔍 QR / 이미지 인입 로그
         log.info("[QR][uploadHybrid] userId={}, brand={}, qr='{}', hasImage={}, imageName={}",
                 userId,
                 brand,
@@ -93,7 +92,7 @@ public class PhotoServiceImpl implements PhotoService {
             throw new ApiException(ErrorCode.INVALID_ARGUMENT, "image 또는 qrUrl/qrCode 중 하나는 필수입니다.");
         }
 
-        // 중복 QR 차단: URL/QR 문자열이 있을 때만
+        // QR 중복 차단
         if (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) {
             String qrHash = sha256Hex(qrUrlOrPayload);
             photoRepository.findByQrHash(qrHash)
@@ -102,39 +101,34 @@ public class PhotoServiceImpl implements PhotoService {
 
         String storedImage;
         String storedThumb;
-        String storedVideo = null;
 
         if (image != null && !image.isEmpty()) {
             try {
-                String key = storage.store(image);                 // 여기서 INVALID_ARGUMENT 던질 수 있음
+                String key = storage.store(image);
                 String url = toPublicUrl(key);
                 storedImage = url;
                 storedThumb = url;
             } catch (ApiException ae) {
-                // 파일 바이트가 HTML/JSON → url 폴백
+                // 파일이 이미지가 아니면(HTML 등) → QR URL이 있으면 원격에서 다시 시도
                 if (ae.getErrorCode() == ErrorCode.INVALID_ARGUMENT && looksLikeUrl(qrUrlOrPayload)) {
                     AssetPair ap = fetchAssetsFromQrPayload(qrUrlOrPayload);
                     storedImage = ap.imageUrl;
                     storedThumb = ap.thumbnailUrl != null ? ap.thumbnailUrl : ap.imageUrl;
-                    storedVideo = ap.videoUrl;
                     if (takenAt == null) takenAt = ap.takenAt;
                 } else {
-                    // 그대로 전달 (글로벌 핸들러가 적절한 상태코드로 응답)
                     throw ae;
                 }
             } catch (Exception e) {
-                // 진짜 저장 실패만 500/502 계열로
                 throw new ApiException(ErrorCode.STORAGE_FAILED, "파일 저장 실패: " + e.getMessage(), e);
             }
         } else {
-            // URL 경로 (QR 문자열만 있는 케이스)
+            // QR URL만 있는 경우: QR에서 원격 이미지 추출
             if (!looksLikeUrl(qrUrlOrPayload)) {
                 throw new InvalidQrException("지원하지 않는 QR/URL 포맷입니다.");
             }
             AssetPair ap = fetchAssetsFromQrPayload(qrUrlOrPayload);
             storedImage = ap.imageUrl;
             storedThumb = ap.thumbnailUrl != null ? ap.thumbnailUrl : ap.imageUrl;
-            storedVideo = ap.videoUrl;
             if (takenAt == null) takenAt = ap.takenAt;
         }
 
@@ -145,9 +139,17 @@ public class PhotoServiceImpl implements PhotoService {
 
         String qrHash = (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) ? sha256Hex(qrUrlOrPayload) : null;
 
-        Photo photo = new Photo(userId, null, storedImage, storedThumb, storedVideo, qrHash, brand, takenAt, null);
-        // ✅ 위치명 / 메모 저장 (엔티티에 필드가 있어야 함)
-        photo.setLocationName(location);
+        // ✅ videoUrl 필드 제거: DB에는 image / thumbnail / location 등만 저장
+        Photo photo = new Photo(
+                userId,
+                null,
+                storedImage,
+                storedThumb,
+                qrHash,
+                brand,
+                takenAt,
+                location
+        );
         photo.setMemo(memo);
 
         Photo saved = photoRepository.save(photo);
@@ -155,7 +157,7 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     // ========================================================
-    // 2) 사진 목록 조회 (favorite 필터 지원)
+    // 2) 사진 목록 조회 (favorite 필터)
     // ========================================================
     @Override
     @Transactional(readOnly = true)
@@ -169,7 +171,6 @@ public class PhotoServiceImpl implements PhotoService {
         return page.map(PhotoResponseDto::new);
     }
 
-    // 혹시 인터페이스에 옛날 시그니처가 남아있다면, 이렇게 위임해도 됨.
     @Transactional(readOnly = true)
     public Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
         return list(userId, pageable, null);
@@ -224,7 +225,7 @@ public class PhotoServiceImpl implements PhotoService {
             photo.setTakenAt(takenAt);
         }
         if (location != null) {
-            photo.setLocationName(location);
+            photo.setLocation(location);
         }
         if (brand != null && !brand.isBlank()) {
             photo.setBrand(brand);
@@ -255,13 +256,11 @@ public class PhotoServiceImpl implements PhotoService {
         return next;
     }
 
-    // ===================== 네트워크/QR 파싱 (기존 코드 그대로) =====================
+    // ======================================================================
+    // 아래부터는 QR 파싱 / HTTP 유틸 / life4cut 전용 로직
+    // 🔥 요청대로 알고리즘/로직은 그대로 두고, 사용처만 위에서 조정
+    // ======================================================================
 
-    /**
-     * QR 에서 얻은 URL(또는 payload)을 시작점으로,
-     * 리다이렉트/HTML/JSON/첨부파일을 따라가면서 최종 이미지/영상 파일을 우리 스토리지에 저장한다.
-     * - 인생네컷(life4cut) 전용 webQr → webQrJson 처리 포함
-     */
     private AssetPair fetchAssetsFromQrPayload(String startUrl) {
         try {
             log.info("[QR][fetch] startUrl={}", startUrl);
@@ -285,7 +284,6 @@ public class PhotoServiceImpl implements PhotoService {
                 HttpURLConnection conn = open(current, "GET", null, startUrl);
                 int code = conn.getResponseCode();
 
-                // 3xx 리다이렉트 처리
                 if (code / 100 == 3) {
                     String location = conn.getHeaderField("Location");
                     if (location == null || location.isBlank()) {
@@ -295,7 +293,6 @@ public class PhotoServiceImpl implements PhotoService {
                     continue;
                 }
 
-                // 2xx 가 아니면 실패
                 if (code < 200 || code >= 300) {
                     throw new IOException("HTTP " + code + " from " + current);
                 }
@@ -304,9 +301,6 @@ public class PhotoServiceImpl implements PhotoService {
                 String cd = conn.getHeaderField("Content-Disposition");
                 boolean isAttachment = cd != null && cd.toLowerCase(Locale.ROOT).contains("attachment");
 
-                // ================================
-                // 🔥 life4cut 전용: webQr → direct S3 URL 강제 시도
-                // ================================
                 String specialNext = resolveLife4cutNextUrl(url);
                 if (specialNext != null && !isSamePage(specialNext, current)) {
                     log.info("[QR][life4cut][forceJump] {} -> {}", current, specialNext);
@@ -314,9 +308,6 @@ public class PhotoServiceImpl implements PhotoService {
                     continue;
                 }
 
-                // ================================
-                // 1) 이미지/영상 혹은 첨부 응답 → 바로 저장
-                // ================================
                 if ((contentType != null &&
                         (contentType.startsWith("image/") || contentType.startsWith("video/")))
                         || isAttachment) {
@@ -337,6 +328,8 @@ public class PhotoServiceImpl implements PhotoService {
                             if (foundImage == null) foundImage = publicUrl;
                             if (foundThumb == null)  foundThumb  = publicUrl;
                         } else if (ct.startsWith("video/")) {
+                            // 영상도 받아서 스토리지에 저장해 두지만,
+                            // 현재 명세상 API/엔티티에는 videoUrl을 노출하거나 저장하지 않는다.
                             String key = storage.storeBytes(
                                     data,
                                     filenameFromHeadersOrUrl(url, cd, ct),
@@ -349,13 +342,9 @@ public class PhotoServiceImpl implements PhotoService {
                         throw new StorageException("파일 저장 실패", e);
                     }
 
-                    // 이미지/영상까지 왔으면 루프 종료
                     break;
                 }
 
-                // ================================
-                // 2) 일반 HTML → HTML 파서로 링크 추적
-                // ================================
                 if (contentType != null && contentType.startsWith("text/html")) {
                     if (htmlFollow >= MAX_HTML_FOLLOW) break;
 
@@ -367,11 +356,9 @@ public class PhotoServiceImpl implements PhotoService {
                         htmlFollow++;
                         continue;
                     }
-                    // 더 이상 따라갈 링크가 없으면 종료
                     break;
                 }
 
-                // 그 밖의 컨텐츠 타입은 더 이상 진행하지 않고 중단
                 break;
             }
 
@@ -382,10 +369,8 @@ public class PhotoServiceImpl implements PhotoService {
 
             return new AssetPair(foundImage, foundThumb, foundVideo, null);
         } catch (StorageException e) {
-            // 저장 실패는 그대로 올림
             throw e;
         } catch (Exception e) {
-            // 나머지는 UPSTREAM_FAILED 로 래핑
             throw new ApiException(ErrorCode.UPSTREAM_FAILED,
                     "원격 자산 추출 실패: " + e.getMessage(), e);
         }

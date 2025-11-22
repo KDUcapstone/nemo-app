@@ -1,12 +1,13 @@
-// com.nemo.backend.domain.photo.entity.Photo
+// backend/src/main/java/com/nemo/backend/domain/photo/entity/Photo.java
 package com.nemo.backend.domain.photo.entity;
 
 import com.nemo.backend.domain.album.entity.Album;
 import jakarta.persistence.*;
+
 import java.time.LocalDateTime;
 
 /**
- * 사진 1장(레코드) + 연계 동영상 URL을 함께 저장하기 위한 엔티티.
+ * 사진 1장(레코드) + 연계 정보 엔티티.
  * QR 해시(qrHash)로 중복 업로드를 방지한다.
  */
 @Entity
@@ -15,28 +16,27 @@ import java.time.LocalDateTime;
 })
 public class Photo {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private Long userId;
 
-    /** 앨범 연관관계로 변경 */
+    /** 앨범 연관관계 */
     @ManyToOne(fetch = FetchType.LAZY)
     private Album album;
 
     @Column(nullable = false)
     private String imageUrl;
+
+    /** 썸네일용 (API 응답에는 노출 안 함) */
     private String thumbnailUrl;
-    private String videoUrl;
 
     private LocalDateTime takenAt;
 
-    /** 장소 ID (추후 Location 엔티티용) */
-    private Long locationId;
-
-    /** 장소명(문자열) – 명세서의 location 필드용 */
-    @Column(name = "location_name")
-    private String locationName;
+    /** 명세서의 location 필드 (장소 문자열) */
+    @Column(name = "location")
+    private String location;
 
     private String brand;
 
@@ -54,20 +54,27 @@ public class Photo {
     private LocalDateTime createdAt = LocalDateTime.now();
     private Boolean deleted = false;
 
-    public Photo() {}
+    public Photo() {
+    }
 
-    public Photo(Long userId, Album album,
-                 String imageUrl, String thumbnailUrl, String videoUrl,
-                 String qrHash, String brand, LocalDateTime takenAt, Long locationId) {
+    public Photo(
+            Long userId,
+            Album album,
+            String imageUrl,
+            String thumbnailUrl,
+            String qrHash,
+            String brand,
+            LocalDateTime takenAt,
+            String location
+    ) {
         this.userId = userId;
         this.album = album;
         this.imageUrl = imageUrl;
         this.thumbnailUrl = thumbnailUrl;
-        this.videoUrl = videoUrl;
         this.qrHash = qrHash;
         this.brand = brand;
         this.takenAt = takenAt;
-        this.locationId = locationId;
+        this.location = location;
     }
 
     // --- getters/setters ---
@@ -88,17 +95,11 @@ public class Photo {
     public String getThumbnailUrl() { return thumbnailUrl; }
     public void setThumbnailUrl(String thumbnailUrl) { this.thumbnailUrl = thumbnailUrl; }
 
-    public String getVideoUrl() { return videoUrl; }
-    public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
-
     public LocalDateTime getTakenAt() { return takenAt; }
     public void setTakenAt(LocalDateTime takenAt) { this.takenAt = takenAt; }
 
-    public Long getLocationId() { return locationId; }
-    public void setLocationId(Long locationId) { this.locationId = locationId; }
-
-    public String getLocationName() { return locationName; }
-    public void setLocationName(String locationName) { this.locationName = locationName; }
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
 
     public String getBrand() { return brand; }
     public void setBrand(String brand) { this.brand = brand; }

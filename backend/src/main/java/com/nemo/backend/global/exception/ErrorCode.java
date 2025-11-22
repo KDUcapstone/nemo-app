@@ -27,7 +27,10 @@ public enum ErrorCode {
     NETWORK_FAILED(HttpStatus.BAD_GATEWAY, "NETWORK_FAILED", "원본 사진을 가져오지 못했습니다."),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 파라미터가 잘못되었습니다."),
     INVALID_ARGUMENT(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "잘못된 입력입니다."),
-    UPSTREAM_FAILED(HttpStatus.BAD_GATEWAY,  "UPSTREAM_FAILED", "원격 자산 추출 실패했습니다.");
+    UPSTREAM_FAILED(HttpStatus.BAD_GATEWAY,  "UPSTREAM_FAILED", "원격 자산 추출 실패했습니다."),
+
+    // 캘린더 타임라인 코드
+    INVALID_QUERY(HttpStatus.BAD_REQUEST, "INVALID_QUERY", "year와 month 파라미터는 필수입니다.");
 
 
 

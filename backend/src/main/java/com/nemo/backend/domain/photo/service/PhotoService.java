@@ -1,5 +1,4 @@
 // backend/src/main/java/com/nemo/backend/domain/photo/service/PhotoService.java
-
 package com.nemo.backend.domain.photo.service;
 
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
@@ -23,10 +22,8 @@ public interface PhotoService {
             String memo
     );
 
-    // ✅ favorite 필터 적용 가능하도록 확장
     Page<PhotoResponseDto> list(Long userId, Pageable pageable, Boolean favorite);
 
-    // ✅ 기존 컨트롤러 호환용 오버로드
     default Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
         return list(userId, pageable, null);
     }

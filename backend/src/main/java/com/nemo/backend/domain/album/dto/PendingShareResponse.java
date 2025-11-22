@@ -1,32 +1,45 @@
+// backend/src/main/java/com/nemo/backend/domain/album/dto/PendingShareResponse.java
 package com.nemo.backend.domain.album.dto;
 
 import com.nemo.backend.domain.album.entity.AlbumShare;
 import lombok.Builder;
+import lombok.Getter;
 
 import java.time.LocalDateTime;
 
 /**
- * "내가 공유 받기 대기 중(PENDING)"인 앨범 정보
+ * 공유 요청 목록 항목
+ * 명세: albumId, albumTitle, invitedBy{userId,nickname}, invitedAt, status
  */
+@Getter
 @Builder
-public record PendingShareResponse(
-        Long shareId,
-        Long albumId,
-        String albumTitle,
-        Long ownerId,
-        String ownerNickname,
-        AlbumShare.Role role,
-        LocalDateTime invitedAt
-) {
+public class PendingShareResponse {
+
+    private Long albumId;
+    private String albumTitle;
+    private InvitedBy invitedBy;
+    private LocalDateTime invitedAt;
+    private String status; // PENDING
+
+    @Getter
+    @Builder
+    public static class InvitedBy {
+        private Long userId;
+        private String nickname;
+    }
+
     public static PendingShareResponse from(AlbumShare share) {
         return PendingShareResponse.builder()
-                .shareId(share.getId())
                 .albumId(share.getAlbum().getId())
                 .albumTitle(share.getAlbum().getName())
-                .ownerId(share.getAlbum().getUser().getId())
-                .ownerNickname(share.getAlbum().getUser().getNickname())
-                .role(share.getRole())
+                .invitedBy(
+                        InvitedBy.builder()
+                                .userId(share.getAlbum().getUser().getId())
+                                .nickname(share.getAlbum().getUser().getNickname())
+                                .build()
+                )
                 .invitedAt(share.getCreatedAt())
+                .status(share.getStatus().name())
                 .build();
     }
 }
