@@ -25,7 +25,10 @@ import java.util.concurrent.atomic.AtomicLong;
 @RequiredArgsConstructor
 public class NaverApiClient {
 
-    // ✔ application.yml 에서 값을 주입
+    // ───────────────────────────────────────────────────────────────
+    // (1) Naver Local Search 설정
+    //    - "포토부스", "인생네컷" 같은 키워드로 장소 검색할 때 사용
+    // ───────────────────────────────────────────────────────────────
     @Value("${naver.openapi.local.endpoint:https://openapi.naver.com/v1/search/local.json}")
     private String endpoint;
 
@@ -35,11 +38,27 @@ public class NaverApiClient {
     @Value("${NAVER_LOCAL_CLIENT_SECRET}")
     private String clientSecret;
 
+    // ───────────────────────────────────────────────────────────────
+    // (2) Naver Reverse Geocoding 설정
+    //    - 위도(lat), 경도(lng) → "강남구 역삼동" 같은 행정구역을 얻을 때 사용
+    //    - NCP(Map) 쪽 키를 쓰므로 Local Search 키와 분리
+    // ───────────────────────────────────────────────────────────────
+    @Value("${naver.openapi.reverse.endpoint:https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc}")
+    private String reverseEndpoint;
+
+    @Value("${NAVER_MAP_CLIENT_ID}")
+    private String mapClientId;
+
+    @Value("${NAVER_MAP_CLIENT_SECRET}")
+    private String mapClientSecret;
+
     private final RestTemplate restTemplate;
 
     // ───────────────────────────────────────────────────────────────
-    // (A) 간단 캐시: 같은 요청(같은 뷰포트/키워드)은 2분간 재사용
-    // key: 완성된 URI 문자열, value: 캐시 항목(응답+저장시각)
+    // (A) 간단 캐시: 같은 요청(같은 URI)은 2분간 재사용
+    //     - Local Search / Reverse Geocode 둘 다 공통으로 사용
+    //     - key: 완성된 URI 문자열, value: 캐시 항목(응답+저장시각)
+    // ───────────────────────────────────────────────────────────────
     private static final long CACHE_TTL_MILLIS = Duration.ofMinutes(2).toMillis();
     private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
@@ -48,6 +67,7 @@ public class NaverApiClient {
 
     // ───────────────────────────────────────────────────────────────
     // (B) 아주 단순한 레이트 리미터: 외부 호출 사이 최소 간격 200ms 확보(초당 최대 5회)
+    // ───────────────────────────────────────────────────────────────
     private static final long MIN_INTERVAL_MS = 200;
     private final AtomicLong lastCallAt = new AtomicLong(0);
     // ───────────────────────────────────────────────────────────────
@@ -86,7 +106,7 @@ public class NaverApiClient {
         // 2) 캐시 확인 (2분 내면 재사용)
         Map<String, Object> cached = loadFromCache(cacheKey);
         if (cached != null) {
-            log.debug("[NAVER][CACHE-HIT] {}", cacheKey);
+            log.debug("[NAVER][CACHE-HIT][LOCAL] {}", cacheKey);
             return cached;
         }
 
@@ -118,12 +138,11 @@ public class NaverApiClient {
                 long waitMs = parseRetryAfterToMillis(e.getResponseHeaders()).orElseGet(
                         () -> (long) (baseBackoffMs * Math.pow(2, finalAttempt - 1)) // 500 → 1000 → 2000
                 );
-                log.warn("[NAVER][429] attempt {} / {} → {}ms 대기 후 재시도. uri={}",
+                log.warn("[NAVER][429][LOCAL] attempt {} / {} → {}ms 대기 후 재시도. uri={}",
                         attempt, maxAttempts, waitMs, cacheKey);
 
                 sleepSilently(waitMs);
 
-                // 다음 루프에서 자동 재시도
                 if (attempt == maxAttempts) {
                     // 그래도 안 되면, UX 위해 '빈 결과'라도 내려주거나, 예외를 올려 컨트롤러에서 503으로 변환
                     throw e; // 전역 예외 핸들러에서 503(Service Unavailable) 매핑 권장
@@ -131,14 +150,14 @@ public class NaverApiClient {
 
             } catch (HttpClientErrorException e) {
                 // 잘못된 파라미터 등 4xx — 재시도해도 소용없으니 바로 rethrow
-                log.error("[NAVER][4xx] status={} body={} uri={}",
+                log.error("[NAVER][4xx][LOCAL] status={} body={} uri={}",
                         e.getStatusCode(), safe(e.getResponseBodyAsString()), cacheKey);
                 throw e;
 
             } catch (Exception e) {
                 // 네트워크 등 일시 오류 → 백오프로 짧게 재시도
                 long waitMs = (long) (baseBackoffMs * Math.pow(2, attempt - 1));
-                log.warn("[NAVER][EX] attempt {} / {} → {}ms 대기 후 재시도. uri={} ex={}",
+                log.warn("[NAVER][EX][LOCAL] attempt {} / {} → {}ms 대기 후 재시도. uri={} ex={}",
                         attempt, maxAttempts, waitMs, cacheKey, e.toString());
                 if (attempt == maxAttempts) throw new RuntimeException("Naver Local API 호출 실패", e);
                 sleepSilently(waitMs);
@@ -147,6 +166,114 @@ public class NaverApiClient {
 
         // 여긴 도달하지 않음
         throw new IllegalStateException("도달 불가");
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // (NEW) Reverse Geocoding: 위도/경도 → 행정구역 이름
+    //      - PhotoboothService 에서 뷰포트 중심좌표로 "강남구 역삼동" 같은 문자열 얻을 때 사용
+    //      - 실패하면 Optional.empty() 반환 (서비스 단에서 fallback 처리)
+    // ───────────────────────────────────────────────────────────────
+    public Optional<String> reverseGeocodeToRegion(double lat, double lng) {
+        // Naver Reverse Geocode 는 coords를 "경도,위도" 순서로 받음에 주의 (lng, lat)
+        URI uri = UriComponentsBuilder.fromHttpUrl(reverseEndpoint)
+                .queryParam("coords", lng + "," + lat)
+                .queryParam("sourcecrs", "epsg:4326")   // WGS84
+                .queryParam("orders", "legalcode")      // 법정동 기준
+                .queryParam("output", "json")
+                .build()
+                .toUri();
+
+        String cacheKey = uri.toString();
+
+        // 1) 캐시 확인 (2분 내면 재사용)
+        Map<String, Object> cached = loadFromCache(cacheKey);
+        if (cached != null) {
+            log.debug("[NAVER][CACHE-HIT][REVERSE] {}", cacheKey);
+            return extractRegionNameFromReverseBody(cached);
+        }
+
+        // 2) 헤더 (NCP Map Geocode 방식)
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-NCP-APIGW-API-KEY-ID", mapClientId);
+        headers.set("X-NCP-APIGW-API-KEY", mapClientSecret);
+
+        HttpEntity<Void> httpEntity = new HttpEntity<>(headers);
+
+        // Reverse 도 외부 API 이므로 레이트 리밋 같이 사용
+        enforceMinInterval();
+
+        try {
+            ResponseEntity<Map> res = restTemplate.exchange(uri, HttpMethod.GET, httpEntity, Map.class);
+            Map<String, Object> body = res.getBody();
+
+            saveToCache(cacheKey, body);
+            return extractRegionNameFromReverseBody(body);
+
+        } catch (Exception e) {
+            log.warn("[NAVER][REVERSE][EX] lat={}, lng={} uri={} ex={}",
+                    lat, lng, cacheKey, e.toString());
+            return Optional.empty(); // 서비스 단에서 fallback(전국검색 등) 하도록
+        }
+    }
+
+    /**
+     * Reverse Geocode 응답 JSON에서 "강남구 역삼동" 형태의 문자열을 뽑아내는 헬퍼
+     *
+     * 응답 구조 예시(요약):
+     * {
+     *   "results": [
+     *     {
+     *       "region": {
+     *         "area1": { "name": "서울특별시" },
+     *         "area2": { "name": "강남구" },
+     *         "area3": { "name": "역삼동" },
+     *         ...
+     *       },
+     *       ...
+     *     }
+     *   ]
+     * }
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<String> extractRegionNameFromReverseBody(Map<String, Object> body) {
+        if (body == null) return Optional.empty();
+
+        Object resultsObj = body.get("results");
+        if (!(resultsObj instanceof java.util.List<?> results) || results.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Object first = results.get(0);
+        if (!(first instanceof Map<?, ?> firstMap)) {
+            return Optional.empty();
+        }
+
+        Object regionObj = firstMap.get("region");
+        if (!(regionObj instanceof Map<?, ?> region)) {
+            return Optional.empty();
+        }
+
+        Map<String, Object> area2 = (Map<String, Object>) region.get("area2"); // 구
+        Map<String, Object> area3 = (Map<String, Object>) region.get("area3"); // 동
+
+        String gu   = area2 != null ? (String) area2.get("name") : null;
+        String dong = area3 != null ? (String) area3.get("name") : null;
+
+        if (gu == null && dong == null) {
+            return Optional.empty();
+        }
+
+        StringBuilder sb = new StringBuilder();
+        if (gu != null && !gu.isBlank()) {
+            sb.append(gu.trim());
+        }
+        if (dong != null && !dong.isBlank()) {
+            if (!sb.isEmpty()) sb.append(" ");
+            sb.append(dong.trim());
+        }
+
+        String regionName = sb.toString().trim();
+        return regionName.isEmpty() ? Optional.empty() : Optional.of(regionName);
     }
 
     // ─────────────────────── helpers ─────────────────────────

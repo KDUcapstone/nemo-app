@@ -273,7 +273,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
     try {
       // 명세에 맞춘 회원가입 API 호출
-      final ok = await AuthService().signup(
+      final result = await AuthService().signup(
         SignupFormModel(
           email: _emailController.text.trim(),
           password: _passwordController.text,
@@ -281,7 +281,7 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
       );
 
-      if (mounted && ok) {
+      if (mounted) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LoginScreen()),
