@@ -226,11 +226,7 @@ class PhotoApi {
   Future<Map<String, dynamic>> toggleFavorite(int photoId) async {
     if (AppConstants.useMockApi) {
       await Future<void>.delayed(const Duration(milliseconds: 150));
-      return {
-        'photoId': photoId,
-        'isFavorite': true,
-        'message': '즐겨찾기 설정 완료',
-      };
+      return {'photoId': photoId, 'isFavorite': true, 'message': '즐겨찾기 설정 완료'};
     }
     final r = await http.post(
       _u('/api/photos/$photoId/favorite'),

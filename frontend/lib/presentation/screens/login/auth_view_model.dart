@@ -37,14 +37,15 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // 회원가입 요청 함수
+  // AuthService.signup()은 Map<String, dynamic>을 반환하고, 이 함수는 성공 여부(bool)만 반환
   Future<bool> signup() async {
     isLoading = true;
     errorMessage = null;
     notifyListeners();
 
     try {
+      // API 명세서: AuthService.signup()은 Map<String, dynamic> 반환 (userId, email, nickname, profileImageUrl, createdAt 포함)
       final result = await AuthService().signup(signupForm);
-      // API 명세서: signup은 Map<String, dynamic> 반환 (userId 포함)
       isLoading = false;
       notifyListeners();
       // userId가 있으면 성공

@@ -276,10 +276,7 @@ class FriendApi {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return {
-        'requestId': requestId,
-        'message': '친구 요청이 거절되었습니다.',
-      };
+      return {'requestId': requestId, 'message': '친구 요청이 거절되었습니다.'};
     }
     final res = await http.post(
       _uri('/api/friends/$requestId/reject'),

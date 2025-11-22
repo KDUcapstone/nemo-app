@@ -65,7 +65,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
           _passwordController.text,
         );
 
-        if (result['success'] == true && mounted) {
+        // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
+        // AuthService.login()은 성공 시 userId, nickname, accessToken, profileImageUrl을 최상위에도 제공
+        if (result['userId'] != null && result['accessToken'] != null && mounted) {
           setState(() {
             _isLoading = false;
           });
@@ -74,10 +76,10 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             listen: false,
           );
           userProvider.setUser(
-            userId: result['userId'],
-            nickname: result['nickname'],
-            accessToken: result['accessToken'],
-            profileImageUrl: result['profileImageUrl'],
+            userId: result['userId'] as int,
+            nickname: result['nickname'] as String? ?? '',
+            accessToken: result['accessToken'] as String,
+            profileImageUrl: result['profileImageUrl'] as String?,
           );
           // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
           final nick = (result['nickname'] as String?)?.trim();
@@ -85,6 +87,14 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             '환영합니다 ${nick != null && nick.isNotEmpty ? nick : '사용자'}님!',
           );
           Navigator.pop(context, true);
+        } else {
+          // 예상치 못한 응답 형식
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorText = '로그인에 실패했습니다.';
+            });
+          }
         }
       } catch (e) {
         if (!mounted) return;

@@ -246,6 +246,8 @@ class AuthService {
   }
 
   /// 사용자 정보 조회 (JWT 토큰 필요)
+  /// API 명세서: GET /api/users/me
+  /// 응답: { userId, email, nickname, profileImageUrl, createdAt }
   Future<Map<String, dynamic>> getUserInfo() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -279,6 +281,7 @@ class AuthService {
 
   /// 로그아웃 (JWT 토큰 무효화)
   /// API 명세서: POST /api/users/logout, body에 refreshToken 전송
+  /// 응답: { message: "성공적으로 로그아웃되었습니다." }
   Future<bool> logout() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -305,10 +308,19 @@ class AuthService {
         clearAccessToken();
         return true;
       } else if (response.statusCode == 400) {
+        // API 명세서: error: "INVALID_REFRESH_TOKEN", message: "이미 만료되었거나 존재하지 않는 리프레시 토큰입니다."
         final data = jsonDecode(response.body);
-        throw Exception(data['message'] ?? '리프레시 토큰이 유효하지 않습니다.');
+        final error = data['error'] as String?;
+        throw Exception(
+          data['message'] ??
+              (error == 'INVALID_REFRESH_TOKEN'
+                  ? '이미 만료되었거나 존재하지 않는 리프레시 토큰입니다.'
+                  : '리프레시 토큰이 유효하지 않습니다.'),
+        );
       } else if (response.statusCode == 401) {
-        throw Exception('로그인이 필요합니다.');
+        // API 명세서: error: "UNAUTHORIZED", message: "로그인이 필요합니다."
+        final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        throw Exception(data['message'] ?? '로그인이 필요합니다.');
       } else {
         final message = response.body.isNotEmpty
             ? jsonDecode(response.body)['message']
@@ -364,8 +376,9 @@ class AuthService {
   }
 
   /// 사용자 정보 수정 (JSON 방식)
-  /// 백엔드 명세: PUT /api/users/me (JSON)
-  /// 응답: UserProfileResponse { userId, email, nickname, profileImageUrl, updatedAt }
+  /// API 명세서: PUT /api/users/me (JSON)
+  /// 요청: { nickname?, profileImageUrl? } - 둘 중 하나 이상은 반드시 포함되어야 함
+  /// 응답: { userId, email, nickname, profileImageUrl, updatedAt }
   Future<Map<String, dynamic>> updateProfile({
     String? nickname,
     String? profileImageUrl,
@@ -386,13 +399,23 @@ class AuthService {
       };
     }
     try {
+      // API 명세서: 둘 중 하나 이상은 반드시 포함되어야 함
       final body = <String, dynamic>{};
-      if (nickname != null) body['nickname'] = nickname;
-      if (profileImageUrl != null) body['profileImageUrl'] = profileImageUrl;
+      if (nickname != null && nickname.isNotEmpty) {
+        body['nickname'] = nickname;
+      }
+      if (profileImageUrl != null && profileImageUrl.isNotEmpty) {
+        body['profileImageUrl'] = profileImageUrl;
+      }
+
+      // 명세서 요구사항: 수정할 항목이 없으면 에러
+      if (body.isEmpty) {
+        throw Exception('수정할 항목이 없습니다.');
+      }
 
       final response = await ApiClient.put(
         '/api/users/me',
-        body: body.isEmpty ? null : body,
+        body: body,
       );
 
       if (response.statusCode == 200) {
@@ -519,6 +542,7 @@ class AuthService {
 
   /// JWT 액세스 토큰 재발급
   /// API 명세서: POST /api/auth/refresh, body에 refreshToken 전송
+  /// 응답: { accessToken, expiresIn }
   Future<Map<String, dynamic>> refreshAccessToken() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -545,15 +569,22 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
+        // API 명세서: 응답 { accessToken, expiresIn }
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final newAccessToken = data['accessToken'] as String;
+        final expiresIn = data['expiresIn'] as int? ?? 3600;
         setAccessToken(newAccessToken);
-        // API 명세서: refreshToken은 선택적으로 갱신될 수 있음
+        // API 명세서: refreshToken은 선택적으로 갱신될 수 있음 (명세서에는 없지만 백엔드에서 제공 가능)
         final newRefreshToken = data['refreshToken'] as String?;
         if (newRefreshToken != null) {
           setRefreshToken(newRefreshToken);
         }
-        return {'accessToken': newAccessToken, 'refreshToken': newRefreshToken};
+        // API 명세서 응답 형식: { accessToken, expiresIn }
+        return {
+          'accessToken': newAccessToken,
+          'expiresIn': expiresIn,
+          'refreshToken': newRefreshToken, // 선택적 (명세서에는 없지만 유지)
+        };
       } else if (response.statusCode == 400) {
         final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
         final error = body['error'] as String?;
@@ -562,12 +593,13 @@ class AuthService {
         }
         throw Exception(body['message'] ?? '잘못된 요청입니다.');
       } else if (response.statusCode == 401) {
-        // refreshToken이 만료되었거나 유효하지 않음
+        // API 명세서: 401 에러 시 error: "INVALID_REFRESH_TOKEN"
         final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
         final error = body['error'] as String?;
-        if (error == 'INVALID_TOKEN') {
+        if (error == 'INVALID_REFRESH_TOKEN' || error == 'INVALID_TOKEN') {
           clearAccessToken(); // 토큰 제거
-          throw Exception(body['message'] ?? '리프레시 토큰이 유효하지 않습니다.');
+          throw Exception(
+              body['message'] ?? '리프레시 토큰이 유효하지 않거나 만료되었습니다.');
         }
         clearAccessToken();
         throw Exception('리프레시 토큰이 유효하지 않거나 만료되었습니다.');
@@ -890,6 +922,9 @@ class AuthService {
   }
 
   /// 로그인 상태 비밀번호 변경
+  /// API 명세서: PUT /api/users/me/password
+  /// 요청: { currentPassword, newPassword, confirmPassword }
+  /// 응답: { message: "비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요." }
   Future<String> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -935,31 +970,42 @@ class AuthService {
         },
       );
       if (response.statusCode == 200) {
+        // API 명세서: 응답 { message }
         final body = jsonDecode(response.body);
         return (body is Map && body['message'] is String)
             ? body['message'] as String
             : '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.';
       }
       if (response.statusCode == 401) {
-        throw Exception('UNAUTHORIZED');
+        // API 명세서: error: "UNAUTHORIZED", message: "로그인이 필요합니다."
+        final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        throw Exception(body['message'] ?? '로그인이 필요합니다.');
       }
       if (response.statusCode == 403) {
-        throw Exception('INVALID_CURRENT_PASSWORD');
+        // API 명세서: error: "INVALID_CURRENT_PASSWORD", message: "현재 비밀번호가 일치하지 않습니다."
+        final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        throw Exception(
+          body['message'] ?? '현재 비밀번호가 일치하지 않습니다.',
+        );
       }
       if (response.statusCode == 400) {
-        final body = response.body.isNotEmpty
-            ? jsonDecode(response.body)
-            : null;
+        // API 명세서: error: "PASSWORD_CONFIRM_MISMATCH" 또는 "PASSWORD_POLICY_VIOLATION"
+        final body = response.body.isNotEmpty ? jsonDecode(response.body) : null;
         final err = body is Map ? (body['error'] as String?) : null;
         if (err == 'PASSWORD_CONFIRM_MISMATCH') {
-          throw Exception('PASSWORD_CONFIRM_MISMATCH');
+          throw Exception(
+            body?['message'] ?? '새 비밀번호와 확인 값이 일치하지 않습니다.',
+          );
         }
         if (err == 'PASSWORD_POLICY_VIOLATION') {
-          throw Exception('PASSWORD_POLICY_VIOLATION');
+          throw Exception(
+            body?['message'] ??
+                '비밀번호는 8~64자, 영문/숫자/특수문자 중 2종 이상을 포함해야 합니다.',
+          );
         }
-        throw Exception('BAD_REQUEST');
+        throw Exception(body?['message'] ?? '잘못된 요청입니다.');
       }
-      throw Exception('CHANGE_PASSWORD_FAILED_${response.statusCode}');
+      throw Exception('비밀번호 변경 실패 (${response.statusCode})');
     } catch (e) {
       rethrow;
     }

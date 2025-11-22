@@ -183,7 +183,9 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
           _passwordController.text,
         );
 
-        if (result['success'] == true) {
+        // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
+        // AuthService.login()은 성공 시 userId, nickname, accessToken, profileImageUrl을 최상위에도 제공
+        if (result['userId'] != null && result['accessToken'] != null) {
           if (!mounted) return;
           // UserProvider에 사용자 정보 저장
           final userProvider = Provider.of<UserProvider>(
@@ -191,10 +193,10 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
             listen: false,
           );
           userProvider.setUser(
-            userId: result['userId'],
-            nickname: result['nickname'],
-            accessToken: result['accessToken'],
-            profileImageUrl: result['profileImageUrl'],
+            userId: result['userId'] as int,
+            nickname: result['nickname'] as String? ?? '',
+            accessToken: result['accessToken'] as String,
+            profileImageUrl: result['profileImageUrl'] as String?,
           );
 
           // 로그인 성공 시 화면 이동
@@ -211,12 +213,22 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
               ),
             );
           }
+        } else {
+          // 예상치 못한 응답 형식
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('로그인에 실패했습니다.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       } catch (e) {
         if (mounted) {
           final errorMsg = e.toString();
           String message;
-          if (errorMsg.contains('401') || 
+          if (errorMsg.contains('401') ||
               errorMsg.contains('비밀번호') ||
               errorMsg.contains('틀렸습니다')) {
             message = '비밀번호가 틀렸습니다';

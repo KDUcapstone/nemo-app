@@ -31,9 +31,14 @@ class StorageQuota {
 }
 
 class StorageApi {
+  /// 저장 한도/사용량 조회
+  /// API 명세서: GET /api/storage/quota
+  /// 응답: { planType, maxPhotos, usedPhotos, remainPhotos, usagePercent }
   static Future<StorageQuota> fetchQuota() async {
     if (AppConstants.useMockApi) {
-      await Future.delayed(Duration(milliseconds: AppConstants.simulatedNetworkDelayMs));
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
       // FREE 요금제 목업: 최대 20장, 사용 7장 (예시)
       const int max = 20;
       const int used = 7;
@@ -47,21 +52,28 @@ class StorageApi {
       );
     }
 
-    final http.Response res = await ApiClient
-        .get('/api/storage/quota')
-        .timeout(const Duration(seconds: 7));
+    final http.Response res = await ApiClient.get(
+      '/api/storage/quota',
+    ).timeout(const Duration(seconds: 7));
+
     if (res.statusCode == 200) {
-      final Map<String, dynamic> map = jsonDecode(res.body) as Map<String, dynamic>;
+      final Map<String, dynamic> map =
+          jsonDecode(res.body) as Map<String, dynamic>;
       return StorageQuota.fromJson(map);
     }
+
     if (res.statusCode == 401) {
-      throw Exception('UNAUTHORIZED');
+      // API 명세서: error: "UNAUTHORIZED", message: "유효하지 않은 인증 토큰입니다."
+      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      throw Exception(body['message'] ?? '유효하지 않은 인증 토큰입니다.');
     }
+
     if (res.statusCode == 404) {
-      throw Exception('USER_NOT_FOUND');
+      // API 명세서: error: "USER_NOT_FOUND", message: "해당 사용자를 찾을 수 없습니다."
+      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      throw Exception(body['message'] ?? '해당 사용자를 찾을 수 없습니다.');
     }
-    throw Exception('FAILED_${res.statusCode}');
+
+    throw Exception('저장 한도 조회 실패 (${res.statusCode})');
   }
 }
-
-
