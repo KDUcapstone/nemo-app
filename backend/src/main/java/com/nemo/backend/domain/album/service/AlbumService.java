@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +22,6 @@ import com.nemo.backend.domain.album.repository.AlbumFavoriteRepository;
 import com.nemo.backend.domain.album.repository.AlbumRepository;
 import com.nemo.backend.domain.album.repository.AlbumShareRepository;
 import com.nemo.backend.domain.photo.entity.Photo;
-import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.domain.photo.service.PhotoStorage;
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.global.exception.ApiException;
