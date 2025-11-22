@@ -1,5 +1,5 @@
 // backend/src/main/java/com/nemo/backend/domain/photo/controller/PhotoController.java
-        package com.nemo.backend.domain.photo.controller;
+package com.nemo.backend.domain.photo.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -73,7 +73,7 @@ public class PhotoController {
         // QR 기반으로만 임시 업로드 (이미지/태그/친구/메모는 아직 빈 상태)
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                body.qrCode(),   // qrUrl 또는 qrCode 문자열
+                body.qrCode(),   // qrCode 문자열
                 null,            // image (없음)
                 null,            // brand (임시 단계에서는 비움)
                 null,            // location
@@ -104,10 +104,11 @@ public class PhotoController {
 
     // ========================================================
     // 1) QR 기반 사진 업로드  (POST /api/photos)
+    //    - 명세 기준: qrCode + image 둘 다 필수
     // ========================================================
     @Operation(
             summary = "QR 사진 업로드",
-            description = "포토부스 QR 기반으로 사진을 업로드합니다.",
+            description = "포토부스 QR 기반으로 사진을 업로드합니다. qrCode와 image는 필수입니다.",
             requestBody = @RequestBody(
                     content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)
             )
@@ -118,9 +119,8 @@ public class PhotoController {
     )
     public ResponseEntity<PhotoUploadResponse> uploadByQr(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-            @RequestPart(value = "image", required = false) MultipartFile image,
-            @RequestParam(value = "qrUrl", required = false) String qrUrl,
-            @RequestParam(value = "qrCode", required = false) String qrCode,
+            @RequestPart(value = "image", required = true) MultipartFile image,
+            @RequestParam(value = "qrCode", required = true) String qrCode,
             @RequestParam(value = "takenAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime takenAt,
             @RequestParam(value = "location", required = false) String location,
@@ -131,19 +131,24 @@ public class PhotoController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        String effectiveQr = (qrUrl != null && !qrUrl.isBlank()) ? qrUrl : qrCode;
-
-        if ((effectiveQr == null || effectiveQr.isBlank())
-                && (image == null || image.isEmpty())) {
+        // 명세: qrCode + image 둘 다 필수
+        if (qrCode == null || qrCode.isBlank()) {
             throw new ApiException(
                     ErrorCode.INVALID_ARGUMENT,
-                    "image 또는 qrCode/qrUrl 중 하나는 필수입니다. (IMAGE_OR_QR_REQUIRED)"
+                    "qrCode는 필수입니다. (QRCODE_REQUIRED)"
+            );
+        }
+
+        if (image == null || image.isEmpty()) {
+            throw new ApiException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "image는 필수입니다. (IMAGE_REQUIRED)"
             );
         }
 
         PhotoUploadRequest req = new PhotoUploadRequest(
                 image,
-                effectiveQr,
+                qrCode, // DTO 필드명은 qrUrl이지만 실제로는 qrCode 문자열을 그대로 전달
                 qrCode,
                 (takenAt != null) ? takenAt.toString() : null,
                 location,
@@ -153,7 +158,7 @@ public class PhotoController {
 
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                req.qrUrl(),
+                req.qrUrl(),     // qrCode 문자열
                 req.image(),
                 brand,
                 location,
