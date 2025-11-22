@@ -3,21 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/services/photo_upload_api.dart';
-import 'package:frontend/services/photo_api.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/providers/photo_provider.dart';
 
 class PhotoAddDetailScreen extends StatefulWidget {
-  final File? imageFile; // QR 코드만 있는 경우 null 가능
+  final File imageFile;
   final String? qrCode; // QR 스캔인 경우 QR 코드 값
-  final Map<String, dynamic>? qrImportResult; // QR 임시 등록 결과 (photoId, imageUrl, takenAt, location, brand, status)
   final DateTime? defaultTakenAt; // 기본 촬영일시
 
   const PhotoAddDetailScreen({
     super.key,
-    this.imageFile,
+    required this.imageFile,
     this.qrCode,
-    this.qrImportResult,
     this.defaultTakenAt,
   });
 
@@ -42,22 +39,12 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
   @override
   void initState() {
     super.initState();
-    // QR 임시 등록 결과가 있으면 그 값 사용, 없으면 기본값
-    if (widget.qrImportResult != null) {
-      _takenAt = widget.qrImportResult!['takenAt'] != null
-          ? DateTime.parse(widget.qrImportResult!['takenAt'])
-          : (widget.defaultTakenAt ?? DateTime.now());
-      _locationCtrl.text = widget.qrImportResult!['location'] ?? '';
-      _brandCtrl.text = widget.qrImportResult!['brand'] ?? '';
+    _takenAt = widget.defaultTakenAt ?? DateTime.now();
+    // QR에서 추정 가능한 정보 기본값 설정
+    if (widget.qrCode != null) {
+      _locationCtrl.text = '포토부스(추정)';
+      _brandCtrl.text = '인생네컷';
       _tags = ['QR업로드'];
-    } else {
-      _takenAt = widget.defaultTakenAt ?? DateTime.now();
-      // QR에서 추정 가능한 정보 기본값 설정
-      if (widget.qrCode != null) {
-        _locationCtrl.text = '포토부스(추정)';
-        _brandCtrl.text = '인생네컷';
-        _tags = ['QR업로드'];
-      }
     }
     _loadFriends();
   }
@@ -247,60 +234,31 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
       Map<String, dynamic> result;
 
       if (widget.qrCode != null) {
-        // QR 임시 등록 결과가 있으면 상세정보 수정 API 호출
-        if (widget.qrImportResult != null && widget.qrImportResult!['photoId'] != null) {
-          final photoApi = PhotoApi();
-          result = await photoApi.updatePhotoDetails(
-            widget.qrImportResult!['photoId'] as int,
-            takenAt: _takenAt,
-            location: _locationCtrl.text.trim().isEmpty
-                ? null
-                : _locationCtrl.text.trim(),
-            brand: _brandCtrl.text.trim().isEmpty
-                ? null
-                : _brandCtrl.text.trim(),
-            tagList: _tags.isEmpty ? null : _tags,
-            friendIdList: _selectedFriendIds.isEmpty
-                ? null
-                : _selectedFriendIds.toList(),
-            memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
-          );
-        } else {
-          // 기존 QR 업로드 방식 (하위 호환성)
-          final takenAtIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!);
-          result = await api.uploadPhotoViaQr(
-            qrCode: widget.qrCode!,
-            imageFile: widget.imageFile, // QR 코드만 있으면 null 가능
-            takenAtIso: takenAtIso,
-            location: _locationCtrl.text.trim().isEmpty
-                ? '미지정'
-                : _locationCtrl.text.trim(),
-            brand: _brandCtrl.text.trim().isEmpty
-                ? '미지정'
-                : _brandCtrl.text.trim(),
-            tagList: _tags.isEmpty ? null : _tags,
-            friendIdList: _selectedFriendIds.isEmpty
-                ? null
-                : _selectedFriendIds.toList(),
-            memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
-          );
-        }
+        // QR 업로드: takenAt, location, brand 필수
+        final takenAtIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!);
+        result = await api.uploadPhotoViaQr(
+          qrCode: widget.qrCode!,
+          imageFile: widget.imageFile,
+          takenAtIso: takenAtIso,
+          location: _locationCtrl.text.trim().isEmpty
+              ? '미지정'
+              : _locationCtrl.text.trim(),
+          brand: _brandCtrl.text.trim().isEmpty
+              ? '미지정'
+              : _brandCtrl.text.trim(),
+          tagList: _tags.isEmpty ? null : _tags,
+          friendIdList: _selectedFriendIds.isEmpty
+              ? null
+              : _selectedFriendIds.toList(),
+          memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+        );
       } else {
-        // 갤러리 업로드: imageFile 필수
-        if (widget.imageFile == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('이미지 파일이 필요합니다.')),
-            );
-          }
-          setState(() => _loading = false);
-          return;
-        }
+        // 갤러리 업로드: 모든 필드 선택사항
         final takenAtIso = _takenAt != null
             ? DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!)
             : null;
         result = await api.uploadPhotoFromGallery(
-          imageFile: widget.imageFile!,
+          imageFile: widget.imageFile,
           takenAtIso: takenAtIso,
           location: _locationCtrl.text.trim().isEmpty
               ? null
@@ -370,26 +328,25 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 사진 미리보기
-              if (widget.imageFile != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: widget.imageFile!.existsSync()
-                      ? Image.file(
-                          widget.imageFile!,
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                          height: 300,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: double.infinity,
-                              height: 300,
-                              color: Colors.grey[200],
-                              child: const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.broken_image_outlined,
-                                    size: 64,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: widget.imageFile.existsSync()
+                    ? Image.file(
+                        widget.imageFile,
+                        fit: BoxFit.contain,
+                        width: double.infinity,
+                        height: 300,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: double.infinity,
+                            height: 300,
+                            color: Colors.grey[200],
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 64,
                                   color: Colors.grey,
                                 ),
                                 SizedBox(height: 8),
@@ -424,55 +381,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                           ],
                         ),
                       ),
-                )
-              else if (widget.qrImportResult != null && widget.qrImportResult!['imageUrl'] != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    widget.qrImportResult!['imageUrl'],
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    height: 300,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        width: double.infinity,
-                        height: 300,
-                        color: Colors.grey[200],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                                : null,
-                          ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: double.infinity,
-                        height: 300,
-                        color: Colors.grey[200],
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.broken_image_outlined,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              '이미지를 불러올 수 없습니다',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
+              ),
               const SizedBox(height: 24),
 
               // 촬영일시

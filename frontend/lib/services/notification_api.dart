@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:frontend/services/auth_service.dart';
 import 'package:frontend/models/notification_models.dart';
@@ -119,43 +120,64 @@ class NotificationApi {
     throw Exception('알림 목록 조회 실패 (${res.statusCode})');
   }
 
-  Future<void> markRead(int notificationId) async {
+  // PATCH /api/notifications/{notificationId}/read - 알림 단건 읽음 처리
+  // API 명세서: 응답에 notificationId, isRead 포함
+  Future<Map<String, dynamic>> markRead(int notificationId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return;
+      return {
+        'notificationId': notificationId,
+        'isRead': true,
+      };
     }
     final res = await http.patch(
       _uri('/api/notifications/$notificationId/read'),
       headers: _headers(),
     );
-    if (res.statusCode == 200) return;
+    if (res.statusCode == 200) {
+      // API 명세서: { notificationId, isRead }
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
     if (res.statusCode == 403) {
-      throw Exception('해당 알림에 대한 권한이 없습니다. (403)');
+      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      throw Exception(body['message'] ?? '해당 알림에 대한 권한이 없습니다.');
     }
     if (res.statusCode == 404) {
-      throw Exception('요청한 알림이 존재하지 않습니다. (404)');
+      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      final error = body['error'] as String?;
+      if (error == 'NOTIFICATION_NOT_FOUND') {
+        throw Exception(body['message'] ?? '요청한 알림이 존재하지 않습니다.');
+      }
+      throw Exception(body['message'] ?? '요청한 알림이 존재하지 않습니다.');
     }
     throw Exception('알림 읽음 처리 실패 (${res.statusCode})');
   }
 
-  Future<void> markAllRead() async {
+  // PATCH /api/notifications/read-all - 전체 알림 읽음 처리
+  // API 명세서: 응답에 updatedCount, unreadCount 포함
+  Future<Map<String, dynamic>> markAllRead() async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return;
+      return {
+        'updatedCount': 4,
+        'unreadCount': 0,
+      };
     }
     final res = await http.patch(
       _uri('/api/notifications/read-all'),
       headers: _headers(),
     );
     if (res.statusCode == 200) {
-      return;
+      // API 명세서: { updatedCount, unreadCount }
+      return jsonDecode(res.body) as Map<String, dynamic>;
     }
     if (res.statusCode == 401) {
-      throw Exception('로그인이 필요합니다. (401)');
+      final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      throw Exception(body['message'] ?? '로그인이 필요합니다.');
     }
     throw Exception('전체 읽음 처리 실패 (${res.statusCode})');
   }

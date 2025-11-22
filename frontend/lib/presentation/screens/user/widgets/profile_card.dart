@@ -59,27 +59,7 @@ class ProfileCard extends StatelessWidget {
                           ),
                         )
                       : profileImageUrl != null && profileImageUrl!.isNotEmpty
-                      ? ClipOval(
-                          child: Image.network(
-                            profileImageUrl!,
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return const Center(
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              );
-                            },
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(
-                                Icons.person,
-                                size: 50,
-                                color: AppColors.textSecondary,
-                              );
-                            },
-                          ),
-                        )
+                      ? _buildProfileImage(profileImageUrl!)
                       : const Icon(
                           Icons.person,
                           size: 50,
@@ -155,6 +135,46 @@ class ProfileCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProfileImage(String imageUrl) {
+    // 모킹 모드에서 로컬 파일 경로인 경우 처리
+    final isFile = imageUrl.isNotEmpty && !imageUrl.startsWith('http');
+    return ClipOval(
+      child: isFile
+          ? Image.file(
+              File(imageUrl),
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.person,
+                size: 50,
+                color: AppColors.textSecondary,
+              ),
+            )
+          : Image.network(
+              imageUrl,
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const SizedBox(
+                  width: 100,
+                  height: 100,
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.person,
+                size: 50,
+                color: AppColors.textSecondary,
+              ),
+            ),
     );
   }
 }

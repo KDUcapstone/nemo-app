@@ -271,20 +271,22 @@ class PhotoProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final api = PhotoApi();
-      final list = await api.getPhotos(
+      final response = await api.getPhotos(
         favorite: _favoriteOnly ? true : null,
         tag: _tagFilter,
-        brand: _brandFilter,
         sort: _sort,
         page: _page,
         size: _size,
       );
-      if (list.isEmpty) {
+      // API 명세서: { content: [], page: {} } 구조
+      final List content = (response['content'] as List?) ?? [];
+      final pageInfo = response['page'] as Map<String, dynamic>?;
+      if (content.isEmpty) {
         _hasMore = false;
       } else {
         final existingIds = _items.map((e) => e.photoId).toSet();
-        for (final m in list) {
-          final id = m['photoId'] as int;
+        for (final m in content) {
+          final id = (m as Map)['photoId'] as int;
           if (existingIds.contains(id)) continue;
           _items.add(
             PhotoItem(
@@ -299,10 +301,18 @@ class PhotoProvider extends ChangeNotifier {
             ),
           );
         }
-        if (list.length < _size) {
-          _hasMore = false;
+        // pageInfo에서 totalPages 확인하여 hasMore 결정
+        if (pageInfo != null) {
+          final currentPage = pageInfo['number'] as int? ?? _page;
+          final totalPages = pageInfo['totalPages'] as int? ?? 1;
+          _hasMore = currentPage < totalPages - 1;
+          _page = currentPage + 1;
         } else {
-          _page += 1;
+          if (content.length < _size) {
+            _hasMore = false;
+          } else {
+            _page += 1;
+          }
         }
       }
     } finally {

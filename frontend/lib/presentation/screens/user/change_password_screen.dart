@@ -106,13 +106,18 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       if (s.contains('UNAUTHORIZED')) {
         msg = '로그인이 필요합니다.';
       } else if (s.contains('INVALID_CURRENT_PASSWORD')) {
-        msg = '현재 비밀번호가 일치하지 않습니다.';
+        msg = '비밀번호가 틀렸습니다';
       } else if (s.contains('PASSWORD_CONFIRM_MISMATCH')) {
         msg = '새 비밀번호와 확인 값이 일치하지 않습니다.';
       } else if (s.contains('PASSWORD_POLICY_VIOLATION')) {
         msg = '비밀번호 정책을 만족하지 않습니다.';
       } else {
-        msg = '변경 실패: $e';
+        // Exception: 접두사 제거
+        if (s.startsWith('Exception: ')) {
+          msg = s.substring('Exception: '.length);
+        } else {
+          msg = '비밀번호 변경에 실패했습니다.';
+        }
       }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(msg)));

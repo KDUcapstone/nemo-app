@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'dart:math' as math;
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ import 'login_screen.dart';
 import 'widgets/email_verification_section.dart';
 import 'package:frontend/services/auth_service.dart';
 import 'signup_form_model.dart';
+import 'package:pdfx/pdfx.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -33,6 +35,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _emailVerified = false;
   bool _isSendingCode = false;
   bool _isVerifyingCode = false;
+  bool _termsAgreed = false; // 약관 동의 상태
 
   @override
   void dispose() {
@@ -120,9 +123,11 @@ class _SignupScreenState extends State<SignupScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('인증 메일 발송 실패: $e')));
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '인증 메일 발송에 실패했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) {
         setState(() {
@@ -159,9 +164,18 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('인증 실패: $e')));
+      final errorStr = e.toString();
+      String msg;
+      if (errorStr.contains('INVALID_CODE') || errorStr.contains('인증 코드')) {
+        msg = '인증 코드가 올바르지 않습니다.';
+      } else if (errorStr.contains('EXPIRED') || errorStr.contains('만료')) {
+        msg = '인증 코드가 만료되었습니다.';
+      } else {
+        msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '인증에 실패했습니다.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) {
         setState(() {
@@ -258,12 +272,74 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  // PDF 뷰어를 보여주는 메서드
+  void _showTermsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          width: double.infinity,
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: Colors.white,
+          ),
+          child: Column(
+            children: [
+              // 헤더
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AppColors.divider)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '개인정보 처리방침',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              // PDF 뷰어
+              Expanded(
+                child: PdfView(
+                  controller: PdfController(
+                    document: PdfDocument.openAsset(
+                      'assets/markers/privacy_policy.pdf',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleSignup() async {
     if (_formKey.currentState!.validate() == false) return;
     if (_emailVerified == false) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('이메일 인증을 먼저 완료해주세요')));
+      return;
+    }
+    // 약관 동의 체크
+    if (!_termsAgreed) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('개인정보 처리방침에 동의해주세요')));
       return;
     }
 
@@ -281,7 +357,8 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
       );
 
-      if (mounted) {
+      // API 명세서: 응답에 userId 필드 사용
+      if (mounted && result['userId'] != null) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -292,9 +369,22 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final errorMsg = e.toString();
+        String message;
+        if (errorMsg.contains('EMAIL_ALREADY_EXISTS') ||
+            errorMsg.contains('이미 존재')) {
+          message = '이미 사용 중인 이메일입니다.';
+        } else if (errorMsg.contains('NICKNAME_ALREADY_EXISTS') ||
+            errorMsg.contains('닉네임')) {
+          message = '이미 사용 중인 닉네임입니다.';
+        } else if (errorMsg.contains('EMAIL_NOT_VERIFIED')) {
+          message = '이메일 인증을 완료해주세요.';
+        } else {
+          message = '회원가입에 실패했습니다.';
+        }
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('회원가입 중 오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) {
@@ -408,13 +498,92 @@ class _SignupScreenState extends State<SignupScreen> {
                               ),
                               const SizedBox(height: 20),
 
-                              // 회원가입 버튼 (인증 미완료 시 안내)
+                              // 약관 동의 섹션
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.divider.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _termsAgreed
+                                        ? AppColors.primary
+                                        : AppColors.divider,
+                                    width: _termsAgreed ? 2 : 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Checkbox(
+                                          value: _termsAgreed,
+                                          onChanged: (value) {
+                                            setState(() {
+                                              _termsAgreed = value ?? false;
+                                            });
+                                          },
+                                          activeColor: AppColors.primary,
+                                        ),
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _termsAgreed = !_termsAgreed;
+                                              });
+                                            },
+                                            child: Text.rich(
+                                              TextSpan(
+                                                children: [
+                                                  TextSpan(
+                                                    text: '개인정보 처리방침',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: AppColors.primary,
+                                                      decoration: TextDecoration
+                                                          .underline,
+                                                      decorationColor:
+                                                          AppColors.primary,
+                                                    ),
+                                                    recognizer:
+                                                        TapGestureRecognizer()
+                                                          ..onTap = () {
+                                                            _showTermsDialog();
+                                                          },
+                                                  ),
+                                                  const TextSpan(
+                                                    text: '에 동의합니다',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      color:
+                                                          AppColors.textPrimary,
+                                                      decoration:
+                                                          TextDecoration.none,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+
+                              // 회원가입 버튼 (약관 동의 시에만 활성화)
                               _PrimaryButton(
                                 text: _isLoading ? '가입 중...' : '회원가입',
-                                onTap: _isLoading
+                                onTap: (_isLoading || !_termsAgreed)
                                     ? () {}
                                     : () => _handleSignup(),
                                 isLoading: _isLoading,
+                                isEnabled: _termsAgreed,
                               ),
                             ],
                           ),
@@ -607,37 +776,44 @@ class _PrimaryButton extends StatelessWidget {
   final String text;
   final VoidCallback onTap;
   final bool isLoading;
+  final bool isEnabled;
 
   const _PrimaryButton({
     required this.text,
     required this.onTap,
     required this.isLoading,
+    this.isEnabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: isEnabled ? onTap : null,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              AppColors.primary.withValues(alpha: 0.95),
-              AppColors.primary.withValues(alpha: 0.75),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: isEnabled
+              ? LinearGradient(
+                  colors: [
+                    AppColors.primary.withValues(alpha: 0.95),
+                    AppColors.primary.withValues(alpha: 0.75),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isEnabled ? null : Colors.grey[300],
           borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 10,
-              offset: Offset(0, 8),
-            ),
-          ],
+          boxShadow: isEnabled
+              ? const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    offset: Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: isLoading
             ? const SizedBox(
@@ -651,8 +827,8 @@ class _PrimaryButton extends StatelessWidget {
             : Text(
                 text,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: isEnabled ? Colors.white : Colors.grey[600],
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
                 ),

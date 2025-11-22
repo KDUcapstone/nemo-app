@@ -51,17 +51,5 @@ class ApiClient {
       body: body != null ? jsonEncode(body) : null,
     );
   }
-
-  static Future<http.Response> patch(
-    String path, {
-    Map<String, dynamic>? body,
-    bool includeAuth = true,
-  }) {
-    return http.patch(
-      uri(path),
-      headers: headers(includeAuth: includeAuth),
-      body: body != null ? jsonEncode(body) : null,
-    );
-  }
 }
 

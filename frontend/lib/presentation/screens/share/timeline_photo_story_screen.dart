@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frontend/presentation/screens/photo/photo_detail_screen.dart' show DetailSheetModal;
+import 'package:frontend/presentation/screens/photo/photo_detail_screen.dart'
+    show DetailSheetModal;
 
 /// 타임라인 사진 스토리 뷰어 화면
 /// 인스타그램 스토리처럼 한장씩 스와이프로 넘길 수 있음
@@ -14,7 +16,8 @@ class TimelinePhotoStoryScreen extends StatefulWidget {
   });
 
   @override
-  State<TimelinePhotoStoryScreen> createState() => _TimelinePhotoStoryScreenState();
+  State<TimelinePhotoStoryScreen> createState() =>
+      _TimelinePhotoStoryScreenState();
 }
 
 class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
@@ -62,20 +65,23 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
       _isPaused = false;
     });
     // 남은 시간 계산
-    final elapsed = (_progressController.value * _autoAdvanceDuration.inMilliseconds).round();
+    final elapsed =
+        (_progressController.value * _autoAdvanceDuration.inMilliseconds)
+            .round();
     final remaining = _autoAdvanceDuration.inMilliseconds - elapsed;
-    
+
     if (remaining > 0 && mounted) {
       // 남은 시간에 맞게 애니메이션 duration 조정
       final currentValue = _progressController.value;
       final remainingValue = 1.0 - currentValue;
       final adjustedDuration = Duration(
-        milliseconds: (remainingValue * _autoAdvanceDuration.inMilliseconds).round(),
+        milliseconds: (remainingValue * _autoAdvanceDuration.inMilliseconds)
+            .round(),
       );
-      
+
       // 애니메이션 컨트롤러를 남은 시간에 맞게 조정
       _progressController.duration = adjustedDuration;
-      
+
       // 남은 시간만큼 타이머 시작
       _autoAdvanceTimer = Timer(Duration(milliseconds: remaining), () {
         if (!_isPaused && mounted) {
@@ -88,7 +94,8 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
             );
           } else {
             // 마지막 사진이면 진행 바 완료 후 화면 닫기
-            _progressController.duration = _autoAdvanceDuration; // 원래 duration으로 복원
+            _progressController.duration =
+                _autoAdvanceDuration; // 원래 duration으로 복원
             _progressController.forward().then((_) {
               if (mounted) {
                 Navigator.pop(context);
@@ -117,14 +124,14 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
 
   void _startAutoAdvance() {
     if (widget.photos.length <= 1) return;
-    
+
     _autoAdvanceTimer?.cancel();
     if (_isPaused) return; // 일시정지 중이면 시작하지 않음
-    
+
     // 진행 바 애니메이션 시작
     _progressController.reset();
     _progressController.forward();
-    
+
     _autoAdvanceTimer = Timer(_autoAdvanceDuration, () {
       if (!_isPaused && mounted) {
         if (_currentIndex < widget.photos.length - 1) {
@@ -174,10 +181,7 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
       return Scaffold(
         backgroundColor: Colors.black,
         body: const Center(
-          child: Text(
-            '사진이 없습니다.',
-            style: TextStyle(color: Colors.white),
-          ),
+          child: Text('사진이 없습니다.', style: TextStyle(color: Colors.white)),
         ),
       );
     }
@@ -194,7 +198,9 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
             itemBuilder: (context, index) {
               final photo = widget.photos[index];
               final imageUrl = photo['imageUrl'] as String;
-              
+              final isFile =
+                  imageUrl.isNotEmpty && !imageUrl.startsWith('http');
+
               return GestureDetector(
                 onLongPressStart: (_) {
                   // 길게 누르기 시작: 자동 넘기기 일시정지
@@ -228,29 +234,48 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
                       maxScale: 4.0,
                       panEnabled: false, // 좌우 스와이프를 PageView가 처리하도록 비활성화
                       child: Center(
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.contain,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return const Center(
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        child: isFile
+                            ? Image.file(
+                                File(imageUrl),
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.grey[900],
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.image_not_supported,
+                                      color: Colors.white54,
+                                      size: 64,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Image.network(
+                                imageUrl,
+                                fit: BoxFit.contain,
+                                loadingBuilder:
+                                    (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return const Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.grey[900],
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.image_not_supported,
+                                      color: Colors.white54,
+                                      size: 64,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            );
-                          },
-                          errorBuilder: (_, __, ___) => Container(
-                            color: Colors.grey[900],
-                            child: const Center(
-                              child: Icon(
-                                Icons.image_not_supported,
-                                color: Colors.white54,
-                                size: 64,
-                              ),
-                            ),
-                          ),
-                        ),
                       ),
                     ),
                     // 왼쪽 절반 (이전 사진으로)
@@ -272,9 +297,7 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
                             );
                           }
                         },
-                        child: Container(
-                          color: Colors.transparent,
-                        ),
+                        child: Container(color: Colors.transparent),
                       ),
                     ),
                     // 오른쪽 절반 (다음 사진으로 또는 닫기)
@@ -301,9 +324,7 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
                             Navigator.pop(context);
                           }
                         },
-                        child: Container(
-                          color: Colors.transparent,
-                        ),
+                        child: Container(color: Colors.transparent),
                       ),
                     ),
                   ],
@@ -353,7 +374,9 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
                                       child: Container(
                                         decoration: BoxDecoration(
                                           color: Colors.white,
-                                          borderRadius: BorderRadius.circular(2),
+                                          borderRadius: BorderRadius.circular(
+                                            2,
+                                          ),
                                         ),
                                       ),
                                     );
@@ -401,14 +424,12 @@ class _TimelinePhotoStoryScreenState extends State<TimelinePhotoStoryScreen>
 /// 단일 사진 전체화면 뷰어
 class TimelinePhotoFullscreenScreen extends StatelessWidget {
   final Map<String, dynamic> photo;
-  const TimelinePhotoFullscreenScreen({
-    super.key,
-    required this.photo,
-  });
+  const TimelinePhotoFullscreenScreen({super.key, required this.photo});
 
   @override
   Widget build(BuildContext context) {
     final imageUrl = photo['imageUrl'] as String;
+    final isFile = imageUrl.isNotEmpty && !imageUrl.startsWith('http');
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -424,7 +445,8 @@ class TimelinePhotoFullscreenScreen extends StatelessWidget {
                     isScrollControlled: true,
                     isDismissible: true,
                     backgroundColor: Colors.transparent,
-                    builder: (_) => DetailSheetModal(photoId: photo['photoId'] as int),
+                    builder: (_) =>
+                        DetailSheetModal(photoId: photo['photoId'] as int),
                   );
                 }
                 // 아래로 스와이프하면 화면 닫기
@@ -440,29 +462,46 @@ class TimelinePhotoFullscreenScreen extends StatelessWidget {
               minScale: 0.8,
               maxScale: 4.0,
               child: Center(
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return const Center(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                child: isFile
+                    ? Image.file(
+                        File(imageUrl),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey[900],
+                          child: const Center(
+                            child: Icon(
+                              Icons.image_not_supported,
+                              color: Colors.white54,
+                              size: 64,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey[900],
+                          child: const Center(
+                            child: Icon(
+                              Icons.image_not_supported,
+                              color: Colors.white54,
+                              size: 64,
+                            ),
+                          ),
+                        ),
                       ),
-                    );
-                  },
-                  errorBuilder: (_, __, ___) => Container(
-                    color: Colors.grey[900],
-                    child: const Center(
-                      child: Icon(
-                        Icons.image_not_supported,
-                        color: Colors.white54,
-                        size: 64,
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
           ),
@@ -488,4 +527,3 @@ class TimelinePhotoFullscreenScreen extends StatelessWidget {
     );
   }
 }
-

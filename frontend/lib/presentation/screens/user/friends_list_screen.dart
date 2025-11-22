@@ -18,6 +18,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
   List<Map<String, dynamic>> _results = const [];
   List<Map<String, dynamic>> _requests = const [];
   final Set<int> _dismissedRequestIds = {};
+  final Set<int> _pendingRequestUserIds = {}; // 친구 요청을 보낸 사용자 ID 목록
 
   @override
   void initState() {
@@ -41,8 +42,12 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       setState(() => _friends = list);
     } catch (e) {
       if (!mounted) return;
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '친구 목록을 불러오지 못했습니다.';
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('친구 목록을 불러오지 못했습니다: $e')));
+          .showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -55,8 +60,12 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       setState(() => _results = list);
     } catch (e) {
       if (!mounted) return;
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '검색에 실패했습니다.';
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('검색 실패: $e')));
+          .showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -115,16 +124,47 @@ class _FriendsListScreenState extends State<FriendsListScreen>
     try {
       await FriendApi.addFriend(targetId);
       if (!mounted) return;
+      // 요청 보낸 사용자 ID 추가
+      setState(() {
+        _pendingRequestUserIds.add(targetId);
+        // 검색 결과에도 반영
+        _results = _results.map((e) {
+          if ((e['userId'] as int) == targetId) {
+            return {...e, 'isRequestPending': true};
+          }
+          return e;
+        }).toList();
+      });
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('친구 요청을 보냈습니다: $nickname')));
     } catch (e) {
       if (!mounted) return;
       final s = e.toString();
-      final msg = s.contains('ALREADY_FRIEND')
-          ? '이미 친구입니다.'
-          : s.contains('USER_NOT_FOUND')
-              ? '사용자를 찾을 수 없습니다.'
-              : '요청 실패';
+      String msg;
+      if (s.contains('ALREADY_FRIEND')) {
+        msg = '이미 친구입니다.';
+      } else if (s.contains('REQUEST_ALREADY_EXISTS')) {
+        msg = '이미 친구 요청을 보냈습니다.';
+        // 이미 요청을 보낸 경우 상태 업데이트
+        setState(() {
+          _pendingRequestUserIds.add(targetId);
+          _results = _results.map((e) {
+            if ((e['userId'] as int) == targetId) {
+              return {...e, 'isRequestPending': true};
+            }
+            return e;
+          }).toList();
+        });
+      } else if (s.contains('USER_NOT_FOUND')) {
+        msg = '사용자를 찾을 수 없습니다.';
+      } else {
+        // Exception: 접두사 제거
+        if (s.startsWith('Exception: ')) {
+          msg = s.substring('Exception: '.length);
+        } else {
+          msg = '친구 요청에 실패했습니다.';
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
@@ -169,11 +209,19 @@ class _FriendsListScreenState extends State<FriendsListScreen>
     } catch (e) {
       if (!mounted) return;
       final s = e.toString();
-      final msg = s.contains('UNAUTHORIZED')
-          ? '로그인이 필요합니다.'
-          : s.contains('USER_NOT_FOUND')
-              ? '사용자를 찾을 수 없습니다.'
-              : '수락 실패';
+      String msg;
+      if (s.contains('UNAUTHORIZED')) {
+        msg = '로그인이 필요합니다.';
+      } else if (s.contains('USER_NOT_FOUND')) {
+        msg = '사용자를 찾을 수 없습니다.';
+      } else {
+        // Exception: 접두사 제거
+        if (s.startsWith('Exception: ')) {
+          msg = s.substring('Exception: '.length);
+        } else {
+          msg = '요청 수락에 실패했습니다.';
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
@@ -294,6 +342,8 @@ class _FriendsListScreenState extends State<FriendsListScreen>
                         final email = (u['email'] ?? '') as String?;
                         final avatar = (u['profileImageUrl'] ?? '') as String?;
                         final isFriend = (u['isFriend'] as bool?) == true;
+                        final isRequestPending = (u['isRequestPending'] as bool?) == true || 
+                            _pendingRequestUserIds.contains(id);
                         return ListTile(
                           leading: CircleAvatar(
                             backgroundImage: (avatar != null && avatar.isNotEmpty)
@@ -316,6 +366,11 @@ class _FriendsListScreenState extends State<FriendsListScreen>
                                   icon: const Icon(Icons.delete_outline),
                                   onPressed: () => _delete(id, nick),
                                   tooltip: '친구 삭제',
+                                ),
+                              ] else if (isRequestPending) ...[
+                                TextButton(
+                                  onPressed: null,
+                                  child: const Text('요청중', style: TextStyle(color: Colors.grey)),
                                 ),
                               ] else ...[
                                 TextButton(
@@ -379,11 +434,19 @@ class _FriendsListScreenState extends State<FriendsListScreen>
                           } catch (e) {
                             if (!mounted) return;
                             final s = e.toString();
-                            final msg = s.contains('REQUEST_NOT_FOUND')
-                                ? '요청을 찾을 수 없습니다.'
-                                : s.contains('FORBIDDEN')
-                                    ? '권한이 없습니다.'
-                                    : '거절 실패';
+                            String msg;
+                            if (s.contains('REQUEST_NOT_FOUND')) {
+                              msg = '요청을 찾을 수 없습니다.';
+                            } else if (s.contains('FORBIDDEN')) {
+                              msg = '권한이 없습니다.';
+                            } else {
+                              // Exception: 접두사 제거
+                              if (s.startsWith('Exception: ')) {
+                                msg = s.substring('Exception: '.length);
+                              } else {
+                                msg = '요청 거절에 실패했습니다.';
+                              }
+                            }
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
                           }
                         },

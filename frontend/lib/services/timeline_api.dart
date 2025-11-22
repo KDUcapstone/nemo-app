@@ -112,7 +112,9 @@ class TimelineApi {
       throw Exception('응답 형식 오류: 배열이 아님');
     }
     if (r.statusCode == 401) {
-      throw Exception('인증이 필요합니다. (401)');
+      // API 명세서: error: "UNAUTHORIZED", message: "로그인이 필요합니다."
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '로그인이 필요합니다.');
     }
     throw Exception('타임라인 조회 실패 (${r.statusCode})');
   }
@@ -195,11 +197,14 @@ class TimelineApi {
       throw Exception('응답 형식 오류: 배열이 아님');
     }
     if (r.statusCode == 400) {
+      // API 명세서: error: "INVALID_QUERY", message: "year와 month 파라미터는 필수입니다."
       final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
       throw Exception(body['message'] ?? 'year와 month 파라미터는 필수입니다.');
     }
     if (r.statusCode == 401) {
-      throw Exception('인증이 필요합니다. (401)');
+      // API 명세서: error: "UNAUTHORIZED", message: "로그인이 필요합니다."
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '로그인이 필요합니다.');
     }
     throw Exception('타임랩스 조회 실패 (${r.statusCode})');
   }

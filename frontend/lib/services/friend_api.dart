@@ -14,7 +14,9 @@ class FriendApi {
     };
   }
 
-  // GET /api/friends?search=
+  // GET /api/friends
+  // ⚠️ 레거시: search 파라미터 지원 (명세서에는 없음)
+  // 명세서 기준으로는 GET /api/friends/search?keyword= (search 메서드)를 사용해야 함
   static Future<List<Map<String, dynamic>>> list({String? search}) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -156,7 +158,9 @@ class FriendApi {
     throw Exception('Failed to add friend (${res.statusCode})');
   }
 
-  // ✅ PUT /api/friends/accept?requesterId= (백엔드 @RequestParam Long requesterId 에 맞춤)
+  // ⚠️ 레거시 메서드: 명세서에는 없지만 일부 코드에서 사용 중
+  // 명세서 기준으로는 POST /api/friends/{requestId}/accept (acceptRequest)를 사용해야 함
+  // PUT /api/friends/accept?requesterId= (백엔드 @RequestParam Long requesterId 에 맞춤)
   static Future<Map<String, dynamic>> acceptFriend(int requesterUserId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
@@ -232,16 +236,18 @@ class FriendApi {
     throw Exception('Failed to fetch requests (${res.statusCode})');
   }
 
-  // 명세: POST /api/friends/{requestId}/accept
+  // POST /api/friends/{requestId}/accept
+  // API 명세서: 응답에 requestId, friendUserId, nickname, message 포함
   static Future<Map<String, dynamic>> acceptRequest(int requestId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
       return {
-        'message': '친구 요청을 수락했습니다.',
         'requestId': requestId,
-        'status': 'ACCEPTED',
+        'friendUserId': 4,
+        'nickname': '포토러버',
+        'message': '친구 요청이 성공적으로 수락되었습니다.',
       };
     }
     final res = await http.post(
@@ -254,21 +260,23 @@ class FriendApi {
     if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
     if (res.statusCode == 404) throw Exception('REQUEST_NOT_FOUND');
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
-    if (res.statusCode == 400) throw Exception('ALREADY_PROCESSED');
+    if (res.statusCode == 400) {
+      final body = jsonDecode(res.body);
+      final error = body is Map ? (body['error'] as String?) : null;
+      if (error == 'ALREADY_PROCESSED') throw Exception('ALREADY_PROCESSED');
+      throw Exception('BAD_REQUEST');
+    }
     throw Exception('Failed to accept request (${res.statusCode})');
   }
 
-  // 명세: POST /api/friends/{requestId}/reject
+  // POST /api/friends/{requestId}/reject
+  // API 명세서: 응답에 requestId, message 포함
   static Future<Map<String, dynamic>> rejectRequest(int requestId) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
-      return {
-        'message': '친구 요청이 거절되었습니다.',
-        'requestId': requestId,
-        'status': 'REJECTED',
-      };
+      return {'requestId': requestId, 'message': '친구 요청이 거절되었습니다.'};
     }
     final res = await http.post(
       _uri('/api/friends/$requestId/reject'),
