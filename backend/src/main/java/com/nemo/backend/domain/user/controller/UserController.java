@@ -163,7 +163,7 @@ public class UserController {
 
         authService.deleteAccount(userId, body.getPassword());
 
-        return ResponseEntity.ok(Map.of("message", "회원탈퇴 완료"));
+        return ResponseEntity.ok(Map.of("message", "회원탈퇴가 정상적으로 처리되었습니다."));
     }
 
     // ========================================================

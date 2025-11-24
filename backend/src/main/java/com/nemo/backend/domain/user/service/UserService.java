@@ -116,4 +116,33 @@ public class UserService {
             throw new ApiException(ErrorCode.STORAGE_FAILED, "프로필 이미지 업로드 실패: " + e.getMessage(), e);
         }
     }
+
+    // =========================
+    // 회원가입 전용 프로필 이미지 업로드
+    //  - 아직 userId가 없으므로 User 엔티티는 수정하지 않음
+    //  - S3에만 업로드하고 URL만 반환
+    // =========================
+    @Transactional
+    public String uploadProfileImageForSignup(MultipartFile image) {
+
+        if (image == null || image.isEmpty()) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "프로필 이미지 파일은 필수입니다.");
+        }
+
+        try {
+            // S3PhotoStorage.store() 호출 → key 생성됨
+            String key = photoStorage.store(image);
+
+            // publicBaseUrl/files/{key} 형식의 접근 경로 생성
+            return publicBaseUrl + "/files/" + key;
+
+        } catch (Exception e) {
+            throw new ApiException(
+                    ErrorCode.STORAGE_FAILED,
+                    "회원가입 프로필 이미지 업로드 실패: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
 }
