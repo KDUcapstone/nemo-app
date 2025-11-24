@@ -10,7 +10,6 @@ import 'package:image_picker/image_picker.dart';
 import 'login_screen.dart';
 import 'widgets/email_verification_section.dart';
 import 'package:frontend/services/auth_service.dart';
-import 'signup_form_model.dart';
 import 'package:pdfx/pdfx.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -348,13 +347,12 @@ class _SignupScreenState extends State<SignupScreen> {
     });
 
     try {
-      // 명세에 맞춘 회원가입 API 호출
+      // multipart/form-data로 회원가입 API 호출 (이미지 파일 포함)
       final result = await AuthService().signup(
-        SignupFormModel(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          nickname: _nicknameController.text.trim(),
-        ),
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        nickname: _nicknameController.text.trim(),
+        imageFile: _selectedImage, // 선택된 프로필 이미지 전달
       );
 
       // API 명세서: 응답에 userId 필드 사용
@@ -380,7 +378,9 @@ class _SignupScreenState extends State<SignupScreen> {
         } else if (errorMsg.contains('EMAIL_NOT_VERIFIED')) {
           message = '이메일 인증을 완료해주세요.';
         } else {
-          message = '회원가입에 실패했습니다.';
+          message = errorMsg.startsWith('Exception: ')
+              ? errorMsg.substring('Exception: '.length)
+              : '회원가입에 실패했습니다.';
         }
         ScaffoldMessenger.of(
           context,

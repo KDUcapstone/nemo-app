@@ -45,7 +45,12 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       // API 명세서: AuthService.signup()은 Map<String, dynamic> 반환 (userId, email, nickname, profileImageUrl, createdAt 포함)
-      final result = await AuthService().signup(signupForm);
+      final result = await AuthService().signup(
+        email: signupForm.email,
+        password: signupForm.password,
+        nickname: signupForm.nickname,
+        imageFile: null, // TODO: SignupFormModel에 File? 필드 추가 필요
+      );
       isLoading = false;
       notifyListeners();
       // userId가 있으면 성공

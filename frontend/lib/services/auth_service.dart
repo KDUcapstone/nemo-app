@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../app/constants.dart';
-import '../presentation/screens/login/signup_form_model.dart';
 import 'api_client.dart';
 
 class AuthService {
@@ -58,7 +57,11 @@ class AuthService {
       setAccessToken(mockToken);
       setRefreshToken(mockRefreshToken);
       // API 명세서와 일치하도록 user 객체와 최상위 필드 모두 포함
-      final mockUser = {'userId': 1, 'nickname': '네컷러버', 'profileImageUrl': null};
+      final mockUser = {
+        'userId': 1,
+        'nickname': '네컷러버',
+        'profileImageUrl': null,
+      };
       return {
         'accessToken': mockToken,
         'refreshToken': mockRefreshToken,
@@ -112,55 +115,63 @@ class AuthService {
     }
   }
 
-  /// 회원가입 요청
-  /// 백엔드 명세: SignUpResponse { id, email, nickname, profileImageUrl }
-  Future<Map<String, dynamic>> signup(SignupFormModel form) async {
+  /// 회원가입 요청 (multipart/form-data 방식 - 이미지 파일 포함)
+  /// 백엔드 명세: POST /api/users/signup (multipart/form-data)
+  /// 응답: SignUpResponse { userId, email, nickname, profileImageUrl, createdAt }
+  Future<Map<String, dynamic>> signup({
+    required String email,
+    required String password,
+    required String nickname,
+    File? imageFile,
+  }) async {
     if (AppConstants.useMockApi) {
       await Future.delayed(
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
       // 간단한 중복 이메일/유효성 모의 검증
-      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(form.email)) {
+      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
         throw Exception('올바른 이메일 형식을 입력해주세요');
       }
-      if (form.password.length < 8 ||
-          !RegExp(r'[A-Za-z]').hasMatch(form.password) ||
-          !RegExp(r'\d').hasMatch(form.password) ||
-          !RegExp(r'[^A-Za-z0-9]').hasMatch(form.password)) {
+      if (password.length < 8 ||
+          !RegExp(r'[A-Za-z]').hasMatch(password) ||
+          !RegExp(r'\d').hasMatch(password) ||
+          !RegExp(r'[^A-Za-z0-9]').hasMatch(password)) {
         throw Exception('비밀번호는 영문, 숫자, 특수문자를 포함해 8자 이상이어야 합니다.');
       }
-      if (form.nickname.trim().isEmpty) {
+      if (nickname.trim().isEmpty) {
         throw Exception('닉네임을 입력해주세요');
       }
       // 중복 이메일 더미 체크
-      if (form.email.toLowerCase() == 'exists@example.com') {
+      if (email.toLowerCase() == 'exists@example.com') {
         throw Exception('이미 존재하는 이메일입니다.');
       }
       // API 명세서: { userId, email, nickname, profileImageUrl, createdAt }
       return {
         'userId': 1,
-        'email': form.email,
-        'nickname': form.nickname,
-        'profileImageUrl': form.profileImageUrl ?? '',
+        'email': email,
+        'nickname': nickname,
+        'profileImageUrl': imageFile != null ? imageFile.path : '',
         'createdAt': DateTime.now().toIso8601String(),
       };
     }
     try {
-      // API 명세서: profileImageUrl은 선택사항
-      final body = <String, dynamic>{
-        'email': form.email,
-        'password': form.password,
-        'nickname': form.nickname,
-      };
-      if (form.profileImageUrl != null && form.profileImageUrl!.isNotEmpty) {
-        body['profileImageUrl'] = form.profileImageUrl;
+      final uri = ApiClient.uri('/api/users/signup');
+      final request = http.MultipartRequest('POST', uri);
+
+      // 필수 필드 추가
+      request.fields['email'] = email;
+      request.fields['password'] = password;
+      request.fields['nickname'] = nickname;
+
+      // 이미지 파일이 있으면 추가
+      if (imageFile != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imageFile.path),
+        );
       }
 
-      final response = await ApiClient.post(
-        '/api/users/signup',
-        includeAuth: false,
-        body: body,
-      );
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 201) {
         // API 명세서: { userId, email, nickname, profileImageUrl, createdAt }
@@ -174,14 +185,32 @@ class AuthService {
               data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
         };
       } else if (response.statusCode == 409) {
-        throw Exception('이미 존재하는 이메일입니다.');
+        final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        final error = data['error'] as String?;
+        final message = data['message'] as String?;
+        if (error == 'EMAIL_ALREADY_EXISTS') {
+          throw Exception(message ?? '이미 존재하는 이메일입니다.');
+        } else if (error == 'NICKNAME_ALREADY_EXISTS') {
+          throw Exception(message ?? '이미 사용 중인 닉네임입니다.');
+        }
+        throw Exception(message ?? '이미 존재하는 이메일입니다.');
       } else if (response.statusCode == 400) {
-        final data = jsonDecode(response.body);
-        throw Exception(data['message'] ?? '잘못된 요청입니다.');
+        final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        final error = data['error'] as String?;
+        final message = data['message'] as String?;
+        if (error == 'INVALID_REQUEST') {
+          throw Exception(message ?? '잘못된 요청입니다.');
+        } else if (error == 'EMAIL_NOT_VERIFIED') {
+          throw Exception(message ?? '이메일 인증을 완료해주세요.');
+        }
+        throw Exception(message ?? '잘못된 요청입니다.');
       } else {
         throw Exception('회원가입 실패 (${response.statusCode})');
       }
     } catch (e) {
+      if (e.toString().contains('Exception: ')) {
+        rethrow;
+      }
       throw Exception('네트워크 오류: $e');
     }
   }
@@ -278,9 +307,7 @@ class AuthService {
       } else if (response.statusCode == 401) {
         // API 명세서: error: "UNAUTHORIZED", message: "인증이 필요합니다. 토큰이 유효하지 않거나 만료되었습니다."
         final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
-        throw Exception(
-          body['message'] ?? '인증이 필요합니다. 토큰이 유효하지 않거나 만료되었습니다.',
-        );
+        throw Exception(body['message'] ?? '인증이 필요합니다. 토큰이 유효하지 않거나 만료되었습니다.');
       } else {
         throw Exception('사용자 정보 조회 실패 (${response.statusCode})');
       }
@@ -423,10 +450,7 @@ class AuthService {
         throw Exception('수정할 항목이 없습니다.');
       }
 
-      final response = await ApiClient.put(
-        '/api/users/me',
-        body: body,
-      );
+      final response = await ApiClient.put('/api/users/me', body: body);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -608,8 +632,7 @@ class AuthService {
         final error = body['error'] as String?;
         if (error == 'INVALID_REFRESH_TOKEN' || error == 'INVALID_TOKEN') {
           clearAccessToken(); // 토큰 제거
-          throw Exception(
-              body['message'] ?? '리프레시 토큰이 유효하지 않거나 만료되었습니다.');
+          throw Exception(body['message'] ?? '리프레시 토큰이 유효하지 않거나 만료되었습니다.');
         }
         clearAccessToken();
         throw Exception('리프레시 토큰이 유효하지 않거나 만료되었습니다.');
@@ -994,23 +1017,20 @@ class AuthService {
       if (response.statusCode == 403) {
         // API 명세서: error: "INVALID_CURRENT_PASSWORD", message: "현재 비밀번호가 일치하지 않습니다."
         final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
-        throw Exception(
-          body['message'] ?? '현재 비밀번호가 일치하지 않습니다.',
-        );
+        throw Exception(body['message'] ?? '현재 비밀번호가 일치하지 않습니다.');
       }
       if (response.statusCode == 400) {
         // API 명세서: error: "PASSWORD_CONFIRM_MISMATCH" 또는 "PASSWORD_POLICY_VIOLATION"
-        final body = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+        final body = response.body.isNotEmpty
+            ? jsonDecode(response.body)
+            : null;
         final err = body is Map ? (body['error'] as String?) : null;
         if (err == 'PASSWORD_CONFIRM_MISMATCH') {
-          throw Exception(
-            body?['message'] ?? '새 비밀번호와 확인 값이 일치하지 않습니다.',
-          );
+          throw Exception(body?['message'] ?? '새 비밀번호와 확인 값이 일치하지 않습니다.');
         }
         if (err == 'PASSWORD_POLICY_VIOLATION') {
           throw Exception(
-            body?['message'] ??
-                '비밀번호는 8~64자, 영문/숫자/특수문자 중 2종 이상을 포함해야 합니다.',
+            body?['message'] ?? '비밀번호는 8~64자, 영문/숫자/특수문자 중 2종 이상을 포함해야 합니다.',
           );
         }
         throw Exception(body?['message'] ?? '잘못된 요청입니다.');
