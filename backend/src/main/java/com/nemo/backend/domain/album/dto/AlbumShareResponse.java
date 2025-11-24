@@ -1,26 +1,35 @@
+// backend/src/main/java/com/nemo/backend/domain/album/dto/AlbumShareResponse.java
 package com.nemo.backend.domain.album.dto;
 
-import com.nemo.backend.domain.album.entity.AlbumShare;
 import lombok.Builder;
+import lombok.Getter;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * 앨범 공유 응답
+ * 명세: albumId, sharedTo[], message
+ */
+@Getter
 @Builder
-public record AlbumShareResponse(
-        Long albumId,
-        List<SharedUser> sharedTo,
-        String message
-) {
+public class AlbumShareResponse {
 
+    private Long albumId;
+    private List<SharedTarget> sharedTo;
+    private String message;
+
+    @Getter
     @Builder
-    public record SharedUser(
-            Long shareId,
-            Long userId,
-            String nickname,
-            String email,
-            AlbumShare.Role role,
-            AlbumShare.Status status,
-            LocalDateTime invitedAt
-    ) {}
+    public static class SharedTarget {
+        private Long userId;
+        private String nickname;
+    }
+
+    @Getter
+    @Builder
+    public static class SharedUser {
+        private Long userId;
+        private String nickname;
+        private String role; // OWNER / CO_OWNER / EDITOR / VIEWER
+    }
 }
