@@ -228,6 +228,22 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
       return;
     }
 
+    // QR 업로드인 경우 location, brand 필수
+    if (widget.qrCode != null) {
+      if (_locationCtrl.text.trim().isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('촬영 위치를 입력해주세요.')));
+        return;
+      }
+      if (_brandCtrl.text.trim().isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('포토부스 브랜드를 입력해주세요.')));
+        return;
+      }
+    }
+
     setState(() => _loading = true);
     try {
       final api = PhotoUploadApi();
@@ -240,12 +256,8 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
           qrCode: widget.qrCode!,
           imageFile: widget.imageFile,
           takenAtIso: takenAtIso,
-          location: _locationCtrl.text.trim().isEmpty
-              ? '미지정'
-              : _locationCtrl.text.trim(),
-          brand: _brandCtrl.text.trim().isEmpty
-              ? '미지정'
-              : _brandCtrl.text.trim(),
+          location: _locationCtrl.text.trim(),
+          brand: _brandCtrl.text.trim(),
           tagList: _tags.isEmpty ? null : _tags,
           friendIdList: _selectedFriendIds.isEmpty
               ? null
@@ -409,22 +421,38 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
               // 위치
               TextFormField(
                 controller: _locationCtrl,
-                decoration: const InputDecoration(
-                  labelText: '위치',
+                decoration: InputDecoration(
+                  labelText: widget.qrCode != null ? '위치 *' : '위치',
                   hintText: '예: 홍대 포토부스',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
+                validator: widget.qrCode != null
+                    ? (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return '촬영 위치를 입력해주세요.';
+                        }
+                        return null;
+                      }
+                    : null,
               ),
               const SizedBox(height: 16),
 
               // 브랜드
               TextFormField(
                 controller: _brandCtrl,
-                decoration: const InputDecoration(
-                  labelText: '브랜드',
+                decoration: InputDecoration(
+                  labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
                   hintText: '예: 인생네컷',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
+                validator: widget.qrCode != null
+                    ? (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return '포토부스 브랜드를 입력해주세요.';
+                        }
+                        return null;
+                      }
+                    : null,
               ),
               const SizedBox(height: 16),
 

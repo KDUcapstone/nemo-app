@@ -40,7 +40,7 @@ class PhotoUploadApi {
     final uri = _endpoint('/api/photos');
     final request = http.MultipartRequest('POST', uri);
     request.headers['Authorization'] =
-    'Bearer ${AuthService.accessToken ?? ''}';
+        'Bearer ${AuthService.accessToken ?? ''}';
 
     request.fields['takenAt'] = takenAtIso;
     if (location != null) request.fields['location'] = location;
@@ -89,7 +89,8 @@ class PhotoUploadApi {
       if (qrCode.contains('DUPLICATE')) throw Exception('DUPLICATE_QR');
       return {
         'photoId': DateTime.now().millisecondsSinceEpoch,
-        'imageUrl': 'https://picsum.photos/seed/qr${DateTime.now().millisecondsSinceEpoch}/800/1066',
+        'imageUrl':
+            'https://picsum.photos/seed/qr${DateTime.now().millisecondsSinceEpoch}/800/1066',
         'takenAt': DateTime.now().toIso8601String(),
         'location': '홍대 포토그레이',
         'brand': '인생네컷',
@@ -99,12 +100,13 @@ class PhotoUploadApi {
 
     final uri = _endpoint('/api/photos/qr-import');
     final request = http.Request('POST', uri);
-    request.headers['Authorization'] = 'Bearer ${AuthService.accessToken ?? ''}';
+    request.headers['Authorization'] =
+        'Bearer ${AuthService.accessToken ?? ''}';
     request.headers['Content-Type'] = 'application/json';
     request.body = jsonEncode({'qrCode': qrCode});
 
     final response = await http.Response.fromStream(await request.send());
-    
+
     if (response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
@@ -136,7 +138,9 @@ class PhotoUploadApi {
       final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
       final error = body['error'] as String?;
       if (error == 'QR_PROVIDER_ERROR') {
-        throw Exception(body['message'] ?? 'QR 제공 서버에서 사진을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+        throw Exception(
+          body['message'] ?? 'QR 제공 서버에서 사진을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
+        );
       }
       throw Exception(body['message'] ?? 'QR 제공 서버 오류');
     }
@@ -175,26 +179,36 @@ class PhotoUploadApi {
         'location': location,
         'brand': brand,
         'tagList': tagList ?? [],
-        'friendList': friendIdList?.map((id) => {'userId': id, 'nickname': '친구$id'}).toList() ?? [],
+        'friendList':
+            friendIdList
+                ?.map((id) => {'userId': id, 'nickname': '친구$id'})
+                .toList() ??
+            [],
         'memo': memo ?? '',
       };
     }
 
     final uri = _endpoint('/api/photos');
     final request = http.MultipartRequest('POST', uri);
-    request.headers['Authorization'] = 'Bearer ${AuthService.accessToken ?? ''}';
+
+    // Access Token 확인
+    final accessToken = AuthService.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('로그인이 필요합니다.');
+    }
+    request.headers['Authorization'] = 'Bearer $accessToken';
 
     // API 명세서: qrCode, image, takenAt, location, brand는 필수
     request.fields['qrCode'] = qrCode;
     request.fields['takenAt'] = takenAtIso;
     request.fields['location'] = location;
     request.fields['brand'] = brand;
-    
+
     // 이미지 파일 필수
     request.files.add(
       await http.MultipartFile.fromPath('image', imageFile.path),
     );
-    
+
     // 선택 필드
     if (tagList != null && tagList.isNotEmpty) {
       request.fields['tagList'] = jsonEncode(tagList);
@@ -215,6 +229,14 @@ class PhotoUploadApi {
 
     if (response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    if (response.statusCode == 401) {
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      final error = body['error'] as String?;
+      if (error == 'UNAUTHORIZED') {
+        throw Exception(body['message'] ?? '로그인이 필요합니다.');
+      }
+      throw Exception(body['message'] ?? '인증이 필요합니다.');
     }
     if (response.statusCode == 400) {
       final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
@@ -297,12 +319,12 @@ class PhotoUploadApi {
     final request = http.MultipartRequest('POST', uri);
     request.headers['Authorization'] =
         'Bearer ${AuthService.accessToken ?? ''}';
-    
+
     // 이미지는 필수
     request.files.add(
       await http.MultipartFile.fromPath('image', imageFile.path),
     );
-    
+
     // 나머지 필드는 선택사항이므로 값이 있을 때만 추가
     if (takenAtIso != null && takenAtIso.isNotEmpty) {
       request.fields['takenAt'] = takenAtIso;
@@ -332,12 +354,14 @@ class PhotoUploadApi {
       final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
       final errorCode = body['error'] as String?;
       final errorMessage = body['message'] as String?;
-      
+
       if (errorCode == 'IMAGE_REQUIRED') {
         throw Exception(errorMessage ?? '사진 파일은 필수입니다.');
       }
       if (errorCode == 'INVALID_DATE_FORMAT') {
-        throw Exception(errorMessage ?? '촬영 날짜 형식이 잘못되었습니다. ISO 8601 형식을 사용해주세요.');
+        throw Exception(
+          errorMessage ?? '촬영 날짜 형식이 잘못되었습니다. ISO 8601 형식을 사용해주세요.',
+        );
       }
       if (errorCode == 'INVALID_FRIEND_ID_LIST') {
         throw Exception(errorMessage ?? 'friendIdList는 숫자 배열(JSON) 형식이어야 합니다.');
