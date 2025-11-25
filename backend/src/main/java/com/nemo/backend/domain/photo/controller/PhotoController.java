@@ -46,11 +46,69 @@ public class PhotoController {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     // ========================================================
+    // 0) QR 임시 등록 (미리보기용)  (POST /api/photos/qr-import)
+    //    - QR 문자열을 받아서 원본 이미지를 조회·저장하고
+    //      미리보기용 imageUrl + photoId 등을 반환
+    //    - 이후 PATCH /api/photos/{photoId}/details 로 메타데이터 확정
+    // ========================================================
+    @Operation(
+            summary = "QR 임시 등록 (미리보기)",
+            description = "포토부스 QR 문자열을 받아 원본 이미지를 조회·저장하고 미리보기 정보를 반환합니다."
+    )
+    @PostMapping(
+            value = "/qr-import",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<QrImportResponse> qrImport(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestBody QrImportRequest body
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        if (body == null || body.qrCode() == null || body.qrCode().isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "qrCode는 필수입니다.");
+        }
+
+        // QR 기반으로만 임시 업로드 (이미지/태그/친구/메모는 아직 빈 상태)
+        PhotoResponseDto dto = photoService.uploadHybrid(
+                userId,
+                body.qrCode(),   // qrCode 문자열
+                null,            // image (없음)
+                null,            // brand (임시 단계에서는 비움)
+                null,            // location
+                null,            // takenAt
+                null,            // tagListJson
+                null,            // friendIdListJson
+                null             // memo
+        );
+
+        String isoTakenAt = (dto.getTakenAt() != null)
+                ? dto.getTakenAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                : null;
+
+        QrImportResponse resp = new QrImportResponse(
+                dto.getId(),
+                dto.getImageUrl(),
+                isoTakenAt,
+                dto.getLocation(),
+                dto.getBrand(),
+                "DRAFT" // 프론트에서 임시 상태로 사용할 수 있도록 고정값
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(resp);
+    }
+
+    // ========================================================
     // 1) QR 기반 사진 업로드  (POST /api/photos)
+    //    - 명세 기준: qrCode + image 둘 다 필수
     // ========================================================
     @Operation(
             summary = "QR 사진 업로드",
-            description = "포토부스 QR 기반으로 사진을 업로드합니다.",
+            description = "포토부스 QR 기반으로 사진을 업로드합니다. qrCode와 image는 필수입니다.",
             requestBody = @RequestBody(
                     content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)
             )
@@ -61,9 +119,8 @@ public class PhotoController {
     )
     public ResponseEntity<PhotoUploadResponse> uploadByQr(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-            @RequestPart(value = "image", required = false) MultipartFile image,
-            @RequestParam(value = "qrUrl", required = false) String qrUrl,
-            @RequestParam(value = "qrCode", required = false) String qrCode,
+            @RequestPart(value = "image", required = true) MultipartFile image,
+            @RequestParam(value = "qrCode", required = true) String qrCode,
             @RequestParam(value = "takenAt", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime takenAt,
             @RequestParam(value = "location", required = false) String location,
@@ -74,19 +131,24 @@ public class PhotoController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        String effectiveQr = (qrUrl != null && !qrUrl.isBlank()) ? qrUrl : qrCode;
-
-        if ((effectiveQr == null || effectiveQr.isBlank())
-                && (image == null || image.isEmpty())) {
+        // 명세: qrCode + image 둘 다 필수
+        if (qrCode == null || qrCode.isBlank()) {
             throw new ApiException(
                     ErrorCode.INVALID_ARGUMENT,
-                    "image 또는 qrCode/qrUrl 중 하나는 필수입니다. (IMAGE_OR_QR_REQUIRED)"
+                    "qrCode는 필수입니다. (QRCODE_REQUIRED)"
+            );
+        }
+
+        if (image == null || image.isEmpty()) {
+            throw new ApiException(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "image는 필수입니다. (IMAGE_REQUIRED)"
             );
         }
 
         PhotoUploadRequest req = new PhotoUploadRequest(
                 image,
-                effectiveQr,
+                qrCode, // DTO 필드명은 qrUrl이지만 실제로는 qrCode 문자열을 그대로 전달
                 qrCode,
                 (takenAt != null) ? takenAt.toString() : null,
                 location,
@@ -96,7 +158,7 @@ public class PhotoController {
 
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                req.qrUrl(),
+                req.qrUrl(),     // qrCode 문자열
                 req.image(),
                 brand,
                 location,
@@ -306,7 +368,7 @@ public class PhotoController {
     public ResponseEntity<PhotoDetailResponse> updateDetails(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long photoId,
-            @RequestBody PhotoDetailsUpdateRequest body
+            @org.springframework.web.bind.annotation.RequestBody PhotoDetailsUpdateRequest body
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
@@ -392,6 +454,19 @@ public class PhotoController {
     // ========================================================
     // 내부 DTO & 유틸
     // ========================================================
+    public static record QrImportRequest(
+            String qrCode
+    ) {}
+
+    public static record QrImportResponse(
+            long photoId,
+            String imageUrl,
+            String takenAt,
+            String location,
+            String brand,
+            String status
+    ) {}
+
     public static record PhotoUploadResponse(
             long photoId,
             String imageUrl,
