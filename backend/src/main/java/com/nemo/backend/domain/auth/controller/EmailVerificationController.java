@@ -1,16 +1,19 @@
+// backend/src/main/java/com/nemo/backend/domain/auth/controller/EmailVerificationController.java
 package com.nemo.backend.domain.auth.controller;
 
-import java.util.Collections;
-import java.util.Map;
+import com.nemo.backend.domain.auth.dto.EmailVerificationRequest;
+import com.nemo.backend.domain.auth.service.EmailVerificationService;
+import com.nemo.backend.global.exception.ApiException;
+import com.nemo.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.nemo.backend.domain.auth.service.EmailVerificationService;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping(
-        value = "/api/auth/email/verification",
+        value = "/api/auth/email/verify",
         produces = "application/json; charset=UTF-8"
 )
 @RequiredArgsConstructor
@@ -18,23 +21,64 @@ public class EmailVerificationController {
 
     private final EmailVerificationService emailVerificationService;
 
-    @PostMapping("/send")
-    public ResponseEntity<?> sendVerification(@RequestBody Map<String, String> req) {
-        String email = req.get("email");
-        emailVerificationService.sendVerificationCode(email);
-        return ResponseEntity.ok().build();
-    }
+    /**
+     * ✅ 이메일 인증 (코드 발송 / 검증)
+     *
+     * POST /api/auth/email/verify
+     *
+     * 1) 코드 발송
+     *    { "email": "user@example.com" }
+     *
+     * 2) 코드 검증
+     *    { "email": "user@example.com", "code": "812394" }
+     */
+    @PostMapping
+    public ResponseEntity<?> verify(@RequestBody EmailVerificationRequest request) {
+        try {
+            if (request.code() == null || request.code().isBlank()) {
+                // 1) 코드 발송
+                emailVerificationService.sendVerificationCode(request.email());
+                return ResponseEntity.ok(
+                        Map.of("message", "인증코드가 이메일로 발송되었습니다.")
+                );
+            } else {
+                // 2) 코드 검증
+                EmailVerificationService.VerifyResult result =
+                        emailVerificationService.verifyCodeWithReason(request.email(), request.code());
 
-    @PostMapping("/confirm")
-    public ResponseEntity<?> confirm(@RequestBody Map<String, String> req) {
-        String email = req.get("email");
-        String code  = req.get("code");
-        boolean ok   = emailVerificationService.verifyCode(email, code);
-        if (ok) {
-            return ResponseEntity.ok().build();
-        } else {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Collections.singletonMap("message", "인증 코드가 올바르지 않습니다."));
+                return switch (result) {
+                    case SUCCESS -> ResponseEntity.ok(
+                            Map.of(
+                                    "verified", true,
+                                    "message", "이메일 인증이 완료되었습니다."
+                            )
+                    );
+                    case CODE_MISMATCH -> ResponseEntity.badRequest().body(
+                            Map.of(
+                                    "verified", false,
+                                    "error", "CODE_MISMATCH",
+                                    "message", "인증코드가 올바르지 않습니다."
+                            )
+                    );
+                    case CODE_EXPIRED -> ResponseEntity.badRequest().body(
+                            Map.of(
+                                    "error", "CODE_EXPIRED",
+                                    "message", "인증코드가 만료되었습니다. 다시 요청해주세요."
+                            )
+                    );
+                    case ATTEMPTS_EXCEEDED -> ResponseEntity.badRequest().body(
+                            Map.of(
+                                    "verified", false,
+                                    "error", "ATTEMPTS_EXCEEDED",
+                                    "message", "입력 시도 횟수를 초과했습니다. 코드를 다시 받으세요."
+                            )
+                    );
+                };
+            }
+        } catch (ApiException e) {
+            ErrorCode code = e.getErrorCode();
+            return ResponseEntity.status(code.getStatus())
+                    .body(Map.of("error", code.getCode(), "message", e.getMessage()));
         }
     }
 }

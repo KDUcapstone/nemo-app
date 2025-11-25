@@ -121,11 +121,11 @@ public class AuthService {
         }
 
         RefreshToken stored = refreshTokenRepository.findByToken(refreshToken)
-                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_REFRESH_TOKEN));
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_TOKEN));
 
         // 다른 유저의 토큰이면 무효
         if (!stored.getUserId().equals(userId)) {
-            throw new ApiException(ErrorCode.INVALID_REFRESH_TOKEN);
+            throw new ApiException(ErrorCode.INVALID_TOKEN);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -133,7 +133,7 @@ public class AuthService {
         // 만료된 토큰이면 삭제 후 에러
         if (stored.getExpiry() == null || !stored.getExpiry().isAfter(now)) {
             refreshTokenRepository.delete(stored);
-            throw new ApiException(ErrorCode.INVALID_REFRESH_TOKEN);
+            throw new ApiException(ErrorCode.INVALID_TOKEN);
         }
 
         // 정상 토큰이면 해당 토큰만 삭제
@@ -172,31 +172,51 @@ public class AuthService {
     // =======================
     // 5) Access Token 재발급
     // =======================
-    @Transactional
+    @Transactional(readOnly = true)
     public RefreshResponse refresh(RefreshRequest request) {
 
         if (request == null
                 || request.refreshToken() == null
                 || request.refreshToken().isBlank()) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
+            // 400 TOKEN_REQUIRED
+            throw new ApiException(ErrorCode.TOKEN_REQUIRED);
         }
 
         RefreshToken stored = refreshTokenRepository.findByToken(request.refreshToken())
-                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_REFRESH_TOKEN));
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_TOKEN));
 
         LocalDateTime now = LocalDateTime.now();
 
+        // 만료 or 잘못된 토큰
         if (stored.getExpiry() == null || !stored.getExpiry().isAfter(now)) {
             refreshTokenRepository.delete(stored);
-            throw new ApiException(ErrorCode.INVALID_REFRESH_TOKEN);
+            throw new ApiException(ErrorCode.INVALID_TOKEN);
         }
 
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
 
-        String newAccess = jwtUtil.createAccessToken(user.getId(), user.getEmail());
+        // 새 액세스 토큰 발급
+        String newAccessToken = jwtUtil.createAccessToken(user.getId(), user.getEmail());
 
-        return new RefreshResponse(newAccess, accessExpSeconds);
+        // refreshToken 갱신 정책 (만료 임박 시 새로 발급)
+        LocalDateTime expiry = stored.getExpiry();
+        long totalSeconds = refreshExpDays * 24L * 60L * 60L;
+        long remainingSeconds = java.time.Duration.between(now, expiry).getSeconds();
+
+        String newRefreshToken = null;
+
+        // 남은 시간이 전체의 1/3 이하라면 새 토큰 발급
+        if (remainingSeconds < totalSeconds / 3) {
+            String rotated = UUID.randomUUID().toString();
+            stored.setToken(rotated);
+            stored.setExpiry(now.plusDays(refreshExpDays));
+            refreshTokenRepository.save(stored);
+            newRefreshToken = rotated;
+        }
+
+        // 명세: refreshToken은 갱신된 경우만 포함
+        return new RefreshResponse(newAccessToken, newRefreshToken);
     }
 
     // =======================
