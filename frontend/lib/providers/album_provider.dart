@@ -49,15 +49,18 @@ class AlbumProvider extends ChangeNotifier {
   final int _size = 10;
   String _sort = 'createdAt,desc';
   bool _favoriteOnly = false;
+  String _ownership = 'ALL'; // ALL, OWNED, SHARED
   final Set<int> _favoritedAlbumIds = <int>{};
   // 내가 공유 중/공유받은 앨범 ID 집합과 역할 맵
   final Set<int> _sharedAlbumIds = <int>{};
-  final Map<int, String> _albumIdToMyRole = <int, String>{}; // OWNER|CO_OWNER|EDITOR|VIEWER
+  final Map<int, String> _albumIdToMyRole =
+      <int, String>{}; // OWNER|CO_OWNER|EDITOR|VIEWER
 
   bool get isLoading => _isLoading;
   bool get hasMore => _hasMore;
   String get sort => _sort;
   bool get favoriteOnly => _favoriteOnly;
+  String get ownership => _ownership;
   bool isFavorited(int albumId) => _favoritedAlbumIds.contains(albumId);
   bool isShared(int albumId) => _sharedAlbumIds.contains(albumId);
   String? myRoleOf(int albumId) => _albumIdToMyRole[albumId];
@@ -70,10 +73,14 @@ class AlbumProvider extends ChangeNotifier {
         ..addAll(shared.map<int>((e) => (e['albumId'] as int)));
       _albumIdToMyRole
         ..clear()
-        ..addEntries(shared.map((e) => MapEntry(
+        ..addEntries(
+          shared.map(
+            (e) => MapEntry(
               e['albumId'] as int,
               (e['myRole']?.toString() ?? 'VIEWER').toUpperCase(),
-            )));
+            ),
+          ),
+        );
       notifyListeners();
     } catch (_) {
       // 무시
@@ -91,7 +98,7 @@ class AlbumProvider extends ChangeNotifier {
 
   void addFromResponse(Map<String, dynamic> res) {
     final albumId = res['albumId'] as int;
-    
+
     // photoIdList 파싱 (Long → int 변환 처리)
     List<int> photoIdList = [];
     if (res['photoIdList'] != null) {
@@ -130,9 +137,9 @@ class AlbumProvider extends ChangeNotifier {
           .map((e) => e.toInt())
           .toList();
     }
-    
+
     final photoCount = (res['photoCount'] as int?) ?? photoIdList.length;
-    
+
     // 이미 존재하는 앨범인지 확인
     final existingIdx = _albums.indexWhere((e) => e.albumId == albumId);
     if (existingIdx != -1) {
@@ -220,7 +227,7 @@ class AlbumProvider extends ChangeNotifier {
       final res = await AlbumApi.getAlbum(albumId);
       final idx = _albums.indexWhere((e) => e.albumId == albumId);
       final existing = idx != -1 ? _albums[idx] : null;
-      
+
       // photoIdList 파싱 (Long → int 변환 처리)
       List<int> photoIdList = [];
       if (res['photoIdList'] != null) {
@@ -259,9 +266,9 @@ class AlbumProvider extends ChangeNotifier {
             .map((e) => e.toInt())
             .toList();
       }
-      
+
       final photoCount = (res['photoCount'] as int?) ?? photoIdList.length;
-      
+
       final item = AlbumItem(
         albumId: albumId,
         // 모킹/서버 응답이 부정확한 경우 기존 값을 우선 유지
@@ -289,12 +296,17 @@ class AlbumProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> resetAndLoad({String? sort, bool? favoriteOnly}) async {
+  Future<void> resetAndLoad({
+    String? sort,
+    bool? favoriteOnly,
+    String? ownership,
+  }) async {
     if (AppConstants.useMockApi) {
       // 모킹에선 서버 호출 대신 getAlbums 모킹을 그대로 사용
     }
     _sort = sort ?? _sort;
     _favoriteOnly = favoriteOnly ?? _favoriteOnly;
+    _ownership = ownership ?? _ownership;
     _albums.clear();
     _page = 0;
     _hasMore = true;
@@ -312,6 +324,7 @@ class AlbumProvider extends ChangeNotifier {
         page: _page,
         size: _size,
         favoriteOnly: _favoriteOnly ? true : null,
+        ownership: _ownership,
       );
       final List content = (res['content'] as List? ?? []);
       if (content.isEmpty) {

@@ -274,6 +274,7 @@ class PhotoProvider extends ChangeNotifier {
       final response = await api.getPhotos(
         favorite: _favoriteOnly ? true : null,
         tag: _tagFilter,
+        brand: _brandFilter,
         sort: _sort,
         page: _page,
         size: _size,

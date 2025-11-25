@@ -125,6 +125,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                     },
                                     onToggleSharedOnly: (v) {
                                       setState(() => _albumSharedOnly = v);
+                                      context
+                                          .read<AlbumProvider>()
+                                          .resetAndLoad(
+                                            ownership: v ? 'SHARED' : 'ALL',
+                                          );
                                     },
                                   )
                                 : _SortDropdown(
@@ -719,17 +724,9 @@ class _FavoriteBadge extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         // 테두리용 검은색 하트 (약간 크게)
-        Icon(
-          Icons.favorite,
-          color: Colors.black.withOpacity(0.5),
-          size: 20,
-        ),
+        Icon(Icons.favorite, color: Colors.black.withOpacity(0.5), size: 20),
         // 앞에 배치할 흰색 하트
-        const Icon(
-          Icons.favorite,
-          color: Colors.white,
-          size: 18,
-        ),
+        const Icon(Icons.favorite, color: Colors.white, size: 18),
       ],
     );
   }
@@ -844,14 +841,9 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
           crossAxisSpacing: 20,
           childAspectRatio: 0.78,
         ),
-        itemCount: provider.albums
-            .where((a) => !widget.sharedOnly || provider.isShared(a.albumId))
-            .length,
+        itemCount: provider.albums.length,
         itemBuilder: (_, i) {
-          final filtered = provider.albums
-              .where((a) => !widget.sharedOnly || provider.isShared(a.albumId))
-              .toList();
-          final a = filtered[i];
+          final a = provider.albums[i];
           final scale = _pressedIndex == i ? 0.96 : 1.0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
