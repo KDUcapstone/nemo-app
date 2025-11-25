@@ -108,7 +108,8 @@ class PhotoUploadApi {
     final response = await http.Response.fromStream(await request.send());
 
     if (response.statusCode == 201) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
     }
     if (response.statusCode == 400) {
       final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
