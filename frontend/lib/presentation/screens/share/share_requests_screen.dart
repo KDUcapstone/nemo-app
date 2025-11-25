@@ -1,10 +1,15 @@
+// Share Requests Screen
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
 import 'package:frontend/services/album_api.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
+import 'package:frontend/providers/album_provider.dart';
 
 class ShareRequestsScreen extends StatefulWidget {
-  const ShareRequestsScreen({super.key});
+  const ShareRequestsScreen({Key? key}) : super(key: key);
+
   @override
   State<ShareRequestsScreen> createState() => _ShareRequestsScreenState();
 }
@@ -47,15 +52,13 @@ class _ShareRequestsScreenState extends State<ShareRequestsScreen> {
         _items.removeAt(index);
       });
       _showTopToast('앨범 공유를 수락했습니다.');
-      // 공유 수락 후 바로 앨범 상세 화면으로 이동
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AlbumDetailScreen(albumId: albumId),
-          ),
-        );
-      }
+      // Refresh shared album list so it appears in main album view
+      context.read<AlbumProvider>().refreshSharedAlbums();
+      // Navigate to album detail immediately
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => AlbumDetailScreen(albumId: albumId)),
+      );
     } catch (e) {
       if (!mounted) return;
       final s = e.toString();
@@ -114,7 +117,7 @@ class _ShareRequestsScreenState extends State<ShareRequestsScreen> {
         ),
       ),
     );
-    overlay.insert(entry);
+    overlay?.insert(entry);
     Future.delayed(
       const Duration(milliseconds: 1500),
     ).then((_) => entry.remove());
@@ -172,14 +175,12 @@ class _ShareRequestsScreenState extends State<ShareRequestsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text('$inviter · 내 권한: $roleKo · $when'),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AlbumDetailScreen(albumId: albumId),
-                        ),
-                      );
-                    },
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AlbumDetailScreen(albumId: albumId),
+                      ),
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
