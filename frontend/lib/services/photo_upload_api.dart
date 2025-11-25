@@ -403,8 +403,8 @@ class PhotoUploadApi {
       };
     }
 
-    final uri = _endpoint('/api/photos/$photoId');
-    final request = http.Request('PUT', uri);
+    final uri = _endpoint('/api/photos/$photoId/details');
+    final request = http.Request('PATCH', uri);
     request.headers['Authorization'] =
         'Bearer ${AuthService.accessToken ?? ''}';
     request.headers['Content-Type'] = 'application/json';
