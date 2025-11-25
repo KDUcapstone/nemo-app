@@ -111,6 +111,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       });
     }
   }
+
   @override
   void dispose() {
     _selectedNotifier.dispose();
@@ -433,9 +434,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       });
     }
     // 앨범은 있으나 상세(사진 목록)가 비어 있으면 상세 재요청 (무한 로딩 방지)
-    final shouldFetchDetail = album.albumId != -1 && 
-        album.photoIdList.isEmpty && 
-        !_isLoadingDetail;
+    final shouldFetchDetail =
+        album.albumId != -1 && album.photoIdList.isEmpty && !_isLoadingDetail;
     if (shouldFetchDetail) {
       _isLoadingDetail = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -472,12 +472,16 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         title: Text(album.title.isEmpty ? '앨범' : album.title),
         actions: [
           IconButton(
-            tooltip: albumProvider.isFavorited(widget.albumId) ? '즐겨찾기 해제' : '즐겨찾기',
+            tooltip: albumProvider.isFavorited(widget.albumId)
+                ? '즐겨찾기 해제'
+                : '즐겨찾기',
             icon: Icon(
               albumProvider.isFavorited(widget.albumId)
                   ? Icons.favorite
                   : Icons.favorite_border,
-              color: albumProvider.isFavorited(widget.albumId) ? Colors.red : null,
+              color: albumProvider.isFavorited(widget.albumId)
+                  ? Colors.red
+                  : null,
             ),
             onPressed: () async {
               final current = albumProvider.isFavorited(widget.albumId);
@@ -493,9 +497,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('처리 실패: $e')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('처리 실패: $e')));
               }
             },
           ),
@@ -587,10 +591,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                                 photoId: p.photoId,
                               );
                               if (!mounted) return;
-                              final newUrl = (res['thumbnailUrl'] as String?) ?? p.imageUrl;
-                              context
-                                  .read<AlbumProvider>()
-                                  .updateCoverUrl(widget.albumId, newUrl);
+                              final newUrl =
+                                  (res['thumbnailUrl'] as String?) ??
+                                  p.imageUrl;
+                              context.read<AlbumProvider>().updateCoverUrl(
+                                widget.albumId,
+                                newUrl,
+                              );
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('대표사진이 설정되었습니다.')),
                               );
@@ -745,11 +752,16 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             }
           },
           itemBuilder: (c) => [
-            if (showShare) const PopupMenuItem(value: 'share', child: Text('공유')),
-            if (showAdd) const PopupMenuItem(value: 'add', child: Text('사진 추가')),
-            if (showEdit) const PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
-            if (showMembers) const PopupMenuItem(value: 'members', child: Text('멤버 조회')),
-            if (showDelete) const PopupMenuItem(value: 'delete', child: Text('앨범 삭제')),
+            if (showShare)
+              const PopupMenuItem(value: 'share', child: Text('공유')),
+            if (showAdd)
+              const PopupMenuItem(value: 'add', child: Text('사진 추가')),
+            if (showEdit)
+              const PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
+            if (showMembers)
+              const PopupMenuItem(value: 'members', child: Text('멤버 조회')),
+            if (showDelete)
+              const PopupMenuItem(value: 'delete', child: Text('앨범 삭제')),
           ],
         ),
       ],
@@ -1090,7 +1102,7 @@ class _PhotoGridItemState extends State<_PhotoGridItem> {
         children: [
           Image.network(
             widget.photo.imageUrl,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             alignment: Alignment.center,
             cacheWidth: 200,
             cacheHeight: 200,
