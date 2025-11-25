@@ -32,9 +32,6 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   final ValueNotifier<Set<int>> _selectedNotifier = ValueNotifier<Set<int>>(
     <int>{},
   );
-  // photos 캐싱 (해결책 A)
-  List<PhotoItem>? _cachedPhotos;
-  List<int>? _cachedPhotoIds;
   String? _myRole; // OWNER | CO_OWNER | EDITOR | VIEWER
   bool _roleLoading = false;
   bool _isLoadingDetail = false; // 무한 로딩 방지 플래그
@@ -116,16 +113,6 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   void dispose() {
     _selectedNotifier.dispose();
     super.dispose();
-  }
-
-  // List 비교 헬퍼 함수 (해결책 A)
-  bool _listEquals<T>(List<T>? a, List<T>? b) {
-    if (a == null || b == null) return a == b;
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 
   Future<void> _addPhotos() async {
@@ -453,20 +440,6 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       });
     }
 
-    // PhotoProvider는 read로 변경하여 불필요한 rebuild 방지 (해결책 A)
-    final photoProvider = context.read<PhotoProvider>();
-    final albumPhotoIds = album.photoIdList;
-
-    // 캐시 무효화 체크 (photoIdList가 변경된 경우만)
-    if (_cachedPhotos == null || !_listEquals(_cachedPhotoIds, albumPhotoIds)) {
-      _cachedPhotoIds = List.from(albumPhotoIds);
-      _cachedPhotos = photoProvider.items
-          .where((p) => albumPhotoIds.contains(p.photoId))
-          .toList(); // List로 변환하여 O(1) 접근 보장
-    }
-
-    final photos = _cachedPhotos!;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(album.title.isEmpty ? '앨범' : album.title),
@@ -555,72 +528,106 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           Expanded(
             child: shouldFetchDetail
                 ? const Center(child: CircularProgressIndicator())
-                : GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                        ),
-                    cacheExtent: 500,
-                    itemCount: photos.length,
-                    itemBuilder: (_, i) {
-                      final p = photos[i]; // elementAt → 인덱스 접근 (O(1))
-                      final isSel = _selected.contains(p.photoId);
-                      return RepaintBoundary(
-                        child: _PhotoGridItem(
-                          photo: p,
-                          isSelectionMode: _isSelectionMode,
-                          initialSelected: isSel,
-                          onSelectionChanged: (photoId) {
-                            // _selected Set만 업데이트 (부모 rebuild 완전 방지)
-                            if (_selected.contains(photoId)) {
-                              _selected.remove(photoId);
-                            } else {
-                              _selected.add(photoId);
-                            }
-                            // ValueNotifier 즉시 업데이트 (addPostFrameCallback 제거) (해결책 B)
-                            _selectedNotifier.value = Set<int>.from(_selected);
-                          },
-                          onDoubleTap: () async {
-                            if (_isSelectionMode) return;
-                            try {
-                              final res = await AlbumApi.setThumbnail(
-                                albumId: widget.albumId,
-                                photoId: p.photoId,
-                              );
-                              if (!mounted) return;
-                              final newUrl =
-                                  (res['thumbnailUrl'] as String?) ??
-                                  p.imageUrl;
-                              context.read<AlbumProvider>().updateCoverUrl(
-                                widget.albumId,
-                                newUrl,
-                              );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('대표사진이 설정되었습니다.')),
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('대표 설정 실패: $e')),
-                              );
-                            }
-                          },
-                          onView: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PhotoViewerScreen(
-                                  photoId: p.photoId,
-                                  imageUrl: p.imageUrl,
-                                  albumId: widget.albumId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                : FutureBuilder<Map<String, dynamic>>(
+                    future: AlbumApi.getAlbum(widget.albumId),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final data = snapshot.data!;
+                      final List photoListData =
+                          (data['photoList'] as List? ?? []);
+
+                      if (photoListData.isEmpty) {
+                        return const Center(child: Text('사진이 없습니다'));
+                      }
+
+                      // photoList를 PhotoItem으로 변환
+                      final photos = photoListData.map((p) {
+                        final photoData = p as Map<String, dynamic>;
+                        return PhotoItem(
+                          photoId: (photoData['photoId'] as num).toInt(),
+                          imageUrl: photoData['imageUrl'] as String? ?? '',
+                          takenAt: photoData['takenAt'] as String? ?? '',
+                          location: photoData['location'] as String? ?? '',
+                          brand: photoData['brand'] as String? ?? '',
+                          tagList: const [], // 간단 요약용이므로 빈 리스트
+                        );
+                      }).toList();
+
+                      return GridView.builder(
+                        padding: const EdgeInsets.all(12),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                            ),
+                        cacheExtent: 500,
+                        itemCount: photos.length,
+                        itemBuilder: (_, i) {
+                          final p = photos[i];
+                          final isSel = _selected.contains(p.photoId);
+                          return RepaintBoundary(
+                            child: _PhotoGridItem(
+                              photo: p,
+                              isSelectionMode: _isSelectionMode,
+                              initialSelected: isSel,
+                              onSelectionChanged: (photoId) {
+                                // _selected Set만 업데이트 (부모 rebuild 완전 방지)
+                                if (_selected.contains(photoId)) {
+                                  _selected.remove(photoId);
+                                } else {
+                                  _selected.add(photoId);
+                                }
+                                // ValueNotifier 즉시 업데이트 (addPostFrameCallback 제거) (해결책 B)
+                                _selectedNotifier.value = Set<int>.from(
+                                  _selected,
+                                );
+                              },
+                              onDoubleTap: () async {
+                                if (_isSelectionMode) return;
+                                try {
+                                  final res = await AlbumApi.setThumbnail(
+                                    albumId: widget.albumId,
+                                    photoId: p.photoId,
+                                  );
+                                  if (!mounted) return;
+                                  final newUrl =
+                                      (res['thumbnailUrl'] as String?) ??
+                                      p.imageUrl;
+                                  context.read<AlbumProvider>().updateCoverUrl(
+                                    widget.albumId,
+                                    newUrl,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('대표사진이 설정되었습니다.'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('대표 설정 실패: $e')),
+                                  );
+                                }
+                              },
+                              onView: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PhotoViewerScreen(
+                                      photoId: p.photoId,
+                                      imageUrl: p.imageUrl,
+                                      albumId: widget.albumId,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
