@@ -7,15 +7,18 @@ import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/providers/photo_provider.dart';
 
 class PhotoAddDetailScreen extends StatefulWidget {
-  final File imageFile;
+  final File? imageFile; // 갤러리 업로드인 경우
   final String? qrCode; // QR 스캔인 경우 QR 코드 값
   final DateTime? defaultTakenAt; // 기본 촬영일시
+  final Map<String, dynamic>?
+  qrImportResult; // QR 임시 등록 결과 (photoId, imageUrl, takenAt, location, brand, status 포함)
 
   const PhotoAddDetailScreen({
     super.key,
-    required this.imageFile,
+    this.imageFile,
     this.qrCode,
     this.defaultTakenAt,
+    this.qrImportResult,
   });
 
   @override
@@ -39,12 +42,24 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _takenAt = widget.defaultTakenAt ?? DateTime.now();
-    // QR에서 추정 가능한 정보 기본값 설정
-    if (widget.qrCode != null) {
-      _locationCtrl.text = '포토부스(추정)';
-      _brandCtrl.text = '인생네컷';
+
+    // QR 임시 등록 결과가 있으면 그 값 사용, 없으면 기본값
+    if (widget.qrImportResult != null) {
+      final result = widget.qrImportResult!;
+      _takenAt = result['takenAt'] != null
+          ? DateTime.tryParse(result['takenAt'] as String) ?? DateTime.now()
+          : widget.defaultTakenAt ?? DateTime.now();
+      _locationCtrl.text = result['location'] as String? ?? '포토부스(추정)';
+      _brandCtrl.text = result['brand'] as String? ?? '인생네컷';
       _tags = ['QR업로드'];
+    } else {
+      _takenAt = widget.defaultTakenAt ?? DateTime.now();
+      // QR에서 추정 가능한 정보 기본값 설정
+      if (widget.qrCode != null) {
+        _locationCtrl.text = '포토부스(추정)';
+        _brandCtrl.text = '인생네컷';
+        _tags = ['QR업로드'];
+      }
     }
     _loadFriends();
   }
@@ -56,6 +71,92 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
     _memoCtrl.dispose();
     _tagCtrl.dispose();
     super.dispose();
+  }
+
+  Widget _buildImagePreview() {
+    // QR 임시 등록 결과가 있으면 imageUrl 사용
+    if (widget.qrImportResult != null) {
+      final imageUrl = widget.qrImportResult!['imageUrl'] as String?;
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        return Image.network(
+          imageUrl,
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: 300,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: double.infinity,
+              height: 300,
+              color: Colors.grey[200],
+              child: Center(
+                child: CircularProgressIndicator(
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                      : null,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: double.infinity,
+              height: 300,
+              color: Colors.grey[200],
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text('이미지를 불러올 수 없습니다'),
+                ],
+              ),
+            );
+          },
+        );
+      }
+    }
+
+    // 로컬 파일이 있으면 파일 이미지 사용
+    if (widget.imageFile != null && widget.imageFile!.existsSync()) {
+      return Image.file(
+        widget.imageFile!,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: 300,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: double.infinity,
+            height: 300,
+            color: Colors.grey[200],
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('이미지를 불러올 수 없습니다'),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    // 이미지가 없는 경우
+    return Container(
+      width: double.infinity,
+      height: 300,
+      color: Colors.grey[200],
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.image_outlined, size: 48, color: Colors.grey),
+          SizedBox(height: 8),
+          Text('이미지가 없습니다'),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadFriends() async {
@@ -252,9 +353,27 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
       if (widget.qrCode != null) {
         // QR 업로드: takenAt, location, brand 필수
         final takenAtIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!);
+
+        // QR 임시 등록된 경우 이미지 파일이 없을 수 있음
+        // 하지만 명세서상 /api/photos는 image가 필수이므로,
+        // 임시 등록된 경우에는 별도 업데이트 API를 사용해야 할 수도 있음
+        // 일단 imageFile이 null이면 에러 발생
+        if (widget.imageFile == null && widget.qrImportResult == null) {
+          throw Exception('이미지 파일이 필요합니다.');
+        }
+
+        // QR 임시 등록된 경우: photoId로 상세정보만 업데이트
+        // TODO: PUT /api/photos/{photoId} 또는 PATCH /api/photos/{photoId}/details API 사용
+        // 현재는 uploadPhotoViaQr 사용 (이미지 파일 필요)
+        if (widget.qrImportResult != null && widget.imageFile == null) {
+          // 임시 등록된 경우 이미지 파일 없이 업데이트만 해야 함
+          // 하지만 현재 API는 image가 필수이므로, 일단 에러 처리
+          throw Exception('QR 임시 등록된 사진의 상세정보 업데이트는 아직 지원되지 않습니다.');
+        }
+
         result = await api.uploadPhotoViaQr(
           qrCode: widget.qrCode!,
-          imageFile: widget.imageFile,
+          imageFile: widget.imageFile!,
           takenAtIso: takenAtIso,
           location: _locationCtrl.text.trim(),
           brand: _brandCtrl.text.trim(),
@@ -266,11 +385,14 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
         );
       } else {
         // 갤러리 업로드: 모든 필드 선택사항
+        if (widget.imageFile == null) {
+          throw Exception('이미지 파일이 필요합니다.');
+        }
         final takenAtIso = _takenAt != null
             ? DateFormat("yyyy-MM-ddTHH:mm:ss").format(_takenAt!)
             : null;
         result = await api.uploadPhotoFromGallery(
-          imageFile: widget.imageFile,
+          imageFile: widget.imageFile!,
           takenAtIso: takenAtIso,
           location: _locationCtrl.text.trim().isEmpty
               ? null
@@ -342,57 +464,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
               // 사진 미리보기
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: widget.imageFile.existsSync()
-                    ? Image.file(
-                        widget.imageFile,
-                        fit: BoxFit.contain,
-                        width: double.infinity,
-                        height: 300,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: double.infinity,
-                            height: 300,
-                            color: Colors.grey[200],
-                            child: const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.broken_image_outlined,
-                                  size: 64,
-                                  color: Colors.grey,
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  '이미지를 불러올 수 없습니다',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                        gaplessPlayback: true,
-                        filterQuality: FilterQuality.low,
-                      )
-                    : Container(
-                        width: double.infinity,
-                        height: 300,
-                        color: Colors.grey[200],
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.image_not_supported_outlined,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              '파일을 찾을 수 없습니다',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
+                child: _buildImagePreview(),
               ),
               const SizedBox(height: 24),
 
