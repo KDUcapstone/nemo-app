@@ -267,7 +267,10 @@ class AlbumProvider extends ChangeNotifier {
             .toList();
       }
 
-      final photoCount = (res['photoCount'] as int?) ?? photoIdList.length;
+      final photoCount =
+          (res['photoCount'] as int?) ??
+          existing?.photoCount ??
+          photoIdList.length;
 
       final item = AlbumItem(
         albumId: albumId,
