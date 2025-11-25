@@ -18,7 +18,7 @@ class ResetSuccessCard extends StatelessWidget {
           const Icon(Icons.check_circle_outline, color: Colors.green, size: 48),
           const SizedBox(height: 16),
           Text(
-            '재설정 링크 발송 완료!',
+            '비밀번호 변경 완료!',
             style: TextStyle(
               color: Colors.green[700],
               fontSize: 18,
@@ -27,21 +27,11 @@ class ResetSuccessCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const Text(
-            '입력하신 이메일로 비밀번호 재설정 링크가\n발송되었습니다.',
+            '비밀번호가 성공적으로 변경되었습니다.\n새로운 비밀번호로 로그인해주세요.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 14,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '이메일의 링크를 클릭하여\n새로운 비밀번호를 설정해주세요.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
               height: 1.4,
             ),
           ),
