@@ -77,7 +77,8 @@ class AlbumProvider extends ChangeNotifier {
           shared.map(
             (e) => MapEntry(
               e['albumId'] as int,
-              (e['myRole']?.toString() ?? 'VIEWER').toUpperCase(),
+              (e['role']?.toString() ?? 'VIEWER')
+                  .toUpperCase(), // myRole → role
             ),
           ),
         );

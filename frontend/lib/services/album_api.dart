@@ -393,55 +393,12 @@ class AlbumApi {
     int page = 0,
     int size = 10,
   }) async {
-    if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
-      final now = DateTime.now();
-      return [
-        {
-          'albumId': 201,
-          'title': '여름 제주 여행',
-          'coverPhotoUrl': 'https://picsum.photos/seed/shared201/600/800',
-          'photoCount': 24,
-          'createdAt': now.subtract(const Duration(days: 10)).toIso8601String(),
-          'myRole': 'VIEWER',
-        },
-        {
-          'albumId': 202,
-          'title': '겨울 스키장',
-          'coverPhotoUrl': 'https://picsum.photos/seed/shared202/600/800',
-          'photoCount': 12,
-          'createdAt': now.subtract(const Duration(days: 3)).toIso8601String(),
-          'myRole': 'EDITOR',
-        },
-        {
-          'albumId': 203,
-          'title': '동아리 공연 아카이브',
-          'coverPhotoUrl': null,
-          'photoCount': 57,
-          'createdAt': now.subtract(const Duration(days: 30)).toIso8601String(),
-          'myRole': 'CO_OWNER',
-        },
-      ];
-    }
-    final res = await http.get(
-      _uri(
-        '/api/albums/shared',
-      ).replace(queryParameters: {'page': '$page', 'size': '$size'}),
-      headers: _headersJson(),
-    );
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body);
-      if (body is List) return body.cast<Map<String, dynamic>>();
-      if (body is Map<String, dynamic>) {
-        final List list = body['content'] ?? body['items'] ?? [];
-        return list.cast<Map<String, dynamic>>();
-      }
-      return const <Map<String, dynamic>>[];
-    }
-    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
-    throw Exception('Failed to fetch shared albums (${res.statusCode})');
+    // 새 명세서: GET /api/albums?ownership=SHARED 사용
+    final result = await getAlbums(ownership: 'SHARED', page: page, size: size);
+
+    // content 배열 추출
+    final List content = (result['content'] as List? ?? []);
+    return content.cast<Map<String, dynamic>>();
   }
 
   // ⚠️ PUT /api/albums/{albumId}/cover API는 백엔드에 구현되어 있지 않습니다.
