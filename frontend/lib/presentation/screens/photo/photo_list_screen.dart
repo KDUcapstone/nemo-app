@@ -154,8 +154,13 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                               if (isAlbums) {
                                 final albumProvider = context
                                     .read<AlbumProvider>();
-                                if (albumProvider.sort != _albumSort) {
-                                  albumProvider.resetAndLoad(sort: _albumSort);
+                                // ownership을 현재 상태에 맞게 설정 (공유 앨범만 보기 토글이 켜져있으면 'SHARED', 아니면 'ALL')
+                                final ownership = _albumSharedOnly ? 'SHARED' : 'ALL';
+                                if (albumProvider.sort != _albumSort || albumProvider.ownership != ownership) {
+                                  albumProvider.resetAndLoad(
+                                    sort: _albumSort,
+                                    ownership: ownership,
+                                  );
                                 }
                                 // 공유 앨범 정보 갱신
                                 albumProvider.refreshSharedAlbums();
@@ -801,13 +806,17 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   @override
   void didUpdateWidget(_AlbumListGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // sort 값이 변경되었고, Provider의 sort와도 다르면 다시 로드
-    if (oldWidget.sort != widget.sort) {
+    // sort 또는 sharedOnly 값이 변경되었고, Provider의 값과 다르면 다시 로드
+    if (oldWidget.sort != widget.sort || oldWidget.sharedOnly != widget.sharedOnly) {
       final provider = context.read<AlbumProvider>();
-      if (provider.sort != widget.sort) {
+      final ownership = widget.sharedOnly ? 'SHARED' : 'ALL';
+      if (provider.sort != widget.sort || provider.ownership != ownership) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
+            context.read<AlbumProvider>().resetAndLoad(
+              sort: widget.sort,
+              ownership: ownership,
+            );
           }
         });
       }
@@ -820,7 +829,12 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
     if (provider.albums.isEmpty && !provider.isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
+          // ownership을 현재 상태에 맞게 설정 (공유 앨범만 보기 토글이 켜져있으면 'SHARED', 아니면 'ALL')
+          final ownership = widget.sharedOnly ? 'SHARED' : 'ALL';
+          context.read<AlbumProvider>().resetAndLoad(
+            sort: widget.sort,
+            ownership: ownership,
+          );
         }
       });
     }
