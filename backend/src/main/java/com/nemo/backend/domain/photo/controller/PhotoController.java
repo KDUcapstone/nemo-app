@@ -368,7 +368,7 @@ public class PhotoController {
     public ResponseEntity<PhotoDetailResponse> updateDetails(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long photoId,
-            @RequestBody PhotoDetailsUpdateRequest body
+            @org.springframework.web.bind.annotation.RequestBody PhotoDetailsUpdateRequest body
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
