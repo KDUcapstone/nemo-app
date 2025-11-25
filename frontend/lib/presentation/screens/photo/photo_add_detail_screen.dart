@@ -363,26 +363,38 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
         }
 
         // QR 임시 등록된 경우: photoId로 상세정보만 업데이트
-        // TODO: PUT /api/photos/{photoId} 또는 PATCH /api/photos/{photoId}/details API 사용
-        // 현재는 uploadPhotoViaQr 사용 (이미지 파일 필요)
-        if (widget.qrImportResult != null && widget.imageFile == null) {
-          // 임시 등록된 경우 이미지 파일 없이 업데이트만 해야 함
-          // 하지만 현재 API는 image가 필수이므로, 일단 에러 처리
-          throw Exception('QR 임시 등록된 사진의 상세정보 업데이트는 아직 지원되지 않습니다.');
+        // PUT /api/photos/{photoId} API 사용
+        if (widget.qrImportResult != null) {
+          final photoId = widget.qrImportResult!['photoId'] as int;
+          result = await api.updatePhotoDetails(
+            photoId: photoId,
+            takenAtIso: takenAtIso,
+            location: _locationCtrl.text.trim(),
+            brand: _brandCtrl.text.trim(),
+            tagList: _tags.isEmpty ? null : _tags,
+            friendIdList: _selectedFriendIds.isEmpty
+                ? null
+                : _selectedFriendIds.toList(),
+            memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+          );
+        } else {
+          // QR 스캔했지만 임시 등록 결과가 없는 경우 (예외적 상황, 기존 로직 유지)
+          if (widget.imageFile == null) {
+            throw Exception('이미지 파일이 필요합니다.');
+          }
+          result = await api.uploadPhotoViaQr(
+            qrCode: widget.qrCode!,
+            imageFile: widget.imageFile!,
+            takenAtIso: takenAtIso,
+            location: _locationCtrl.text.trim(),
+            brand: _brandCtrl.text.trim(),
+            tagList: _tags.isEmpty ? null : _tags,
+            friendIdList: _selectedFriendIds.isEmpty
+                ? null
+                : _selectedFriendIds.toList(),
+            memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
+          );
         }
-
-        result = await api.uploadPhotoViaQr(
-          qrCode: widget.qrCode!,
-          imageFile: widget.imageFile!,
-          takenAtIso: takenAtIso,
-          location: _locationCtrl.text.trim(),
-          brand: _brandCtrl.text.trim(),
-          tagList: _tags.isEmpty ? null : _tags,
-          friendIdList: _selectedFriendIds.isEmpty
-              ? null
-              : _selectedFriendIds.toList(),
-          memo: _memoCtrl.text.trim().isEmpty ? null : _memoCtrl.text.trim(),
-        );
       } else {
         // 갤러리 업로드: 모든 필드 선택사항
         if (widget.imageFile == null) {

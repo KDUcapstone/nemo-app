@@ -370,4 +370,72 @@ class PhotoUploadApi {
     }
     throw Exception('업로드 실패 (${response.statusCode})');
   }
+
+  /// PUT /api/photos/{photoId} - 사진 상세정보 수정 (QR 임시 등록 후 2단계)
+  Future<Map<String, dynamic>> updatePhotoDetails({
+    required int photoId,
+    required String takenAtIso,
+    required String location,
+    required String brand,
+    List<String>? tagList,
+    List<int>? friendIdList,
+    String? memo,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'photoId': photoId,
+        'imageUrl':
+            'https://picsum.photos/seed/qr$photoId/800/1066', // 기존 이미지 유지 가정
+        'takenAt': takenAtIso,
+        'location': location,
+        'brand': brand,
+        'tagList': tagList ?? [],
+        'friendList':
+            friendIdList
+                ?.map((id) => {'userId': id, 'nickname': '친구$id'})
+                .toList() ??
+            [],
+        'memo': memo ?? '',
+        'status': 'PUBLISHED',
+      };
+    }
+
+    final uri = _endpoint('/api/photos/$photoId');
+    final request = http.Request('PUT', uri);
+    request.headers['Authorization'] =
+        'Bearer ${AuthService.accessToken ?? ''}';
+    request.headers['Content-Type'] = 'application/json';
+
+    final body = <String, dynamic>{
+      'takenAt': takenAtIso,
+      'location': location,
+      'brand': brand,
+    };
+    if (tagList != null) body['tagList'] = tagList;
+    if (friendIdList != null) body['friendIdList'] = friendIdList;
+    if (memo != null) body['memo'] = memo;
+
+    request.body = jsonEncode(body);
+
+    final response = await http.Response.fromStream(await request.send());
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    if (response.statusCode == 400) {
+      final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      final message = body['message'] as String?;
+      throw Exception(message ?? '잘못된 요청입니다.');
+    }
+    if (response.statusCode == 401) {
+      throw Exception('인증이 필요합니다.');
+    }
+    if (response.statusCode == 404) {
+      throw Exception('사진을 찾을 수 없습니다.');
+    }
+    throw Exception('상세정보 수정 실패 (${response.statusCode})');
+  }
 }
