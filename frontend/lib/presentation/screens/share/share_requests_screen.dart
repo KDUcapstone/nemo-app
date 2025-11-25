@@ -54,10 +54,12 @@ class _ShareRequestsScreenState extends State<ShareRequestsScreen> {
         _items.removeAt(index);
       });
       _showTopToast('앨범 공유를 수락했습니다.');
-      // 공유 앨범 데이터를 최신화
-      context.read<AlbumProvider>().refreshSharedAlbums();
-      // 메인 앨범 리스트를 ALL(소유 + 공유) 로 다시 로드하여 바로 보이게 함
-      context.read<AlbumProvider>().resetAndLoad(ownership: 'ALL');
+      // 공유 앨범 데이터를 최신화 (await로 완료 대기)
+      await context.read<AlbumProvider>().refreshSharedAlbums();
+      if (!mounted) return;
+      // 메인 앨범 리스트를 ALL(소유 + 공유) 로 다시 로드하여 바로 보이게 함 (await로 완료 대기)
+      await context.read<AlbumProvider>().resetAndLoad(ownership: 'ALL');
+      if (!mounted) return;
       // 상세 화면으로 바로 이동
       Navigator.push(
         context,
