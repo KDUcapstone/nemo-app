@@ -285,7 +285,7 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
             child: Column(
               children: [
                 _IconInputField(
-                  hintText: '아이디/이메일 입력',
+                  hintText: '이메일 입력',
                   keyboardType: TextInputType.emailAddress,
                   icon: Icons.email_outlined,
                   strongBorder: true,
