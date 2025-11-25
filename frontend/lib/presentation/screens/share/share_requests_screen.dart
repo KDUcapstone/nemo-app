@@ -46,15 +46,19 @@ class _ShareRequestsScreenState extends State<ShareRequestsScreen> {
 
   Future<void> _accept(int albumId, int index) async {
     try {
+      // API 호출로 공유 요청 수락
       await AlbumApi.acceptShare(albumId);
       if (!mounted) return;
+      // 리스트에서 해당 요청 삭제
       setState(() {
         _items.removeAt(index);
       });
       _showTopToast('앨범 공유를 수락했습니다.');
-      // Refresh shared album list so it appears in main album view
+      // 공유 앨범 데이터를 최신화
       context.read<AlbumProvider>().refreshSharedAlbums();
-      // Navigate to album detail immediately
+      // 메인 앨범 리스트를 ALL(소유 + 공유) 로 다시 로드하여 바로 보이게 함
+      context.read<AlbumProvider>().resetAndLoad(ownership: 'ALL');
+      // 상세 화면으로 바로 이동
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => AlbumDetailScreen(albumId: albumId)),
