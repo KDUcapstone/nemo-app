@@ -111,14 +111,17 @@ class _SignupScreenState extends State<SignupScreen> {
       _isSendingCode = true;
     });
     try {
-      await AuthService().sendEmailVerification(_emailController.text);
+      // 통합 API: code 없이 호출하면 발송
+      final result = await AuthService().verifyEmail(
+        email: _emailController.text.trim(),
+      );
       if (!mounted) return;
       setState(() {
         _emailCodeSent = true;
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('인증 메일을 발송했습니다. 메일함을 확인해주세요.')),
+        SnackBar(content: Text(result['message'] ?? '인증 메일을 발송했습니다.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -148,27 +151,31 @@ class _SignupScreenState extends State<SignupScreen> {
       _isVerifyingCode = true;
     });
     try {
-      final ok = await AuthService().confirmEmailVerification(
+      // 통합 API: code와 함께 호출하면 검증
+      final result = await AuthService().verifyEmail(
         email: _emailController.text.trim(),
         code: _emailCodeController.text.trim(),
       );
       if (!mounted) return;
-      if (ok) {
+      if (result['verified'] == true) {
         setState(() {
           _emailVerified = true;
         });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('이메일 인증이 완료되었습니다.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? '이메일 인증이 완료되었습니다.')),
+        );
       }
     } catch (e) {
       if (!mounted) return;
       final errorStr = e.toString();
       String msg;
-      if (errorStr.contains('INVALID_CODE') || errorStr.contains('인증 코드')) {
+      if (errorStr.contains('CODE_MISMATCH') ||
+          errorStr.contains('인증코드가 올바르지')) {
         msg = '인증 코드가 올바르지 않습니다.';
-      } else if (errorStr.contains('EXPIRED') || errorStr.contains('만료')) {
+      } else if (errorStr.contains('CODE_EXPIRED') || errorStr.contains('만료')) {
         msg = '인증 코드가 만료되었습니다.';
+      } else if (errorStr.contains('ATTEMPTS_EXCEEDED')) {
+        msg = '인증 시도 횟수를 초과했습니다. 다시 요청해주세요.';
       } else {
         msg = errorStr.startsWith('Exception: ')
             ? errorStr.substring('Exception: '.length)
