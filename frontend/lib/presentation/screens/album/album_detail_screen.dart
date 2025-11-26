@@ -671,11 +671,14 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final role = _myRole ?? 'VIEWER';
     final isOwnerLike = role == 'OWNER' || role == 'CO_OWNER';
     final isEditor = role == 'EDITOR';
-    final showShare = isOwnerLike || isEditor;
+    final showShare =
+        role == 'OWNER' || role == 'CO_OWNER'; // OWNER와 CO_OWNER만 공유 가능
     final showAdd = isOwnerLike || isEditor;
     final showEdit = isOwnerLike || isEditor;
     final showDelete = isOwnerLike;
-    final showMembers = isOwnerLike;
+    final showMembers =
+        role == 'OWNER' ||
+        role == 'CO_OWNER'; // 명시적으로 OWNER와 CO_OWNER만 멤버 조회 가능
     return Row(
       children: [
         IconButton(
