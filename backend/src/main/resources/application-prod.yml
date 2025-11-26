@@ -1,27 +1,75 @@
 # ============================================
 # 🚀 application-prod.yml
-# - CloudType에서 백엔드와 DB를 함께 배포했을 때 사용
-# - 내부 통신 (서비스명:3306)으로 연결
-# - 비밀번호 등 민감정보는 환경변수(시크릿)로 주입
+# - 실제 배포용 설정 (Docker / Cloud 환경)
+# - DB, JWT, S3, 외부 API 키는 전부 환경변수로 관리
 # ============================================
 
 spring:
   datasource:
     driver-class-name: org.mariadb.jdbc.Driver
-    # 🛰️ 내부 통신용 주소 (포트 고정: 3306)
+
+    # ❗ 컨테이너/클라우드 내부 통신용 DB 주소
+    # - DB_HOST, DB_PORT는 환경변수로 주입
+    # - 기본값은 nemo-db:3306 (docker-compose에서 서비스 이름이 nemo-db일 때)
     url: jdbc:mariadb://svc.sel5.cloudtype.app:30303/nemo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
-    username: ${DB_USER}         # 환경변수로 관리 (CloudType 시크릿)
-    password: ${DB_PASSWORD}
+
+    username: ${DB_USER}       # 환경변수(시크릿)로 설정
+    password: ${DB_PASSWORD}   # 환경변수(시크릿)로 설정
 
   jpa:
+    database-platform: org.hibernate.dialect.MariaDBDialect
     hibernate:
-      ddl-auto: validate         # 운영 환경은 validate (DB 변경 금지)
+      ddl-auto: validate       # 운영: 스키마는 미리 만들어두고 validate만
     show-sql: false
     properties:
       hibernate.format_sql: true
 
+# =========================
+# 🔐 JWT / 앱 공통 설정
+# =========================
 app:
+  jwt:
+    # 운영에서는 반드시 환경변수로 넣기
+    secret: ${JWT_SECRET}
+    issuer: "nemo-backend"
+    # 기본값은 15분, 필요하면 환경변수로 조정
+    access-ttl-ms: ${JWT_ACCESS_TTL_MS:900000}
+
+  # =========================
+  # ☁ S3 설정 (실제 AWS 사용 기준)
+  # =========================
   s3:
+    # 실제 운영 버킷 이름 (환경변수로 관리 권장)
+    bucket: ${AWS_S3_BUCKET:nemo-prod-photos}
+    region: ap-northeast-2
+
+    # AWS S3 정식 엔드포인트 (LocalStack 아님)
+    endpoint: https://s3.ap-northeast-2.amazonaws.com
+
     accessKey: ${AWS_ACCESS_KEY_ID}
     secretKey: ${AWS_SECRET_ACCESS_KEY}
+
+    # AWS 정식 S3는 pathStyle = false 권장
     pathStyle: false
+    # 운영에서는 버킷을 미리 만들어두고, 자동 생성은 끄는 걸 추천
+    createBucketIfMissing: false
+
+  # 프론트/공유 링크에서 쓸 API 기본 주소
+  public-base-url: ${PUBLIC_BASE_URL:https://api.nemo.app}
+
+# =========================
+# 🌏 네이버 로컬 검색 API
+# =========================
+naver:
+  openapi:
+    local:
+      endpoint: https://openapi.naver.com/v1/search/local.json
+      client-id: ${NAVER_LOCAL_CLIENT_ID}
+      client-secret: ${NAVER_LOCAL_CLIENT_SECRET}
+
+# =========================
+# 🌐 서버 공통 설정
+# =========================
+server:
+  tomcat:
+    uri-encoding: UTF-8        # 쿼리/폼 파라미터 UTF-8 처리
