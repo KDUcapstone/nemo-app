@@ -67,7 +67,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
 
         // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
         // AuthService.login()은 성공 시 userId, nickname, accessToken, profileImageUrl을 최상위에도 제공
-        if (result['userId'] != null && result['accessToken'] != null && mounted) {
+        if (result['userId'] != null &&
+            result['accessToken'] != null &&
+            mounted) {
           setState(() {
             _isLoading = false;
           });
@@ -102,7 +104,7 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         setState(() {
           _isLoading = false;
           final errorMsg = e.toString();
-          if (errorMsg.contains('401') || 
+          if (errorMsg.contains('401') ||
               errorMsg.contains('비밀번호') ||
               errorMsg.contains('틀렸습니다')) {
             _errorText = '비밀번호가 틀렸습니다';
