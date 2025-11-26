@@ -58,19 +58,50 @@ class _TimelineScreenState extends State<TimelineScreen> {
       // 전체 타임라인 로드
       final timelineData = await _api.getTimeline();
       final timelineMap = <String, Map<String, dynamic>>{};
+      DateTime? earliestDate;
+      DateTime? latestDate;
+
       for (final entry in timelineData) {
-        timelineMap[entry['date'] as String] = entry;
+        final dateStr = entry['date'] as String;
+        timelineMap[dateStr] = entry;
+
+        // 날짜 파싱하여 가장 이른/늦은 날짜 찾기
+        try {
+          final date = DateTime.parse(dateStr);
+          final dateMonth = DateTime(date.year, date.month, 1);
+
+          // 가장 이른 날짜 업데이트
+          if (earliestDate == null || dateMonth.isBefore(earliestDate)) {
+            earliestDate = dateMonth;
+          }
+
+          // 가장 늦은 날짜 업데이트
+          if (latestDate == null || dateMonth.isAfter(latestDate)) {
+            latestDate = dateMonth;
+          }
+        } catch (e) {
+          // 날짜 파싱 실패 시 무시
+        }
       }
 
-      // 가입 월부터 현재 월까지 타임랩스 데이터 로드
+      // 캘린더 시작 월 결정: 가입 월과 가장 이른 사진 월 중 더 이른 것
+      DateTime startMonth = joinedDate;
+      if (earliestDate != null && earliestDate.isBefore(joinedDate)) {
+        startMonth = earliestDate;
+      }
+
+      // 캘린더 종료 월 결정: 현재 월과 가장 늦은 사진 월 중 더 늦은 것
       final now = DateTime.now();
       final currentMonth = DateTime(now.year, now.month, 1);
-      final timelapseMap = <String, List<Map<String, dynamic>>>{};
+      DateTime endMonth = currentMonth;
+      if (latestDate != null && latestDate.isAfter(currentMonth)) {
+        endMonth = latestDate;
+      }
 
-      // 가입 월부터 현재 월까지 모든 월 생성
-      DateTime month = DateTime(joinedDate.year, joinedDate.month, 1);
-      while (month.isBefore(currentMonth) ||
-          month.isAtSameMomentAs(currentMonth)) {
+      // 시작 월부터 종료 월까지 타임랩스 데이터 로드
+      final timelapseMap = <String, List<Map<String, dynamic>>>{};
+      DateTime month = DateTime(startMonth.year, startMonth.month, 1);
+      while (month.isBefore(endMonth) || month.isAtSameMomentAs(endMonth)) {
         final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
         try {
           final data = await _api.getTimelapse(
@@ -92,7 +123,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       setState(() {
         _timelineDataByDate = timelineMap;
         _timelapseDataByMonth = timelapseMap;
-        _joinedDate = joinedDate;
+        _joinedDate = startMonth; // 시작 월을 joinedDate에 저장 (실제로는 캘린더 시작 월)
         _isLoading = false;
       });
     } catch (e) {
@@ -224,13 +255,33 @@ class _CalendarTimelineView extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final currentMonth = DateTime(now.year, now.month, 1);
-    final joinedMonth = DateTime(joinedDate.year, joinedDate.month, 1);
+    final startMonth = DateTime(joinedDate.year, joinedDate.month, 1);
 
-    // 가입 월부터 현재 월까지 모든 월 생성
+    // 시작 월부터 현재 월까지 모든 월 생성
+    // timelapseDataByMonth의 키를 확인하여 실제 로드된 월 범위 확인
+    int maxYear = currentMonth.year;
+    int maxMonth = currentMonth.month;
+
+    // timelapseDataByMonth에서 가장 늦은 월 찾기
+    for (final key in timelapseDataByMonth.keys) {
+      final parts = key.split('-');
+      if (parts.length == 2) {
+        final year = int.tryParse(parts[0]);
+        final monthNum = int.tryParse(parts[1]);
+        if (year != null && monthNum != null) {
+          if (year > maxYear || (year == maxYear && monthNum > maxMonth)) {
+            maxYear = year;
+            maxMonth = monthNum;
+          }
+        }
+      }
+    }
+
+    final endMonth = DateTime(maxYear, maxMonth, 1);
+
     final months = <DateTime>[];
-    DateTime month = joinedMonth;
-    while (month.isBefore(currentMonth) ||
-        month.isAtSameMomentAs(currentMonth)) {
+    DateTime month = startMonth;
+    while (month.isBefore(endMonth) || month.isAtSameMomentAs(endMonth)) {
       months.add(month);
       // 다음 달로 이동
       if (month.month == 12) {
