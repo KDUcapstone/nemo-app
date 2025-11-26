@@ -70,6 +70,8 @@ class UserProvider extends ChangeNotifier {
       photoProvider.fetchListIfNeeded();
       final albumProvider = Provider.of<AlbumProvider>(context, listen: false);
       albumProvider.resetAndLoad();
+      // 로그인 시 공유 앨범 권한 정보도 새로고침
+      albumProvider.refreshSharedAlbums();
     } catch (e) {
       // Provider가 없을 수 있으므로 무시
     }

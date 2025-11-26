@@ -719,6 +719,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     builder: (_) => AlbumMembersScreen(albumId: widget.albumId),
                   ),
                 );
+                // 멤버 화면에서 돌아온 후 role 재로드 (권한 변경 반영)
+                if (mounted) {
+                  await _loadMyRole();
+                }
                 break;
               case 'delete':
                 final ok = await showDialog<bool>(
