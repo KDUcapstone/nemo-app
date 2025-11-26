@@ -280,57 +280,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   // PDF 뷰어를 보여주는 메서드
   void _showTermsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(16),
-        child: Container(
-          width: double.infinity,
-          height: MediaQuery.of(context).size.height * 0.8,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: Colors.white,
-          ),
-          child: Column(
-            children: [
-              // 헤더
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: AppColors.divider)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      '개인정보 처리방침',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              // PDF 뷰어
-              Expanded(
-                child: PdfView(
-                  controller: PdfController(
-                    document: PdfDocument.openAsset(
-                      'assets/markers/privacy_policy.pdf',
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    showDialog(context: context, builder: (context) => _PrivacyPolicyDialog());
   }
 
   Future<void> _handleSignup() async {
@@ -1025,6 +975,92 @@ class _Blob extends StatelessWidget {
           width: size,
           height: size,
           decoration: BoxDecoration(color: color),
+        ),
+      ),
+    );
+  }
+}
+
+// 개인정보 처리방침 PDF 다이얼로그
+class _PrivacyPolicyDialog extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      child: Container(
+        width: double.infinity,
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+        ),
+        child: Column(
+          children: [
+            // 헤더
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.divider)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '개인정보 처리방침',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            // PDF 뷰어 (FutureBuilder로 비동기 로딩)
+            Expanded(
+              child: FutureBuilder<PdfDocument>(
+                future: PdfDocument.openAsset(
+                  'assets/markers/privacy_policy.pdf',
+                ),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 48,
+                              color: Colors.red,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'PDF 파일을 불러올 수 없습니다.\n${snapshot.error}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  if (snapshot.hasData) {
+                    return PdfView(
+                      controller: PdfController(
+                        document: Future.value(snapshot.data!),
+                      ),
+                    );
+                  }
+                  return const Center(child: Text('PDF를 불러올 수 없습니다.'));
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
