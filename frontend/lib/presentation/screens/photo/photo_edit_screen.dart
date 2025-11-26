@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:frontend/services/photo_api.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/providers/photo_provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:frontend/services/map_api.dart';
 
 class PhotoEditScreen extends StatefulWidget {
   final int photoId;
@@ -44,6 +46,10 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     super.initState();
     _load();
     _loadFriends();
+    // 위치가 없는 경우, 현재 위치 기반 네이버 지도 데이터를 사용해 기본값 설정
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initDefaultLocationFromMap();
+    });
   }
 
   Future<void> _load() async {
@@ -112,6 +118,80 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     _memoCtrl.dispose();
     _tagCtrl.dispose();
     super.dispose();
+  }
+
+  /// 현재 위치와 네이버 지도 API(MapApi.getViewport)를 사용해
+  /// 위치 기본값을 "현재 위치 근처 포토부스"로 설정
+  /// - 이미 위치가 입력되어 있으면 건드리지 않음
+  /// - 권한 거부/실패 시 조용히 무시
+  Future<void> _initDefaultLocationFromMap() async {
+    if (!mounted) return;
+    // 이미 위치가 채워져 있으면 그대로 둠
+    if (_locationCtrl.text.trim().isNotEmpty) return;
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+
+      // 현재 위치 기준으로 작은 뷰포트 생성 (약 수백 m 반경)
+      const delta = 0.01;
+      final lat = position.latitude;
+      final lng = position.longitude;
+
+      final response = await MapApi.getViewport(
+        neLat: lat + delta,
+        neLng: lng + delta,
+        swLat: lat - delta,
+        swLng: lng - delta,
+        zoom: 15,
+        cluster: true,
+        limit: 50,
+      );
+
+      if (!mounted) return;
+      final items = response['items'] as List<dynamic>? ?? const [];
+      if (items.isEmpty) return;
+
+      // distanceMeter가 있는 경우 가장 가까운 포토부스를 사용
+      dynamic best = items.first;
+      for (final item in items) {
+        if (item is Map &&
+            item['cluster'] != true &&
+            item.containsKey('distanceMeter') &&
+            best is Map &&
+            best.containsKey('distanceMeter')) {
+          if ((item['distanceMeter'] as num).toDouble() <
+              (best['distanceMeter'] as num).toDouble()) {
+            best = item;
+          }
+        }
+      }
+
+      if (best is! Map) return;
+      if (!mounted) return;
+      if (_locationCtrl.text.trim().isNotEmpty) return;
+
+      final roadAddress = best['roadAddress'] as String?;
+      final name = best['name'] as String?;
+      final locationText =
+          (roadAddress != null && roadAddress.isNotEmpty) ? roadAddress : name;
+
+      if (locationText != null && locationText.isNotEmpty) {
+        _locationCtrl.text = locationText;
+      }
+    } catch (_) {
+      // 위치/지도 로딩 실패 시 무시 (기본값 미설정 상태로 두기)
+    }
   }
 
   Future<void> _selectTakenAt() async {
