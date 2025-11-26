@@ -34,12 +34,7 @@ class MapApi {
       };
     }
 
-    // 🔍 로그: map init 호출
-    print('🗺️ [MapApi] GET /api/map/init');
-
     final res = await ApiClient.get('/api/map/init');
-
-    print('🗺️ [MapApi] /api/map/init status=${res.statusCode}');
 
     if (res.statusCode != 200) {
       throw Exception('map init 실패: ${res.statusCode}');
@@ -251,36 +246,18 @@ class MapApi {
       if (cluster != null) 'cluster': cluster.toString(),
     };
 
-    // 🔍 로그: 실제 서버로 보내는 뷰포트/쿼리 정보
-    final centerLat = (neLat + swLat) / 2;
-    final centerLng = (neLng + swLng) / 2;
-    print(
-      '🧭 [MapApi] viewport ne=($neLat, $neLng), '
-          'sw=($swLat, $swLng), center=($centerLat, $centerLng), '
-          'zoom=$zoom, brand=$brand, limit=$limit, cluster=$cluster',
-    );
-    print('🌐 [MapApi] GET /api/map/photobooths/viewport query=$query');
-
     final res = await ApiClient.get(
       '/api/map/photobooths/viewport',
       queryParameters: query,
     );
 
-    print('📡 [MapApi] /api/map/photobooths/viewport status=${res.statusCode}');
-
     if (res.statusCode != 200) {
-      // 에러 바디도 같이 보이게
-      final bodyText = utf8.decode(res.bodyBytes);
-      print('⚠️ [MapApi] viewport 실패 body=$bodyText');
+      print('⚠️ [MapApi] viewport 실패: ${res.statusCode}');
       throw Exception('viewport 실패: ${res.statusCode}');
     }
 
     final decoded =
     jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-
-    // 🔍 로그: 응답 items 개수
-    final items = decoded['items'] as List<dynamic>? ?? const [];
-    print('📍 [MapApi] viewport 응답 items=${items.length}개');
 
     return decoded;
   }
@@ -348,36 +325,19 @@ class MapApi {
     };
 
     // 🔍 로그: delta 요청 바디
-    print(
-      '🔁 [MapApi] POST /api/map/photobooths/viewport/delta '
-          'body={ne=($neLat,$neLng), sw=($swLat,$swLng), sinceTs=$sinceTs, '
-          'knownIds=${knownIds.length}, brand=$brand, cluster=$cluster}',
-    );
 
     final res = await ApiClient.post(
       '/api/map/photobooths/viewport/delta',
       body: body,
     );
 
-    print('📡 [MapApi] /api/map/photobooths/viewport/delta status=${res.statusCode}');
-
     if (res.statusCode != 200) {
-      final bodyText = utf8.decode(res.bodyBytes);
-      print('⚠️ [MapApi] delta 실패 body=$bodyText');
+      print('⚠️ [MapApi] delta 실패: ${res.statusCode}');
       throw Exception('delta 실패: ${res.statusCode}');
     }
 
     final decoded =
     jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-
-    // 🔍 로그: delta 응답 요약
-    final added = decoded['added'] as List<dynamic>? ?? const [];
-    final updated = decoded['updated'] as List<dynamic>? ?? const [];
-    final removedIds = decoded['removedIds'] as List<dynamic>? ?? const [];
-    print(
-      '📍 [MapApi] delta 응답: added=${added.length}, '
-          'updated=${updated.length}, removed=${removedIds.length}',
-    );
 
     return decoded;
   }
