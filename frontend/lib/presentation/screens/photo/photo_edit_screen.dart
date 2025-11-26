@@ -28,6 +28,16 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   bool _loadingFriends = false;
   List<Map<String, dynamic>> _friends = [];
   String _imageUrl = '';
+  // 브랜드 선택 옵션 (드롭다운 + 직접 입력)
+  final List<String> _brandOptions = const [
+    '직접 입력',
+    '인생네컷',
+    '포토이즘',
+    '하루필름',
+    '포토그레이',
+    '포토랩',
+  ];
+  String _selectedBrand = '직접 입력';
 
   @override
   void initState() {
@@ -46,6 +56,13 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       _brandCtrl.text = (res['brand'] as String?) ?? '';
       _tags = (res['tagList'] as List?)?.cast<String>() ?? [];
       _memoCtrl.text = (res['memo'] as String?) ?? '';
+      // 초기 브랜드를 옵션에 맞게 선택 상태로 설정
+      final currentBrand = _brandCtrl.text.trim();
+      if (currentBrand.isNotEmpty && _brandOptions.contains(currentBrand)) {
+        _selectedBrand = currentBrand;
+      } else {
+        _selectedBrand = '직접 입력';
+      }
 
       // 촬영일시 파싱
       final t = res['takenAt'] as String?;
@@ -422,13 +439,45 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               const SizedBox(height: 16),
 
               // 브랜드
-              TextFormField(
-                controller: _brandCtrl,
-                decoration: const InputDecoration(
-                  labelText: '브랜드',
-                  hintText: '예: 인생네컷',
-                  border: OutlineInputBorder(),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _selectedBrand,
+                    decoration: const InputDecoration(
+                      labelText: '브랜드',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _brandOptions
+                        .map(
+                          (b) => DropdownMenuItem<String>(
+                            value: b,
+                            child: Text(b),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _selectedBrand = value;
+                        if (value != '직접 입력') {
+                          _brandCtrl.text = value;
+                        } else {
+                          _brandCtrl.clear();
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _brandCtrl,
+                    enabled: _selectedBrand == '직접 입력',
+                    decoration: const InputDecoration(
+                      hintText: '직접 입력 (예: 인생네컷)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 

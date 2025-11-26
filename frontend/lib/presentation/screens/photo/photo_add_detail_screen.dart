@@ -39,6 +39,17 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
   bool _loadingFriends = false;
   List<Map<String, dynamic>> _friends = [];
 
+  // 브랜드 선택 옵션 (드롭다운 + 직접 입력)
+  final List<String> _brandOptions = const [
+    '직접 입력',
+    '인생네컷',
+    '포토이즘',
+    '하루필름',
+    '포토그레이',
+    '포토랩',
+  ];
+  String _selectedBrand = '직접 입력';
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +71,13 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
         _brandCtrl.text = '인생네컷';
         _tags = ['QR업로드'];
       }
+    }
+    // 초기 브랜드 값이 옵션 중 하나라면 드롭다운에 반영, 아니면 직접 입력 모드
+    final currentBrand = _brandCtrl.text.trim();
+    if (currentBrand.isNotEmpty && _brandOptions.contains(currentBrand)) {
+      _selectedBrand = currentBrand;
+    } else {
+      _selectedBrand = '직접 입력';
     }
     _loadFriends();
   }
@@ -337,7 +355,10 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
         ).showSnackBar(const SnackBar(content: Text('촬영 위치를 입력해주세요.')));
         return;
       }
-      if (_brandCtrl.text.trim().isEmpty) {
+      // QR 업로드 시 브랜드는 필수.
+      // 드롭다운에서 직접 입력이 선택된 경우에만 텍스트 입력을 검사.
+      if (_selectedBrand == '직접 입력' &&
+          _brandCtrl.text.trim().isEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('포토부스 브랜드를 입력해주세요.')));
@@ -522,21 +543,54 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
               const SizedBox(height: 16),
 
               // 브랜드
-              TextFormField(
-                controller: _brandCtrl,
-                decoration: InputDecoration(
-                  labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
-                  hintText: '예: 인생네컷',
-                  border: const OutlineInputBorder(),
-                ),
-                validator: widget.qrCode != null
-                    ? (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return '포토부스 브랜드를 입력해주세요.';
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _selectedBrand,
+                    decoration: InputDecoration(
+                      labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
+                      border: const OutlineInputBorder(),
+                    ),
+                    items: _brandOptions
+                        .map(
+                          (b) => DropdownMenuItem<String>(
+                            value: b,
+                            child: Text(b),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _selectedBrand = value;
+                        if (value != '직접 입력') {
+                          _brandCtrl.text = value;
+                        } else {
+                          _brandCtrl.clear();
                         }
-                        return null;
-                      }
-                    : null,
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _brandCtrl,
+                    enabled: _selectedBrand == '직접 입력',
+                    decoration: const InputDecoration(
+                      hintText: '직접 입력 (예: 인생네컷)',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: widget.qrCode != null
+                        ? (_) {
+                            if (_selectedBrand == '직접 입력' &&
+                                _brandCtrl.text.trim().isEmpty) {
+                              return '포토부스 브랜드를 입력해주세요.';
+                            }
+                            return null;
+                          }
+                        : null,
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 
