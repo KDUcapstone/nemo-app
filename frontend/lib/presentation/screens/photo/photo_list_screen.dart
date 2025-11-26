@@ -220,6 +220,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         ? const _EmptyState()
                         : (_showAlbums
                               ? _AlbumListGrid(
+                                  key: ValueKey(
+                                    'album_grid_${_albumSort}_$_albumSharedOnly',
+                                  ),
                                   sort: _albumSort,
                                   sharedOnly: _albumSharedOnly,
                                 )
@@ -770,7 +773,11 @@ class _DeleteButtonState extends State<_DeleteButton> {
 class _AlbumListGrid extends StatefulWidget {
   final String sort;
   final bool sharedOnly;
-  const _AlbumListGrid({required this.sort, this.sharedOnly = false});
+  const _AlbumListGrid({
+    super.key,
+    required this.sort,
+    this.sharedOnly = false,
+  });
 
   @override
   State<_AlbumListGrid> createState() => _AlbumListGridState();
@@ -788,10 +795,10 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   @override
   void initState() {
     super.initState();
-    // 초기 로드 수행
+    // 앨범 탭을 눌렀을 때 항상 최신 앨범 목록 새로고침
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      await _loadAlbums();
+      await _loadAlbums(reset: true);
     });
   }
 
