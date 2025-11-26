@@ -44,7 +44,7 @@ app:
     region: ap-northeast-2
 
     # AWS S3 정식 엔드포인트 (LocalStack 아님)
-    endpoint: ""
+    endpoint: https://s3.ap-northeast-2.amazonaws.com
 
     accessKey: ${AWS_ACCESS_KEY_ID}
     secretKey: ${AWS_SECRET_ACCESS_KEY}
