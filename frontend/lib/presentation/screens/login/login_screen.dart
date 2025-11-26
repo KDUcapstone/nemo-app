@@ -229,13 +229,30 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
         if (mounted) {
           final errorMsg = e.toString();
           String message;
-          if (errorMsg.contains('401') ||
-              errorMsg.contains('비밀번호') ||
-              errorMsg.contains('틀렸습니다')) {
-            message = '비밀번호가 틀렸습니다';
+
+          // Exception 접두사 및 기술적 메시지 제거, 사용자 친화적인 메시지로 변환
+          if (errorMsg.startsWith('Exception: ')) {
+            message = errorMsg.substring('Exception: '.length);
+            // 네트워크 오류 메시지 정리
+            if (message.startsWith('네트워크 오류: ')) {
+              message = '네트워크 오류가 발생했습니다.';
+            } else if (message.contains('네트워크')) {
+              message = '네트워크 오류가 발생했습니다.';
+            }
+            // 기술적인 오류 코드나 메시지가 포함된 경우 일반 메시지로 변환
+            if (message.contains('(40') ||
+                message.contains('(50') ||
+                message.contains('statusCode') ||
+                message.contains('HttpException')) {
+              message = '로그인에 실패했습니다.';
+            }
+          } else if (errorMsg.contains('네트워크') ||
+              errorMsg.contains('Network')) {
+            message = '네트워크 오류가 발생했습니다.';
           } else {
             message = '로그인에 실패했습니다.';
           }
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(message), backgroundColor: Colors.red),
           );

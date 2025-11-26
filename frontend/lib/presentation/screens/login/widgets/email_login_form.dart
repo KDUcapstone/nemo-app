@@ -104,20 +104,32 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         setState(() {
           _isLoading = false;
           final errorMsg = e.toString();
-          if (errorMsg.contains('401') ||
-              errorMsg.contains('비밀번호') ||
-              errorMsg.contains('틀렸습니다')) {
-            _errorText = '비밀번호가 틀렸습니다';
-          } else {
-            // Exception: 접두사 제거
-            if (errorMsg.startsWith('Exception: ')) {
-              _errorText = errorMsg.substring('Exception: '.length);
-            } else if (errorMsg.contains('네트워크')) {
-              _errorText = '네트워크 오류가 발생했습니다.';
-            } else {
-              _errorText = '로그인에 실패했습니다.';
+
+          // Exception 접두사 및 기술적 메시지 제거, 사용자 친화적인 메시지로 변환
+          String userMessage;
+          if (errorMsg.startsWith('Exception: ')) {
+            userMessage = errorMsg.substring('Exception: '.length);
+            // 네트워크 오류 메시지 정리
+            if (userMessage.startsWith('네트워크 오류: ')) {
+              userMessage = '네트워크 오류가 발생했습니다.';
+            } else if (userMessage.contains('네트워크')) {
+              userMessage = '네트워크 오류가 발생했습니다.';
             }
+            // 기술적인 오류 코드나 메시지가 포함된 경우 일반 메시지로 변환
+            if (userMessage.contains('(40') ||
+                userMessage.contains('(50') ||
+                userMessage.contains('statusCode') ||
+                userMessage.contains('HttpException')) {
+              userMessage = '로그인에 실패했습니다.';
+            }
+          } else if (errorMsg.contains('네트워크') ||
+              errorMsg.contains('Network')) {
+            userMessage = '네트워크 오류가 발생했습니다.';
+          } else {
+            userMessage = '로그인에 실패했습니다.';
           }
+
+          _errorText = userMessage;
         });
       }
     }

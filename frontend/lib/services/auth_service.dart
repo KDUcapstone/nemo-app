@@ -83,7 +83,8 @@ class AuthService {
       if (response.statusCode == 200) {
         // API 명세서: { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
         // UTF-8로 명시적으로 디코딩하여 인코딩 문제 방지
-        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        final data =
+            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         final access = data['accessToken'] as String;
         final refresh = data['refreshToken'] as String?;
         final user = data['user'] as Map<String, dynamic>?;
@@ -104,6 +105,15 @@ class AuthService {
           'profileImageUrl': user?['profileImageUrl'],
         };
       } else if (response.statusCode == 401) {
+        // 백엔드 응답의 실제 메시지 확인
+        final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        final message = data['message'] as String?;
+
+        // 백엔드가 구체적인 메시지를 제공하면 그대로 사용
+        if (message != null && message.isNotEmpty) {
+          throw Exception(message);
+        }
+        // 기본값: 비밀번호 오류로 처리 (하지만 백엔드 메시지 우선)
         throw Exception('비밀번호가 틀렸습니다');
       } else if (response.statusCode == 400) {
         final data = jsonDecode(response.body);
