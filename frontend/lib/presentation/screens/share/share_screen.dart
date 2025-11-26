@@ -1175,26 +1175,50 @@ class _CollaborativeAlbumSectionState
             );
             if (mounted) _loadAll(); // 돌아오면 카운트/목록 리프레시
           },
-          child: Row(
-            children: [
-              const _SectionTitle(title: '공유 앨범'),
-              const SizedBox(width: 8),
-              if (!_loading && _pendingCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '$_pendingCount',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.group_add,
+                  size: 18,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '공유 앨범 초대',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
-            ],
+                const SizedBox(width: 6),
+                if (!_loading && _pendingCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$_pendingCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
