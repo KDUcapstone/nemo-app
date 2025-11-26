@@ -216,7 +216,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 child: Stack(
                   children: [
-                    items.isEmpty
+                    // 사진 탭일 때만 items.isEmpty 체크, 앨범 탭일 때는 항상 앨범 목록 표시
+                    (!_showAlbums && items.isEmpty)
                         ? const _EmptyState()
                         : (_showAlbums
                               ? _AlbumListGrid(
