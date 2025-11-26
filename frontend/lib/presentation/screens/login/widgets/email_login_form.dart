@@ -84,9 +84,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
           );
           // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
           final nick = (result['nickname'] as String?)?.trim();
-          _showToast(
-            '환영합니다 ${nick != null && nick.isNotEmpty ? nick : '사용자'}님!',
-          );
+          // 닉네임이 비어있거나 인코딩 문제가 있을 경우 안전하게 처리
+          final displayNick = (nick != null && nick.isNotEmpty) ? nick : '사용자';
+          _showToast('환영합니다 $displayNick님!');
           Navigator.pop(context, true);
         } else {
           // 예상치 못한 응답 형식

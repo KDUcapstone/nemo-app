@@ -82,7 +82,8 @@ class AuthService {
 
       if (response.statusCode == 200) {
         // API 명세서: { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        // UTF-8로 명시적으로 디코딩하여 인코딩 문제 방지
+        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         final access = data['accessToken'] as String;
         final refresh = data['refreshToken'] as String?;
         final user = data['user'] as Map<String, dynamic>?;
