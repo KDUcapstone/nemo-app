@@ -33,6 +33,6 @@ public class Album extends BaseEntity {
     private User user;
 
     // 앨범에 포함된 사진
-    @OneToMany(mappedBy = "album", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "album")
     private List<Photo> photos;
 }

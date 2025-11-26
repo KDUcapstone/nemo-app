@@ -1,40 +1,41 @@
+// backend/src/main/java/com/nemo/backend/domain/album/dto/SharedAlbumSummaryResponse.java
 package com.nemo.backend.domain.album.dto;
 
 import com.nemo.backend.domain.album.entity.Album;
 import com.nemo.backend.domain.album.entity.AlbumShare;
 import lombok.Builder;
+import lombok.Getter;
 
 import java.time.LocalDateTime;
 
 /**
- * "내가 공유받은 앨범" 목록용 DTO
+ * 내가 공유받은 앨범 목록 응답 항목
+ * (명세에는 상세히 안나와서, 일반 목록 요약 + role만 포함)
  */
+@Getter
 @Builder
-public record SharedAlbumSummaryResponse(
-        Long albumId,
-        String title,
-        String description,
-        String coverPhotoUrl,
-        Long ownerId,
-        String ownerNickname,
-        AlbumShare.Role myRole,
-        LocalDateTime sharedAt,
-        int photoCount
-) {
-    public static SharedAlbumSummaryResponse from(Album album,
-                                                  AlbumShare share,
-                                                  String resolvedCoverUrl,
-                                                  int photoCount) {
+public class SharedAlbumSummaryResponse {
+
+    private Long albumId;
+    private String title;
+    private String coverPhotoUrl;
+    private int photoCount;
+    private LocalDateTime createdAt;
+    private String role;
+
+    public static SharedAlbumSummaryResponse from(
+            Album album,
+            AlbumShare share,
+            String coverUrl,
+            int photoCount
+    ) {
         return SharedAlbumSummaryResponse.builder()
                 .albumId(album.getId())
                 .title(album.getName())
-                .description(album.getDescription())
-                .coverPhotoUrl(resolvedCoverUrl)
-                .ownerId(album.getUser().getId())
-                .ownerNickname(album.getUser().getNickname())
-                .myRole(share.getRole())
-                .sharedAt(share.getCreatedAt())
+                .coverPhotoUrl(coverUrl)
                 .photoCount(photoCount)
+                .createdAt(album.getCreatedAt())
+                .role(share.getRole().name())
                 .build();
     }
 }

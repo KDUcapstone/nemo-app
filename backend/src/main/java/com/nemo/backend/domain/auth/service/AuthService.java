@@ -14,234 +14,231 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
 @Transactional
-@RequiredArgsConstructor // ⭐ final 필드만 자동 생성자로 만들기
+@RequiredArgsConstructor
 public class AuthService {
 
-    // ----------------------------------------------------
-    // ⭐ 의존성 주입되는 서비스들
-    // ----------------------------------------------------
-    private final UserRepository userRepository;                 // 사용자 정보 조회/저장
-    private final RefreshTokenRepository refreshTokenRepository; // Refresh Token DB 저장소
-    private final PasswordEncoder passwordEncoder;               // 비밀번호 암호화
-    private final JwtUtil jwtUtil;                               // 🔥 JWT 발급 & 검증 유틸 (고정 키 기반)
+    private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
-    // ----------------------------------------------------
-    // ⭐ yml 에서 읽어오는 설정 값들
-    // ----------------------------------------------------
-    @Value("${jwt.access-exp-seconds:3600}")            // Access Token 유효기간(초)
+    @Value("${jwt.access-exp-seconds:3600}")
     private long accessExpSeconds;
 
-    @Value("${jwt.refresh-exp-days:14}")                // Refresh Token 유효기간(일)
+    @Value("${jwt.refresh-exp-days:14}")
     private long refreshExpDays;
 
-    @Value("${jwt.refresh-rotate-threshold-sec:259200}") // Refresh Token 회전 시점(3일)
+    @Value("${jwt.refresh-rotate-threshold-sec:259200}")
     private long rotateThresholdSec;
 
-    // ====================================================
+    // =======================
     // 1) 회원가입
-    // ====================================================
-    /**
-     * 회원가입 로직
-     * - 이메일 중복 체크
-     * - 비밀번호 암호화
-     * - User 엔티티 생성 후 DB 저장
-     */
+    // =======================
     public SignUpResponse signUp(SignUpRequest request) {
 
-        // 1) 유효성 검사
-        if (request.getEmail() == null || request.getEmail().isBlank()) {
-            throw new IllegalArgumentException("이메일은 필수입니다.");
-        }
-        if (request.getPassword() == null || request.getPassword().isBlank()) {
-            throw new IllegalArgumentException("비밀번호는 필수입니다.");
-        }
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("이미 가입된 이메일입니다.");
+        if (request == null
+                || request.getEmail() == null || request.getEmail().isBlank()
+                || request.getPassword() == null || request.getPassword().isBlank()
+                || request.getNickname() == null || request.getNickname().isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "필수 정보가 누락되었습니다. (email, password, nickname)");
         }
 
-        // 2) User 엔티티 생성
+        String email = request.getEmail().trim();
+
+        if (userRepository.existsByEmail(email)) {
+            throw new ApiException(ErrorCode.DUPLICATE_EMAIL);
+        }
+
         User user = new User();
-        user.setEmail(request.getEmail().trim());
-        user.setPassword(passwordEncoder.encode(request.getPassword())); // 비밀번호 암호화
-        user.setNickname(request.getNickname() != null ? request.getNickname() : "");
-        user.setProfileImageUrl("");    // 기본값
-        user.setProvider("local");      // 회원가입 방식
-        user.setSocialId(null);         // 소셜 로그인 X
+        user.setEmail(email);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setNickname(request.getNickname().trim());  // ★ 필수
+        user.setProfileImageUrl(request.getProfileImageUrl() != null ? request.getProfileImageUrl() : "");
+        user.setProvider("local");
+        user.setSocialId(null);
 
-        // 3) 저장
         User saved = userRepository.save(user);
 
-        // 4) 응답 DTO 반환
+        String createdAtStr = (saved.getCreatedAt() != null)
+                ? saved.getCreatedAt().toString()
+                : "";
+
         return new SignUpResponse(
                 saved.getId(),
                 saved.getEmail(),
                 saved.getNickname(),
-                saved.getProfileImageUrl()
+                saved.getProfileImageUrl(),
+                createdAtStr
         );
     }
 
-    // ====================================================
+
+    // =======================
     // 2) 로그인
-    // ====================================================
-    /**
-     * 로그인 로직
-     * - 이메일/비밀번호 체크
-     * - AccessToken 생성(JwtUtil)
-     * - RefreshToken DB 저장
-     * - LoginResponse(6개 필드) 반환
-     */
+    // =======================
     public LoginResponse login(LoginRequest request) {
 
-        // 1) 이메일 존재 확인
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new IllegalArgumentException("가입되지 않은 이메일입니다."));
-
-        // 2) 비밀번호 체크
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+        if (request == null
+                || request.getEmail() == null || request.getEmail().isBlank()
+                || request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST);
         }
 
-        // --------------------------------------------------
-        // 🔥 3) AccessToken 발급 → JwtUtil 사용
-        // JwtTokenProvider는 제거됨
-        // --------------------------------------------------
+        User user = userRepository.findByEmail(request.getEmail().trim())
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CREDENTIALS));
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+        }
+
         String accessToken = jwtUtil.createAccessToken(user.getId(), user.getEmail());
+        String refreshTokenStr = upsertRefreshTokenForUser(user.getId());
 
-        // --------------------------------------------------
-        // ⭐ Refresh Token 저장 로직
-        // --------------------------------------------------
-        String refreshTokenStr = UUID.randomUUID().toString();
-        LocalDateTime expiry = LocalDateTime.now().plusDays(refreshExpDays);
-
-        RefreshToken token = refreshTokenRepository.findFirstByUserId(user.getId())
-                .orElseGet(RefreshToken::new); // 없으면 새로 생성
-
-        token.setUserId(user.getId());
-        token.setToken(refreshTokenStr);
-        token.setExpiry(expiry);
-        refreshTokenRepository.save(token);
-
-        // --------------------------------------------------
-        // ⭐ LoginResponse는 6개 필드 필요
-        // --------------------------------------------------
-        String nickname = user.getNickname() == null ? "" : user.getNickname();
-        String profile = user.getProfileImageUrl() == null ? "" : user.getProfileImageUrl();
+        String nickname = user.getNickname() != null ? user.getNickname() : "";
+        String profile = user.getProfileImageUrl() != null ? user.getProfileImageUrl() : "";
 
         return new LoginResponse(
-                user.getId(),
-                user.getEmail(),
-                nickname,
-                profile,
                 accessToken,
-                refreshTokenStr
+                refreshTokenStr,
+                accessExpSeconds,
+                user.getId(),
+                nickname,
+                profile
         );
     }
 
-    // ====================================================
-    // 3) 로그아웃
-    // ====================================================
-    public void logout(Long userId) {
-        refreshTokenRepository.deleteByUserId(userId); // RefreshToken 삭제
-    }
-
-    // ====================================================
-    // 4) 회원탈퇴 (비밀번호 검증)
-    // ====================================================
-    public void deleteAccount(Long userId) {
-        deleteAccount(userId, null);
-    }
-
-    public void deleteAccount(Long userId, String rawPassword) {
-
-        // 사용자 존재 확인
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("해당 사용자를 찾을 수 없습니다."));
-
-        // 비밀번호 검증
-        if (rawPassword == null || rawPassword.isBlank()
-                || !passwordEncoder.matches(rawPassword, user.getPassword())) {
-            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+    // =======================
+    // 3) 로그아웃 (명세 반영)
+    // =======================
+    public void logout(Long userId, String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "refreshToken 은 필수입니다.");
         }
 
-        // RefreshToken 제거 + User 제거
+        RefreshToken stored = refreshTokenRepository.findByToken(refreshToken)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_TOKEN));
+
+        // 다른 유저의 토큰이면 무효
+        if (!stored.getUserId().equals(userId)) {
+            throw new ApiException(ErrorCode.INVALID_TOKEN);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 만료된 토큰이면 삭제 후 에러
+        if (stored.getExpiry() == null || !stored.getExpiry().isAfter(now)) {
+            refreshTokenRepository.delete(stored);
+            throw new ApiException(ErrorCode.INVALID_TOKEN);
+        }
+
+        // 정상 토큰이면 해당 토큰만 삭제
+        refreshTokenRepository.delete(stored);
+    }
+
+    /**
+     * (기존 코드 사용 중이면 유지용 – 전체 토큰 삭제)
+     */
+    public void logoutAll(Long userId) {
+        refreshTokenRepository.deleteByUserId(userId);
+    }
+
+    // =======================
+    // 4) 회원탈퇴 (비밀번호 확인 방식)
+    // =======================
+    public void deleteAccount(Long userId, String rawPassword) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+
+        if (rawPassword != null && !rawPassword.isBlank()) {
+            if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+                throw new ApiException(ErrorCode.INVALID_PASSWORD);
+            }
+        }
+
         refreshTokenRepository.deleteByUserId(userId);
         userRepository.delete(user);
     }
 
-    // ====================================================
-    // 5) Refresh Token으로 Access Token 재발급
-    // ====================================================
-    /**
-     * refresh()
-     * - RefreshToken 문자열 → DB 조회
-     * - 만료되었으면 예외
-     * - AccessToken 재발급
-     * - RefreshToken 만료 임박 시 → rotate(교체)
-     */
-    @Transactional
+    public void deleteAccount(Long userId) {
+        deleteAccount(userId, null);
+    }
+
+    // =======================
+    // 5) Access Token 재발급
+    // =======================
+    @Transactional(readOnly = true)
     public RefreshResponse refresh(RefreshRequest request) {
 
-        if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
+        if (request == null
+                || request.refreshToken() == null
+                || request.refreshToken().isBlank()) {
+            // 400 TOKEN_REQUIRED
+            throw new ApiException(ErrorCode.TOKEN_REQUIRED);
         }
 
         RefreshToken stored = refreshTokenRepository.findByToken(request.refreshToken())
-                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_TOKEN));
 
         LocalDateTime now = LocalDateTime.now();
 
-        // 1) RefreshToken 만료 확인
+        // 만료 or 잘못된 토큰
         if (stored.getExpiry() == null || !stored.getExpiry().isAfter(now)) {
-            refreshTokenRepository.deleteByToken(stored.getToken());
-            throw new ApiException(ErrorCode.UNAUTHORIZED);
+            refreshTokenRepository.delete(stored);
+            throw new ApiException(ErrorCode.INVALID_TOKEN);
         }
 
-        // 2) 사용자 확인
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
 
-        // --------------------------------------------------
-        // 🔥 3) Access Token 재발급 → JwtUtil 사용
-        // --------------------------------------------------
-        String newAccess = jwtUtil.createAccessToken(user.getId(), user.getEmail());
+        // 새 액세스 토큰 발급
+        String newAccessToken = jwtUtil.createAccessToken(user.getId(), user.getEmail());
 
-        // --------------------------------------------------
-        // 4) RefreshToken 회전 여부 판단
-        // --------------------------------------------------
-        long remainSec = Duration.between(now, stored.getExpiry()).getSeconds();
-        String outRefresh = stored.getToken();
+        // refreshToken 갱신 정책 (만료 임박 시 새로 발급)
+        LocalDateTime expiry = stored.getExpiry();
+        long totalSeconds = refreshExpDays * 24L * 60L * 60L;
+        long remainingSeconds = java.time.Duration.between(now, expiry).getSeconds();
 
-        if (remainSec <= rotateThresholdSec) {
-            // 만료 임박 → 새 RefreshToken 발급
-            outRefresh = rotateRefreshToken(stored);
+        String newRefreshToken = null;
+
+        // 남은 시간이 전체의 1/3 이하라면 새 토큰 발급
+        if (remainingSeconds < totalSeconds / 3) {
+            String rotated = UUID.randomUUID().toString();
+            stored.setToken(rotated);
+            stored.setExpiry(now.plusDays(refreshExpDays));
+            refreshTokenRepository.save(stored);
+            newRefreshToken = rotated;
         }
 
-        return new RefreshResponse(newAccess, outRefresh, accessExpSeconds);
+        // 명세: refreshToken은 갱신된 경우만 포함
+        return new RefreshResponse(newAccessToken, newRefreshToken);
     }
 
-    // Refresh Token 회전
-    private String rotateRefreshToken(RefreshToken entity) {
-        String newToken = UUID.randomUUID().toString();
-        entity.setToken(newToken);
-        entity.setExpiry(LocalDateTime.now().plusDays(refreshExpDays));
-        refreshTokenRepository.save(entity);
-        return newToken;
-    }
+    // =======================
+    // 내부 유틸: RefreshToken upsert
+    // =======================
+    private String upsertRefreshTokenForUser(Long userId) {
 
-    // (예비) RefreshToken 생성 편의 메서드
-    private String createAndSaveRefreshToken(Long userId) {
-        String token = UUID.randomUUID().toString();
-        RefreshToken refreshToken = new RefreshToken();
-        refreshToken.setUserId(userId);
-        refreshToken.setToken(token);
-        refreshToken.setExpiry(LocalDateTime.now().plusDays(refreshExpDays));
-        refreshTokenRepository.save(refreshToken);
-        return token;
+        LocalDateTime newExpiry = LocalDateTime.now().plusDays(refreshExpDays);
+
+        return refreshTokenRepository.findFirstByUserId(userId)
+                .map(entity -> {
+                    entity.setToken(UUID.randomUUID().toString());
+                    entity.setExpiry(newExpiry);
+                    return entity.getToken();
+                })
+                .orElseGet(() -> {
+                    RefreshToken refreshToken = new RefreshToken();
+                    refreshToken.setUserId(userId);
+                    refreshToken.setToken(UUID.randomUUID().toString());
+                    refreshToken.setExpiry(newExpiry);
+                    refreshTokenRepository.save(refreshToken);
+                    return refreshToken.getToken();
+                });
     }
 }

@@ -1,9 +1,7 @@
 // src/main/java/com/nemo/backend/domain/map/controller/PhotoboothController.java
 package com.nemo.backend.domain.map.controller;
 
-import com.nemo.backend.domain.map.dto.PhotoboothDto;
-import com.nemo.backend.domain.map.dto.ViewportRequest;
-import com.nemo.backend.domain.map.dto.ViewportResponse;
+import com.nemo.backend.domain.map.dto.*;
 import com.nemo.backend.domain.map.service.PhotoboothService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -19,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -88,6 +87,57 @@ public class PhotoboothController {
         return ResponseEntity.ok()
                 .cacheControl(cc)
                 .body(body);
+    }
+
+    /**
+     * 뷰포트 증분(Delta) 조회 API
+     *
+     * 👉 사용 시나리오
+     * 1. 클라이언트가 처음 지도 진입 시 /viewport 로 전체 목록 한 번 받음
+     * 2. 이후 지도 이동/줌 변화가 있을 때마다
+     *    - 현재 뷰포트 정보
+     *    - 마지막 응답 시각(serverTs)
+     *    - 현재 가지고 있는 마커 ID 목록(knownIds)
+     *    을 함께 보내서 Delta만 받아온다.
+     */
+    @PostMapping("/viewport/delta")
+    @Operation(
+            summary = "뷰포트 증분(Delta) 조회",
+            description = "마지막 기준시각 이후 변경된 마커만 반환합니다. (추가/수정/삭제 구분)",
+            security = @SecurityRequirement(name = "bearerAuth") // 🔐 토큰 필요
+    )
+    public ResponseEntity<?> getViewportDelta(@RequestBody ViewportDeltaRequest req) {
+
+        // 1) 기본적인 뷰포트 유효성 검증
+        //    - 위도: -90 ~ 90, 경도: -180 ~ 180
+        //    - 북동(NE)이 남서(SW)보다 "더 위/오른쪽"에 있어야 정상
+        if (!isValidViewport(req.getNeLat(), req.getNeLng(), req.getSwLat(), req.getSwLng())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "INVALID_VIEWPORT",
+                    "message", "유효한 뷰포트(neLat/neLng/swLat/swLng)가 필요합니다."
+            ));
+        }
+
+        // 2) 서비스 레이어에 Delta 계산 위임
+        ViewportDeltaResponse res = service.getPhotoboothsDelta(req);
+
+        // 3) 그대로 200 OK로 반환
+        return ResponseEntity.ok(res);
+    }
+
+    /**
+     * 뷰포트 유효성 검증 헬퍼 메서드
+     * - 기존 /viewport GET에서도 재사용 중일 가능성 높음
+     * - 여기서는 간단히 "상식적인 범위"만 거른다.
+     */
+    private boolean isValidViewport(double neLat, double neLng, double swLat, double swLng) {
+        if (neLat < -90 || neLat > 90) return false;
+        if (swLat < -90 || swLat > 90) return false;
+        if (neLng < -180 || neLng > 180) return false;
+        if (swLng < -180 || swLng > 180) return false;
+        if (neLat <= swLat) return false; // 북쪽 위도가 남쪽 위도보다 커야 함
+        if (neLng <= swLng) return false; // 동쪽 경도가 서쪽 경도보다 커야 함
+        return true;
     }
 
     // ────────── helpers ──────────

@@ -1,44 +1,41 @@
-// backend/src/main/java/com/nemo/backend/domain/user/controller/UserAuthController.java
+// com.nemo.backend.domain.user.controller.UserAuthController.java
 package com.nemo.backend.domain.user.controller;
 
 import com.nemo.backend.domain.auth.dto.LoginRequest;
 import com.nemo.backend.domain.auth.dto.LoginResponse;
 import com.nemo.backend.domain.auth.dto.SignUpRequest;
 import com.nemo.backend.domain.auth.dto.SignUpResponse;
+import com.nemo.backend.domain.auth.dto.RefreshRequest;
 import com.nemo.backend.domain.auth.service.AuthService;
-import com.nemo.backend.domain.auth.util.AuthExtractor;       // ⭐ 공통 인증 유틸
+import com.nemo.backend.domain.auth.util.AuthExtractor;
+import com.nemo.backend.domain.user.service.UserService;
+import com.nemo.backend.global.exception.ApiException;
+import com.nemo.backend.global.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
 @RestController
 @RequestMapping(
         value = "/api/users",
-        produces = "application/json; charset=UTF-8")
-@RequiredArgsConstructor // 🔥 final 필드 자동 생성자
+        produces = "application/json; charset=UTF-8"
+)
+@RequiredArgsConstructor
 public class UserAuthController {
 
-    // --------------------------------------------------------
-    // ⭐ 의존성 주입
-    // --------------------------------------------------------
     private final AuthService authService;
-
-    /**
-     * 🔐 AuthExtractor
-     * - Authorization 헤더에서 userId 추출하는 공통 로직 담당
-     *   (JWT 검증 + RefreshToken 존재 여부까지)
-     * - 다른 컨트롤러(Album, Photo 등)에서도 똑같이 사용 가능
-     */
     private final AuthExtractor authExtractor;
+    private final UserService userService;
 
-    // ========================================================
-    // 1) 회원가입
-    // ========================================================
+    // ---------------------------
+    // 회원가입 (JSON)
+    // ---------------------------
     @PostMapping(
             value = "/signup",
             consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -52,10 +49,46 @@ public class UserAuthController {
                 .body(response);
     }
 
-    // ========================================================
-    // 2) 로그인
-    //    - 실제 토큰 발급은 AuthService.login() 내부에서 처리
-    // ========================================================
+    // ---------------------------
+    // 회원가입 (multipart – 프로필 이미지 업로드 포함)
+    // ---------------------------
+    @PostMapping(
+            value = "/signup",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<SignUpResponse> signUpMultipart(
+            @RequestPart("email") String email,
+            @RequestPart("password") String password,
+            @RequestPart("nickname") String nickname,  // ★ 필수
+            @RequestPart(value = "image", required = false) MultipartFile image
+    ) {
+        if (nickname == null || nickname.isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "nickname 은 필수입니다.");
+        }
+
+        SignUpRequest request = new SignUpRequest();
+        request.setEmail(email);
+        request.setPassword(password);
+        request.setNickname(nickname);
+
+        if (image != null && !image.isEmpty()) {
+            String profileUrl = userService.uploadProfileImageForSignup(image);
+            request.setProfileImageUrl(profileUrl);
+        }
+
+        SignUpResponse response = authService.signUp(request);
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(response);
+    }
+
+
+    // ---------------------------
+    // 로그인
+    // ---------------------------
     @PostMapping(
             value = "/login",
             consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -69,23 +102,28 @@ public class UserAuthController {
                 .body(body);
     }
 
-    // ========================================================
-    // 3) 로그아웃
-    //    - AccessToken에서 userId 추출 → 해당 유저의 RefreshToken 삭제
-    //    - 인증 체크(토큰 유효 + RefreshToken 존재 여부)는 AuthExtractor가 담당
-    // ========================================================
-    @PostMapping(value = "/logout", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String,String>> logout(HttpServletRequest request) {
-        // 1) 헤더에서 Authorization 꺼내기
-        String authorization = request.getHeader("Authorization");
-
-        // 2) 공통 유틸로 userId 추출 (JWT + RefreshToken 검증 포함)
+    // ---------------------------
+    // 로그아웃 (명세 반영)
+    //  - Body: { "refreshToken": "..." }
+    // ---------------------------
+    @PostMapping(
+            value = "/logout",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<Map<String, String>> logout(
+            HttpServletRequest servletRequest,
+            @RequestBody RefreshRequest body
+    ) {
+        String authorization = servletRequest.getHeader("Authorization");
         Long userId = authExtractor.extractUserId(authorization);
 
-        // 3) 실제 로그아웃 처리 (RefreshToken 삭제)
-        authService.logout(userId);
+        if (body == null || body.refreshToken() == null || body.refreshToken().isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "refreshToken 은 필수입니다.");
+        }
 
-        // 4) JSON 메시지로 응답 (204 대신 200 OK + body)
-        return ResponseEntity.ok(Map.of("message", "logged out"));
+        authService.logout(userId, body.refreshToken());
+
+        return ResponseEntity.ok(Map.of("message", "성공적으로 로그아웃되었습니다."));
     }
 }
