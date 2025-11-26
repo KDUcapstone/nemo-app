@@ -6,11 +6,13 @@ import 'menu_button.dart';
 class AccountActionsCard extends StatelessWidget {
   final VoidCallback onLogout;
   final VoidCallback onDelete;
+  final VoidCallback? onResetPassword;
 
   const AccountActionsCard({
     super.key,
     required this.onLogout,
     required this.onDelete,
+    this.onResetPassword,
   });
 
   @override
@@ -28,6 +30,15 @@ class AccountActionsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          if (onResetPassword != null) ...[
+            MenuButton(
+              icon: Icons.lock_reset,
+              label: '비밀번호 변경',
+              onTap: onResetPassword!,
+              color: AppColors.textSecondary,
+            ),
+            const SizedBox(height: 12),
+          ],
           MenuButton(
             icon: Icons.logout,
             label: '로그아웃',

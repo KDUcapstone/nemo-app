@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frontend/services/album_api.dart';
 import 'package:provider/provider.dart';
@@ -81,176 +82,230 @@ class _CreateAlbumScreenState extends State<CreateAlbumScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('새 앨범 만들기')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextFormField(
-                controller: _titleCtrl,
-                decoration: const InputDecoration(
-                  labelText: '앨범명',
-                  hintText: '예: 제주도 여행',
-                ),
-                validator: _validateTitle,
-                textInputAction: TextInputAction.next,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _descCtrl,
-                decoration: const InputDecoration(labelText: '설명 (선택)'),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final selected = await Navigator.push<List<int>>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SelectAlbumPhotosScreen(),
+      body: SafeArea(
+        bottom: true,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: _titleCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '앨범명',
+                        hintText: '예: 제주도 여행',
+                      ),
+                      validator: _validateTitle,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _descCtrl,
+                      decoration: const InputDecoration(labelText: '설명 (선택)'),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final selected = await Navigator.push<List<int>>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const SelectAlbumPhotosScreen(),
+                                ),
+                              );
+                              if (selected != null && mounted) {
+                                setState(() {
+                                  _selectedPhotoIds
+                                    ..clear()
+                                    ..addAll(selected);
+                                  if (_selectedPhotoIds.isNotEmpty) {
+                                    _coverPhotoId = _selectedPhotoIds.first;
+                                  }
+                                });
+                              }
+                            },
+                            icon: const Icon(Icons.photo_library_outlined),
+                            label: Text(
+                              _selectedPhotoIds.isEmpty
+                                  ? '사진 선택'
+                                  : '사진 ${_selectedPhotoIds.length}장 선택됨',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _selectedPhotoIds.isEmpty
+                                ? null
+                                : () async {
+                                    await showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      builder: (_) {
+                                        final items = context
+                                            .read<PhotoProvider>()
+                                            .items;
+                                        final selectedList = _selectedPhotoIds
+                                            .toList();
+                                        return SafeArea(
+                                          child: SizedBox(
+                                            height:
+                                                MediaQuery.of(
+                                                  context,
+                                                ).size.height *
+                                                0.6,
+                                            child: GridView.builder(
+                                              padding: const EdgeInsets.all(12),
+                                              gridDelegate:
+                                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                                    crossAxisCount: 3,
+                                                    mainAxisSpacing: 8,
+                                                    crossAxisSpacing: 8,
+                                                  ),
+                                              itemCount: selectedList.length,
+                                              itemBuilder: (_, i) {
+                                                final pid = selectedList[i];
+                                                final idx = items.indexWhere(
+                                                  (e) => e.photoId == pid,
+                                                );
+                                                final url = idx != -1
+                                                    ? items[idx].imageUrl
+                                                    : '';
+                                                // 모킹 모드에서 로컬 파일 경로인 경우 처리
+                                                final isFile =
+                                                    url.isNotEmpty &&
+                                                    !url.startsWith('http');
+                                                return GestureDetector(
+                                                  onTap: () {
+                                                    setState(
+                                                      () => _coverPhotoId = pid,
+                                                    );
+                                                    Navigator.pop(context);
+                                                  },
+                                                  child: url.isNotEmpty
+                                                      ? (isFile
+                                                            ? Image.file(
+                                                                File(url),
+                                                                fit: BoxFit
+                                                                    .cover,
+                                                                errorBuilder:
+                                                                    (
+                                                                      _,
+                                                                      __,
+                                                                      ___,
+                                                                    ) => const ColoredBox(
+                                                                      color: Color(
+                                                                        0xFFE0E0E0,
+                                                                      ),
+                                                                    ),
+                                                              )
+                                                            : Image.network(
+                                                                url,
+                                                                fit: BoxFit
+                                                                    .cover,
+                                                                errorBuilder:
+                                                                    (
+                                                                      _,
+                                                                      __,
+                                                                      ___,
+                                                                    ) => const ColoredBox(
+                                                                      color: Color(
+                                                                        0xFFE0E0E0,
+                                                                      ),
+                                                                    ),
+                                                              ))
+                                                      : const ColoredBox(
+                                                          color: Color(
+                                                            0xFFE0E0E0,
+                                                          ),
+                                                        ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                            icon: const Icon(Icons.image_outlined),
+                            label: const Text('대표사진 수정'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Builder(
+                      builder: (context) {
+                        if (_coverPhotoId == null)
+                          return const SizedBox.shrink();
+                        final items = context.watch<PhotoProvider>().items;
+                        final idx = items.indexWhere(
+                          (e) => e.photoId == _coverPhotoId,
+                        );
+                        final url = idx != -1 ? items[idx].imageUrl : '';
+                        // 모킹 모드에서 로컬 파일 경로인 경우 처리
+                        final isFile =
+                            url.isNotEmpty && !url.startsWith('http');
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            height: 140,
+                            width: double.infinity,
+                            child: url.isNotEmpty
+                                ? (isFile
+                                      ? Image.file(
+                                          File(url),
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              const ColoredBox(
+                                                color: Color(0xFFE0E0E0),
+                                              ),
+                                        )
+                                      : Image.network(
+                                          url,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              const ColoredBox(
+                                                color: Color(0xFFE0E0E0),
+                                              ),
+                                        ))
+                                : const ColoredBox(color: Color(0xFFE0E0E0)),
                           ),
                         );
-                        if (selected != null && mounted) {
-                          setState(() {
-                            _selectedPhotoIds
-                              ..clear()
-                              ..addAll(selected);
-                            // 자동으로 대표사진을 첫 번째 선택으로 지정
-                            if (_selectedPhotoIds.isNotEmpty) {
-                              _coverPhotoId = _selectedPhotoIds.first;
-                            }
-                          });
-                        }
                       },
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: Text(
-                        _selectedPhotoIds.isEmpty
-                            ? '사진 선택'
-                            : '사진 ${_selectedPhotoIds.length}장 선택됨',
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _submitting ? null : _submit,
+                        icon: const Icon(Icons.check),
+                        label: _submitting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('생성'),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _selectedPhotoIds.isEmpty
-                          ? null
-                          : () async {
-                              await showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                builder: (_) {
-                                  final items = context
-                                      .read<PhotoProvider>()
-                                      .items;
-                                  final selectedList = _selectedPhotoIds
-                                      .toList();
-                                  return SafeArea(
-                                    child: SizedBox(
-                                      height:
-                                          MediaQuery.of(context).size.height *
-                                          0.6,
-                                      child: GridView.builder(
-                                        padding: const EdgeInsets.all(12),
-                                        gridDelegate:
-                                            const SliverGridDelegateWithFixedCrossAxisCount(
-                                              crossAxisCount: 3,
-                                              mainAxisSpacing: 8,
-                                              crossAxisSpacing: 8,
-                                            ),
-                                        itemCount: selectedList.length,
-                                        itemBuilder: (_, i) {
-                                          final pid = selectedList[i];
-                                          final idx = items.indexWhere(
-                                            (e) => e.photoId == pid,
-                                          );
-                                          final url = idx != -1
-                                              ? items[idx].imageUrl
-                                              : '';
-                                          return GestureDetector(
-                                            onTap: () {
-                                              setState(
-                                                () => _coverPhotoId = pid,
-                                              );
-                                              Navigator.pop(context);
-                                            },
-                                            child: url.isNotEmpty
-                                                ? Image.network(
-                                                    url,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder:
-                                                        (_, __, ___) =>
-                                                            const ColoredBox(
-                                                              color: Color(
-                                                                0xFFE0E0E0,
-                                                              ),
-                                                            ),
-                                                  )
-                                                : const ColoredBox(
-                                                    color: Color(0xFFE0E0E0),
-                                                  ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                      icon: const Icon(Icons.image_outlined),
-                      label: const Text('대표사진 수정'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Builder(
-                builder: (context) {
-                  if (_coverPhotoId == null) return const SizedBox.shrink();
-                  final items = context.watch<PhotoProvider>().items;
-                  final idx = items.indexWhere(
-                    (e) => e.photoId == _coverPhotoId,
-                  );
-                  final url = idx != -1 ? items[idx].imageUrl : '';
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      height: 140,
-                      width: double.infinity,
-                      child: url.isNotEmpty
-                          ? Image.network(
-                              url,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  const ColoredBox(color: Color(0xFFE0E0E0)),
-                            )
-                          : const ColoredBox(color: Color(0xFFE0E0E0)),
-                    ),
-                  );
-                },
-              ),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _submitting ? null : _submit,
-                  icon: const Icon(Icons.check),
-                  label: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('생성'),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

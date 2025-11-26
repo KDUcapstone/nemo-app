@@ -1,0 +1,60 @@
+# ============================================
+# 🧪 application-dev.yml
+# - H2 메모리 DB를 사용하는 개발용 설정
+# - 빠른 테스트 및 단위 테스트에 사용
+# ============================================
+
+spring:
+  # 🗄️ H2 콘솔 설정
+  h2:
+    console:
+      enabled: true       # 콘솔 접속 허용
+      path: /h2-console   # 접속 경로 (http://localhost:8080/h2-console)
+
+  datasource:
+    url: jdbc:h2:mem:nemodb               # 메모리 DB (프로그램 종료 시 초기화됨)
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update        # 엔티티 변경 시 자동 반영 (개발 편의용)
+    show-sql: true            # SQL 로그 출력
+    properties:
+      hibernate.format_sql: true
+
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true            # 요청/응답 모두 UTF-8로 강제
+
+app:
+  jwt:
+    secret: "dev-very-secret-key-change-me-32bytes-min"   # ★로컬 전용 키 (운영에선 환경변수로)
+    issuer: "nemo-backend"
+    access-ttl-ms: 3600000    # 1시간
+
+  s3:
+    bucket: nemo-dev-photos
+    region: ap-northeast-2
+    endpoint: http://localhost:4566
+    accessKey: test
+    secretKey: test
+    pathStyle: true
+    createBucketIfMissing: true
+
+  public-base-url: http://10.0.2.2:8080
+
+naver:
+  openapi:
+    local:
+      endpoint: https://openapi.naver.com/v1/search/local.json
+      client-id: ${NAVER_LOCAL_CLIENT_ID:dev-dummy}
+      client-secret: ${NAVER_LOCAL_CLIENT_SECRET:dev-dummy}
+
+server:
+  tomcat:
+    uri-encoding: UTF-8      # 쿼리/폼 파라미터 UTF-8 처리

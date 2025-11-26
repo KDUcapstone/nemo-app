@@ -24,6 +24,11 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:frontend/services/photo_upload_api.dart';
+import 'change_password_screen.dart';
+import 'package:frontend/services/friend_api.dart';
+import 'friends_list_screen.dart';
+import 'widgets/storage_quota_card.dart';
+import 'package:frontend/services/storage_api.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -36,13 +41,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nicknameController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
+  late Future<StorageQuota> _quotaFuture;
 
   // 임시 사용자 데이터 (실제로는 API에서 가져옴)
   Map<String, dynamic> _userInfo = {
-    'id': 1,
+    'userId': 1,
     'email': 'user@example.com',
     'nickname': '사용자',
-    'profileImage': null,
+    'profileImageUrl': null,
     'createdAt': '2024-01-01',
   };
 
@@ -50,11 +56,41 @@ class _MyPageScreenState extends State<MyPageScreen> {
   bool _isLoading = false;
   bool _isEditing = false;
 
+  DateTime? _parseCreatedAt(dynamic value) {
+    try {
+      if (value == null) return null;
+      if (value is DateTime) return value.toLocal();
+      if (value is int) {
+        // epoch seconds or milliseconds
+        final isMillis = value > 100000000000; // ~2001-09-09 in ms
+        final dt = isMillis
+            ? DateTime.fromMillisecondsSinceEpoch(value)
+            : DateTime.fromMillisecondsSinceEpoch(value * 1000);
+        return dt.toLocal();
+      }
+      if (value is String) {
+        // ISO or yyyy-MM-dd
+        final dt = DateTime.parse(value);
+        return dt.toLocal();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatJoinedAt(dynamic value) {
+    final dt = _parseCreatedAt(value);
+    if (dt == null) return '-';
+    return DateFormat('yyyy.MM.dd').format(dt);
+  }
+
   @override
   void initState() {
     super.initState();
     _nicknameController.text = _userInfo['nickname'];
     _loadUserInfo();
+    _quotaFuture = StorageApi.fetchQuota();
   }
 
   @override
@@ -70,7 +106,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
     try {
       final authService = AuthService();
-      final response = await authService.getUserInfo();
+      final response = await authService
+          .getUserInfo(); // { userId, email, nickname, profileImageUrl, createdAt }
 
       setState(() {
         _userInfo = response;
@@ -83,11 +120,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '사용자 정보를 불러오지 못했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('사용자 정보를 불러오는 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -198,9 +236,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('가져오기 실패: $e')));
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '가져오기에 실패했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -217,25 +257,36 @@ class _MyPageScreenState extends State<MyPageScreen> {
     });
 
     try {
-      // TODO: 사용자 정보 수정 API 호출
-      // PUT /api/users/me
-      // Authorization: Bearer {JWT_TOKEN}
-      // Content-Type: multipart/form-data
-      // {
-      //   "nickname": _nicknameController.text,
-      //   "profileImage": _selectedImage (optional)
-      // }
+      final authService = AuthService();
+      Map<String, dynamic> updatedInfo;
 
-      // 임시 딜레이 (실제 API 호출 시 제거)
-      await Future.delayed(const Duration(seconds: 2));
+      // 이미지 파일이 있으면 multipart 방식으로 업데이트
+      if (_selectedImage != null) {
+        updatedInfo = await authService.updateProfileWithImage(
+          nickname: _nicknameController.text.trim(),
+          imageFile: _selectedImage!,
+        );
+      } else {
+        // 이미지가 없으면 JSON 방식으로 업데이트 (닉네임만)
+        updatedInfo = await authService.updateProfile(
+          nickname: _nicknameController.text.trim(),
+        );
+      }
 
+      // 업데이트된 정보로 상태 갱신
       setState(() {
-        _userInfo['nickname'] = _nicknameController.text;
-        if (_selectedImage != null) {
-          _userInfo['profileImage'] = _selectedImage!.path;
-        }
+        _userInfo = {
+          'userId': updatedInfo['userId'],
+          'email': updatedInfo['email'] ?? _userInfo['email'],
+          'nickname':
+              updatedInfo['nickname'] ?? _nicknameController.text.trim(),
+          'profileImageUrl':
+              updatedInfo['profileImageUrl'] ?? _userInfo['profileImageUrl'],
+          'createdAt': updatedInfo['createdAt'] ?? _userInfo['createdAt'],
+        };
         _isEditing = false;
         _isLoading = false;
+        _selectedImage = null; // 선택된 이미지 초기화
       });
 
       if (mounted) {
@@ -252,11 +303,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '정보 수정에 실패했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('정보 수정 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -304,7 +356,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       // UserProvider에서도 로그아웃 처리
       if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
-        userProvider.logout();
+        userProvider.logout(context: context);
       }
 
       if (mounted) {
@@ -323,11 +375,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '로그아웃에 실패했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('로그아웃 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -604,11 +657,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorMsg = e.toString();
+        String message;
+        if (errorMsg.contains('403') ||
+            errorMsg.contains('INVALID_CURRENT_PASSWORD') ||
+            errorMsg.contains('비밀번호')) {
+          message = '비밀번호가 틀렸습니다';
+        } else if (errorMsg.contains('410') || errorMsg.contains('이미 탈퇴')) {
+          message = '이미 탈퇴 처리된 사용자입니다.';
+        } else {
+          // Exception: 접두사 제거
+          if (errorMsg.startsWith('Exception: ')) {
+            message = errorMsg.substring('Exception: '.length);
+          } else {
+            message = '회원탈퇴에 실패했습니다.';
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('회원탈퇴 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     }
@@ -663,7 +729,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           nicknameController: _nicknameController,
                           email: _userInfo['email'],
                           nickname: _userInfo['nickname'],
-                          profileImageUrl: _userInfo['profileImage'],
+                          profileImageUrl:
+                              _userInfo['profileImageUrl'], // ✅ 여기!!
                           selectedImage: _selectedImage,
                           onEdit: () => setState(() => _isEditing = true),
                           onCancel: () => setState(() {
@@ -673,6 +740,71 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           }),
                           onSave: _updateUserInfo,
                           onOpenImagePicker: _showImagePickerDialog,
+                        ),
+                        SizedBox(height: gap),
+
+                        // 저장 한도/사용량 (프로필과 계정 정보 사이)
+                        FutureBuilder<StorageQuota>(
+                          future: _quotaFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Card(
+                                elevation: 0,
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: LinearProgressIndicator(),
+                                ),
+                              );
+                            }
+                            if (snapshot.hasError || !snapshot.hasData) {
+                              return Card(
+                                elevation: 0,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.info_outline,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Expanded(
+                                        child: Text(
+                                          '저장 한도 정보를 불러오지 못했습니다.',
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _quotaFuture =
+                                                StorageApi.fetchQuota();
+                                          });
+                                        },
+                                        child: const Text('다시 시도'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+                            final quota = snapshot.data!;
+                            return StorageQuotaCard(
+                              quota: quota,
+                              onUpgrade: () {
+                                // 업그레이드 플로우 진입 (추후 결제/구독 화면 연결)
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('업그레이드 준비 중입니다.'),
+                                  ),
+                                );
+                              },
+                              capFreeAtTwenty: true,
+                            );
+                          },
                         ),
                         SizedBox(height: gap),
 
@@ -692,7 +824,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               SizedBox(height: isSmallHeight ? 10 : 16),
                               InfoRow(
                                 label: '가입일',
-                                value: _userInfo['createdAt'],
+                                value: _formatJoinedAt(_userInfo['createdAt']),
                                 icon: Icons.calendar_today,
                               ),
                               SizedBox(height: innerGap),
@@ -701,6 +833,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                 value: _userInfo['email'],
                                 icon: Icons.email,
                               ),
+                              SizedBox(height: innerGap),
+                              _FriendsEntryRow(),
                             ],
                           ),
                         ),
@@ -710,11 +844,101 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         AccountActionsCard(
                           onLogout: _logout,
                           onDelete: _deleteAccount,
+                          onResetPassword: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ChangePasswordScreen(),
+                              ),
+                            );
+                          },
                         ),
+                        SizedBox(height: gap),
                       ],
                     ),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FriendsEntryRow extends StatefulWidget {
+  @override
+  State<_FriendsEntryRow> createState() => _FriendsEntryRowState();
+}
+
+class _FriendsEntryRowState extends State<_FriendsEntryRow> {
+  int? _friendCount;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCount();
+  }
+
+  Future<void> _fetchCount() async {
+    setState(() => _loading = true);
+    try {
+      final list = await FriendApi.getFriends();
+      if (!mounted) return;
+      setState(() {
+        _friendCount = list.length;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final countText = _loading
+        ? '불러오는 중...'
+        : _friendCount == null
+        ? '친구'
+        : '친구 ${_friendCount}명';
+
+    return InkWell(
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const FriendsListScreen()));
+      },
+      child: Row(
+        children: [
+          const Icon(
+            Icons.group_outlined,
+            size: 20,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '친구',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  countText,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppColors.textSecondary),
         ],
       ),
     );

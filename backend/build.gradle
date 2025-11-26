@@ -27,8 +27,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation "org.springframework.boot:spring-boot-starter-validation"
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13'
-	compileOnly 'org.projectlombok:lombok'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'com.h2database:h2'
 	annotationProcessor 'org.projectlombok:lombok'
@@ -36,6 +38,8 @@ dependencies {
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	runtimeOnly 'com.h2database:h2'
+    // MariaDB JDBC 드라이버
+    runtimeOnly 'org.mariadb.jdbc:mariadb-java-client:3.4.1'
 	// JSON Web Token (JWT) 라이브러리
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
@@ -47,6 +51,19 @@ dependencies {
 	implementation 'org.jsoup:jsoup:1.17.2'
 	// 이메일 전송을 위한 Spring Boot Mail 스타터
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	// S3 의존성
+	implementation platform("software.amazon.awssdk:bom:2.25.64")
+	implementation "software.amazon.awssdk:s3"
+	implementation "software.amazon.awssdk:netty-nio-client"
+	implementation 'software.amazon.awssdk:url-connection-client'
+	implementation 'software.amazon.awssdk:apache-client'   // ★ 추가
+    // 요청으로 들어오는 값이 올바른지 자동으로 검사
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+    // 빠른 메모리 캐시
+    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
+	// TwelveMonkeys는 자바 ImageIO의 포맷 지원을 확장해줘서 CMYK JPEG 읽기가 가능해짐.
+	implementation 'com.twelvemonkeys.imageio:imageio-core:3.10.1'
+	implementation 'com.twelvemonkeys.imageio:imageio-jpeg:3.10.1'
 }
 
 tasks.named('test') {

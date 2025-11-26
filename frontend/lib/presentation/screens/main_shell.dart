@@ -6,6 +6,8 @@ import 'share/share_screen.dart';
 import 'qr/qr_scanner_screen.dart';
 import 'package:frontend/utils/qr_import.dart';
 import 'photo/photo_list_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:frontend/providers/notification_provider.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -15,7 +17,22 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _currentIndex = 0; // 0: 홈, 1: 앨범, 2: QR, 3: 공유, 4: 마이페이지
+  int _currentIndex = 0; // 앱 진입 시 홈 탭부터 표시
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 앱 진입 시 알림 개수 선로딩
+      try {
+        // ignore: use_build_context_synchronously
+        final p = context.read<NotificationProvider>();
+        p.refresh();
+      } catch (_) {
+        // Provider 미장착 상황 등은 무시
+      }
+    });
+  }
 
   final List<Widget> _pages = const [
     HomeScreen(),

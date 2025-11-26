@@ -1,42 +1,62 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:frontend/app/constants.dart';
-import 'api_client.dart';
+import 'auth_service.dart';
 
 class PhotoApi {
-  static Uri _u(String p) => ApiClient.uri(p);
+  static Uri _u(String p) => Uri.parse('${AuthService.baseUrl}$p');
 
-  Future<List<Map<String, dynamic>>> getPhotos({
+  // GET /api/photos - 사용자 사진 목록 조회
+  // API 명세서: favorite, tag, sort, page, size 쿼리 파라미터 지원
+  Future<Map<String, dynamic>> getPhotos({
     bool? favorite,
     String? tag,
+    String? brand,
     String? sort,
     int? page,
     int? size,
   }) async {
     if (AppConstants.useMockApi) {
       // 실제 목록은 Provider 더미를 사용. 빈 배열 반환해 Provider 상태에 맡김
-      return [];
+      return {
+        'content': [],
+        'page': {
+          'size': size ?? 20,
+          'totalElements': 0,
+          'totalPages': 0,
+          'number': page ?? 0,
+        },
+      };
     }
     final qp = <String, String>{};
     if (favorite != null) qp['favorite'] = favorite.toString();
     if (tag != null && tag.isNotEmpty) qp['tag'] = tag;
+    if (brand != null && brand.isNotEmpty) qp['brand'] = brand;
     if (sort != null && sort.isNotEmpty) qp['sort'] = sort;
     if (page != null) qp['page'] = page.toString();
     if (size != null) qp['size'] = size.toString();
 
-    final r = await ApiClient.get(
-      '/api/photos',
-      queryParameters: qp.isEmpty ? null : qp,
-    );
+    final uri = Uri.parse(
+      '${AuthService.baseUrl}/api/photos',
+    ).replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await http.get(uri, headers: _h());
     if (r.statusCode == 200) {
       final body = jsonDecode(r.body);
-      if (body is List) {
-        // 하위 호환: 배열로 바로 오는 경우
-        return body.cast<Map<String, dynamic>>();
-      }
+      // API 명세서: { content: [], page: {} } 구조
       if (body is Map && body['content'] is List) {
-        final list = (body['content'] as List).cast<Map<String, dynamic>>();
-        return list;
+        return body as Map<String, dynamic>;
+      }
+      // 하위 호환: 배열로 바로 오는 경우
+      if (body is List) {
+        return {
+          'content': body.cast<Map<String, dynamic>>(),
+          'page': {
+            'size': body.length,
+            'totalElements': body.length,
+            'totalPages': 1,
+            'number': 0,
+          },
+        };
       }
       throw Exception('응답 형식 오류: content 배열 없음');
     }
@@ -73,13 +93,15 @@ class PhotoApi {
         },
       };
     }
-    final r = await ApiClient.get('/api/photos/$photoId');
+    final r = await http.get(_u('/api/photos/$photoId'), headers: _h());
     if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode == 403) {
-      throw Exception('접근 권한이 없습니다. (403)');
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '해당 사진에 접근할 권한이 없습니다.');
     }
     if (r.statusCode == 404) {
-      throw Exception('사진을 찾을 수 없습니다. (404)');
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '해당 사진을 찾을 수 없습니다.');
     }
     throw Exception('상세 조회 실패 (${r.statusCode})');
   }
@@ -123,6 +145,62 @@ class PhotoApi {
     throw Exception('수정 실패 (${r.statusCode})');
   }
 
+  /// 사진 상세정보 수정 (PATCH /api/photos/{photoId}/details)
+  /// takenAt, location, brand, tagList, friendIdList, memo를 수정 가능
+  Future<Map<String, dynamic>> updatePhotoDetails(
+    int photoId, {
+    DateTime? takenAt,
+    String? location,
+    String? brand,
+    List<String>? tagList,
+    List<int>? friendIdList,
+    String? memo,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      return {
+        'photoId': photoId,
+        'imageUrl': 'https://picsum.photos/seed/detail$photoId/800/1066',
+        'takenAt':
+            takenAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+        'location': location ?? '모킹 위치',
+        'brand': brand ?? '모킹 브랜드',
+        'tagList': tagList ?? <String>['모킹', '샘플'],
+        'friendList': [
+          {'userId': 3, 'nickname': '네컷러버'},
+        ],
+        'memo': memo ?? '모킹 상세 메모',
+      };
+    }
+    final body = <String, dynamic>{};
+    if (takenAt != null) {
+      body['takenAt'] = takenAt.toIso8601String();
+    }
+    if (location != null) body['location'] = location;
+    if (brand != null) body['brand'] = brand;
+    if (tagList != null) body['tagList'] = tagList;
+    if (friendIdList != null) body['friendIdList'] = friendIdList;
+    if (memo != null) body['memo'] = memo;
+
+    final r = await http.patch(
+      _u('/api/photos/$photoId/details'),
+      headers: _h(json: true),
+      body: jsonEncode(body),
+    );
+    if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    if (r.statusCode == 400) {
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '잘못된 요청 형식입니다. (400)');
+    }
+    if (r.statusCode == 403) {
+      throw Exception('수정 권한이 없습니다. (403)');
+    }
+    if (r.statusCode == 404) {
+      throw Exception('사진을 찾을 수 없습니다. (404)');
+    }
+    throw Exception('수정 실패 (${r.statusCode})');
+  }
+
   Future<Map<String, dynamic>> deletePhoto(int photoId) async {
     if (AppConstants.useMockApi) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -145,39 +223,38 @@ class PhotoApi {
     throw Exception('삭제 실패 (${r.statusCode})');
   }
 
-  Future<bool> toggleFavorite(
-    int photoId, {
-    required bool currentFavorite,
-  }) async {
+  // POST /api/photos/{photoId}/favorite - 사진 즐겨찾기 토글
+  // API 명세서: 응답에 photoId, isFavorite, message 포함
+  Future<Map<String, dynamic>> toggleFavorite(int photoId) async {
     if (AppConstants.useMockApi) {
       await Future<void>.delayed(const Duration(milliseconds: 150));
-      // 모킹: 현재 상태의 반대값을 최종 상태로 반환
-      return !currentFavorite;
+      return {'photoId': photoId, 'isFavorite': true, 'message': '즐겨찾기 설정 완료'};
     }
-    final r = await ApiClient.post('/api/photos/$photoId/favorite');
+    final r = await http.post(
+      _u('/api/photos/$photoId/favorite'),
+      headers: _h(),
+    );
     if (r.statusCode == 200) {
-      final body = jsonDecode(r.body);
-      // 사양: isFavorite 필드 사용
-      if (body is Map && body.containsKey('isFavorite')) {
-        return body['isFavorite'] == true;
-      }
-      // 하위호환: favorite 키가 올 수도 있음
-      if (body is Map && body.containsKey('favorite')) {
-        return body['favorite'] == true;
-      }
-      // 파싱 실패 시 예외
-      throw Exception('응답 파싱 실패: isFavorite 누락');
+      final body = jsonDecode(r.body) as Map<String, dynamic>;
+      // API 명세서: { photoId, isFavorite, message }
+      return body;
     }
     if (r.statusCode == 403) {
-      throw Exception('즐겨찾기 권한이 없습니다. (403)');
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '해당 사진에 대해 즐겨찾기 권한이 없습니다.');
     }
     if (r.statusCode == 404) {
-      throw Exception('해당 사진을 찾을 수 없습니다. (404)');
+      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      throw Exception(body['message'] ?? '해당 사진을 찾을 수 없습니다.');
     }
     throw Exception('즐겨찾기 토글 실패 (${r.statusCode})');
   }
 
   Map<String, String> _h({bool json = false}) {
-    return ApiClient.headers(json: json);
+    final h = <String, String>{
+      'Authorization': 'Bearer ${AuthService.accessToken ?? ''}',
+    };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
   }
 }

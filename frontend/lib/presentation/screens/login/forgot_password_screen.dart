@@ -1,13 +1,15 @@
 // 📁 lib/presentation/screens/login/forgot_password_screen.dart
 import 'dart:ui';
 import 'dart:math' as math;
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app/theme/app_colors.dart';
+import 'package:frontend/services/auth_service.dart';
 import 'login_screen.dart';
 import 'widgets/reset_info_card.dart';
 import 'widgets/reset_request_form.dart';
+import 'widgets/code_verification_form.dart';
+import 'widgets/password_reset_form.dart';
 import 'widgets/reset_success_card.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -18,11 +20,19 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _authService = AuthService();
 
+  // State for the 3-step flow
+  int _currentStep = 0; // 0: Email, 1: Code, 2: Reset, 3: Success
   bool _isLoading = false;
-  bool _isResetSent = false;
+
+  // Data
+  String _email = '';
+  String _resetToken = '';
+
+  // Step 0: Email Input
+  final _emailFormKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
 
   @override
   void dispose() {
@@ -41,49 +51,96 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     return null;
   }
 
-  Future<void> _sendResetEmail() async {
-    if (!_formKey.currentState!.validate()) return;
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
 
-    setState(() {
-      _isLoading = true;
-    });
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
+  }
 
+  // Step 1: Send Code
+  Future<void> _sendResetCode() async {
+    if (!_emailFormKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
     try {
-      // TODO: 비밀번호 재설정 링크 발송 API 호출
-      // POST /api/auth/password/reset-link
-      // {
-      //   "email": _emailController.text
-      // }
-
-      // 임시 딜레이 (실제 API 호출 시 제거)
-      await Future.delayed(const Duration(seconds: 2));
+      final email = _emailController.text;
+      final message = await _authService.sendPasswordResetCode(email);
 
       setState(() {
-        _isResetSent = true;
+        _email = email;
+        _currentStep = 1; // Move to Code Verification
         _isLoading = false;
       });
+      _showSuccess(message);
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('비밀번호 재설정 링크가 이메일로 발송되었습니다'),
-            backgroundColor: Colors.green,
-          ),
-        );
+  // Step 2: Verify Code
+  Future<void> _verifyCode(String code) async {
+    setState(() => _isLoading = true);
+    try {
+      final result = await _authService.verifyPasswordResetCode(
+        email: _email,
+        code: code,
+      );
+
+      if (result['verified'] == true) {
+        setState(() {
+          _resetToken = result['resetToken'];
+          _currentStep = 2; // Move to Password Reset
+          _isLoading = false;
+        });
+        _showSuccess('인증이 완료되었습니다.');
+      } else {
+        throw Exception('인증에 실패했습니다.');
       }
     } catch (e) {
+      setState(() => _isLoading = false);
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<void> _resendCode() async {
+    try {
+      await _authService.sendPasswordResetCode(_email);
+      _showSuccess('인증코드를 다시 전송했습니다.');
+    } catch (e) {
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  // Step 3: Reset Password
+  Future<void> _resetPassword(
+    String newPassword,
+    String confirmPassword,
+  ) async {
+    setState(() => _isLoading = true);
+    try {
+      final message = await _authService.resetPassword(
+        resetToken: _resetToken,
+        newPassword: newPassword,
+        confirmPassword: confirmPassword,
+      );
+
       setState(() {
+        _currentStep = 3; // Move to Success
         _isLoading = false;
       });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('비밀번호 재설정 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _showSuccess(message);
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
@@ -141,32 +198,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       duration: const Duration(milliseconds: 600),
                       curve: Curves.easeOutCubic,
                       child: _GlassCard(
-                        child: Column(
-                          children: [
-                            if (!_isResetSent) ...[
-                              const ResetInfoCard(),
-                              const SizedBox(height: 20),
-
-                              // 내부에서 Form(key: _formKey) 을 사용합니다 (중복 방지)
-                              ResetRequestForm(
-                                formKey: _formKey,
-                                emailController: _emailController,
-                                emailValidator: _validateEmail,
-                                onSubmit: _sendResetEmail,
-                                isLoading: _isLoading,
-                              ),
-                            ] else ...[
-                              const ResetSuccessCard(),
-                              const SizedBox(height: 20),
-
-                              // 로그인으로 이동 버튼
-                              _PrimaryButton(
-                                text: '로그인으로 이동',
-                                onTap: () => _goToLogin(),
-                                isLoading: false,
-                              ),
-                            ],
-                          ],
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _buildStepContent(),
                         ),
                       ),
                       builder: (context, value, child) {
@@ -180,27 +214,28 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       },
                     ),
                     const SizedBox(height: 18),
-                    if (!_isResetSent) ...[
+                    if (_currentStep != 3)
                       TextButton(
                         onPressed: () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const LoginScreen(),
-                            ),
-                          );
+                          if (_currentStep > 0) {
+                            // Go back to previous step
+                            setState(() {
+                              _currentStep--;
+                            });
+                          } else {
+                            _goToLogin();
+                          }
                         },
-                        child: const Text.rich(
+                        child: Text.rich(
                           TextSpan(
-                            text: '로그인으로 돌아가기',
-                            style: TextStyle(
+                            text: _currentStep > 0 ? '이전 단계로' : '로그인으로 돌아가기',
+                            style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               color: AppColors.primary,
                             ),
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
               ),
@@ -209,6 +244,55 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildStepContent() {
+    switch (_currentStep) {
+      case 0:
+        return Column(
+          key: const ValueKey('step0'),
+          children: [
+            const ResetInfoCard(),
+            const SizedBox(height: 20),
+            ResetRequestForm(
+              formKey: _emailFormKey,
+              emailController: _emailController,
+              emailValidator: _validateEmail,
+              onSubmit: _sendResetCode,
+              isLoading: _isLoading,
+            ),
+          ],
+        );
+      case 1:
+        return CodeVerificationForm(
+          key: const ValueKey('step1'),
+          email: _email,
+          onVerify: _verifyCode,
+          onResend: _resendCode,
+          isLoading: _isLoading,
+        );
+      case 2:
+        return PasswordResetForm(
+          key: const ValueKey('step2'),
+          onSubmit: _resetPassword,
+          isLoading: _isLoading,
+        );
+      case 3:
+        return Column(
+          key: const ValueKey('step3'),
+          children: [
+            const ResetSuccessCard(),
+            const SizedBox(height: 20),
+            _PrimaryButton(
+              text: '로그인으로 이동',
+              onTap: _goToLogin,
+              isLoading: false,
+            ),
+          ],
+        );
+      default:
+        return const SizedBox.shrink();
+    }
   }
 }
 
@@ -259,114 +343,6 @@ class _GlassCard extends StatelessWidget {
         ],
       ),
       child: child,
-    );
-  }
-}
-
-class _IconInputField extends StatefulWidget {
-  final String hintText;
-  final bool obscureText;
-  final TextInputType? keyboardType;
-  final IconData icon;
-  final String? Function(String?)? validator;
-  final void Function(String)? onChanged;
-  final TextEditingController? controller;
-  final bool enabled;
-
-  const _IconInputField({
-    required this.hintText,
-    required this.icon,
-    this.obscureText = false,
-    this.keyboardType,
-    this.validator,
-    this.onChanged,
-    this.controller,
-    this.enabled = true,
-  });
-
-  @override
-  State<_IconInputField> createState() => _IconInputFieldState();
-}
-
-class _IconInputFieldState extends State<_IconInputField> {
-  late final FocusNode _focusNode;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode = FocusNode();
-    _focusNode.addListener(() => setState(() {}));
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isFocused = _focusNode.hasFocus;
-    return TextFormField(
-      controller: widget.controller,
-      focusNode: _focusNode,
-      obscureText: widget.obscureText,
-      keyboardType: widget.keyboardType,
-      validator: widget.validator,
-      onChanged: widget.onChanged,
-      enabled: widget.enabled,
-      decoration: InputDecoration(
-        isDense: true,
-        prefixIcon: Icon(
-          widget.icon,
-          size: 20,
-          color: widget.enabled
-              ? AppColors.textSecondary
-              : AppColors.textSecondary.withOpacity(0.5),
-        ),
-        prefixIconConstraints: const BoxConstraints(
-          minWidth: 30,
-          minHeight: 36,
-        ),
-        hintText: isFocused ? '' : widget.hintText,
-        hintStyle: TextStyle(
-          color: widget.enabled
-              ? AppColors.textSecondary.withOpacity(0.9)
-              : AppColors.textSecondary.withOpacity(0.5),
-        ),
-        filled: true,
-        fillColor: widget.enabled ? Colors.white : Colors.grey[100],
-        contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: widget.enabled
-                ? AppColors.divider
-                : AppColors.divider.withOpacity(0.5),
-            width: 1,
-          ),
-        ),
-        focusedBorder: const OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: AppColors.primary, width: 1.4),
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.divider.withOpacity(0.5),
-            width: 1,
-          ),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.red, width: 1),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.red, width: 1.4),
-        ),
-        errorStyle: const TextStyle(color: Colors.red, fontSize: 12),
-      ),
     );
   }
 }

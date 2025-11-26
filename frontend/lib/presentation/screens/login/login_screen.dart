@@ -109,14 +109,20 @@ Future<void> _showEmailLoginSheet(BuildContext context) async {
     barrierColor: Colors.black26,
     backgroundColor: Colors.transparent,
     builder: (ctx) {
-      return DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.55,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        builder: (_, controller) {
-          return const EmailLoginForm();
-        },
+      final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+      return AnimatedPadding(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          builder: (_, controller) {
+            return const EmailLoginForm();
+          },
+        ),
       );
     },
   );
@@ -125,12 +131,6 @@ Future<void> _showEmailLoginSheet(BuildContext context) async {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const MainShell()),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('로그인되었습니다!'),
-          backgroundColor: Colors.green,
-        ),
       );
     }
   }
@@ -183,7 +183,9 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
           _passwordController.text,
         );
 
-        if (result['success'] == true) {
+        // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
+        // AuthService.login()은 성공 시 userId, nickname, accessToken, profileImageUrl을 최상위에도 제공
+        if (result['userId'] != null && result['accessToken'] != null) {
           if (!mounted) return;
           // UserProvider에 사용자 정보 저장
           final userProvider = Provider.of<UserProvider>(
@@ -191,15 +193,20 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
             listen: false,
           );
           userProvider.setUser(
-            userId: result['userId'],
-            nickname: result['nickname'],
-            accessToken: result['accessToken'],
-            profileImageUrl: result['profileImageUrl'],
+            userId: result['userId'] as int,
+            nickname: result['nickname'] as String? ?? '',
+            accessToken: result['accessToken'] as String,
+            profileImageUrl: result['profileImageUrl'] as String?,
+            context: context,
           );
 
           // 로그인 성공 시 화면 이동
           if (mounted) {
-            Navigator.pop(context);
+            Navigator.pop(context); // 로그인 바텀시트 닫기
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const MainShell()),
+            );
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('로그인되었습니다!'),
@@ -207,11 +214,47 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
               ),
             );
           }
+        } else {
+          // 예상치 못한 응답 형식
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('로그인에 실패했습니다.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       } catch (e) {
         if (mounted) {
+          final errorMsg = e.toString();
+          String message;
+
+          // Exception 접두사 및 기술적 메시지 제거, 사용자 친화적인 메시지로 변환
+          if (errorMsg.startsWith('Exception: ')) {
+            message = errorMsg.substring('Exception: '.length);
+            // 네트워크 오류 메시지 정리
+            if (message.startsWith('네트워크 오류: ')) {
+              message = '네트워크 오류가 발생했습니다.';
+            } else if (message.contains('네트워크')) {
+              message = '네트워크 오류가 발생했습니다.';
+            }
+            // 기술적인 오류 코드나 메시지가 포함된 경우 일반 메시지로 변환
+            if (message.contains('(40') ||
+                message.contains('(50') ||
+                message.contains('statusCode') ||
+                message.contains('HttpException')) {
+              message = '로그인에 실패했습니다.';
+            }
+          } else if (errorMsg.contains('네트워크') ||
+              errorMsg.contains('Network')) {
+            message = '네트워크 오류가 발생했습니다.';
+          } else {
+            message = '로그인에 실패했습니다.';
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('로그인 실패: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text(message), backgroundColor: Colors.red),
           );
         }
       }
@@ -260,7 +303,7 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
             child: Column(
               children: [
                 _IconInputField(
-                  hintText: '아이디/이메일 입력',
+                  hintText: '이메일 입력',
                   keyboardType: TextInputType.emailAddress,
                   icon: Icons.email_outlined,
                   strongBorder: true,

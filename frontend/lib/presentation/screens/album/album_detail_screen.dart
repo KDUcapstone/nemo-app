@@ -4,12 +4,21 @@ import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/providers/photo_provider.dart';
 import 'package:frontend/services/album_api.dart';
 import 'select_album_photos_screen.dart';
+import 'package:frontend/services/friend_api.dart';
+import 'package:flutter/services.dart';
 // removed unused imports after refactor
 import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
+import 'package:frontend/presentation/screens/album/album_members_screen.dart';
+import 'package:frontend/providers/user_provider.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
-  const AlbumDetailScreen({super.key, required this.albumId});
+  final String? autoOpenAction; // 'edit' | 'share' 등 선택적 자동 실행 액션
+  const AlbumDetailScreen({
+    super.key,
+    required this.albumId,
+    this.autoOpenAction,
+  });
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -17,6 +26,94 @@ class AlbumDetailScreen extends StatefulWidget {
 
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   bool _working = false;
+  bool _autoHandled = false;
+  bool _isSelectionMode = false;
+  final Set<int> _selected = {};
+  final ValueNotifier<Set<int>> _selectedNotifier = ValueNotifier<Set<int>>(
+    <int>{},
+  );
+  String? _myRole; // OWNER | CO_OWNER | EDITOR | VIEWER
+  bool _roleLoading = false;
+  bool _isLoadingDetail = false; // 무한 로딩 방지 플래그
+
+  @override
+  void initState() {
+    super.initState();
+    // 첫 프레임 이후 자동 액션 실행 (모달/스낵바 등 UI 안전 호출)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _autoHandled) return;
+      final action = widget.autoOpenAction;
+      if (action == null) return;
+      _autoHandled = true;
+      if (action == 'edit') {
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
+        );
+      } else if (action == 'share') {
+        await _showShareSheet(context);
+      }
+    });
+    _loadMyRole();
+  }
+
+  Future<void> _loadMyRole() async {
+    setState(() => _roleLoading = true);
+    try {
+      // 공유 앨범이 아니면 내 개인 앨범으로 간주하여 OWNER 처리
+      final albumProvider = context.read<AlbumProvider>();
+      if (!albumProvider.isShared(widget.albumId)) {
+        if (!mounted) return;
+        setState(() {
+          _myRole = 'OWNER';
+          _roleLoading = false;
+        });
+        return;
+      }
+      // 공유 앨범인 경우, 우선 Provider에 저장된 내 역할을 사용
+      final cachedRole = albumProvider.myRoleOf(widget.albumId);
+      if (cachedRole != null && cachedRole.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _myRole = cachedRole.toUpperCase();
+          _roleLoading = false;
+        });
+        return;
+      }
+      final me = context.read<UserProvider>().userId;
+      final members = await AlbumApi.getShareMembers(widget.albumId);
+      String? role;
+      if (me != null) {
+        final mine = members.cast<Map<String, dynamic>?>().firstWhere(
+          (m) => m != null && m['userId'] == me,
+          orElse: () => null,
+        );
+        if (mine != null && mine['role'] != null) {
+          role = (mine['role'] as String).toUpperCase();
+        }
+      }
+      role ??= 'VIEWER';
+      if (!mounted) return;
+      setState(() {
+        _myRole = role;
+        _roleLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _myRole = null;
+        _roleLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _selectedNotifier.dispose();
+    super.dispose();
+  }
 
   Future<void> _addPhotos() async {
     final selected = await Navigator.push<List<int>>(
@@ -62,6 +159,234 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     }
   }
 
+  Future<void> _showShareSheet(BuildContext context) async {
+    final searchCtrl = TextEditingController();
+    final selectedIds = <int>{};
+    List<Map<String, dynamic>> friends = await FriendApi.getFriends();
+    List<Map<String, dynamic>> shareTargets = [];
+    try {
+      shareTargets = await AlbumApi.getShareTargets(widget.albumId);
+    } catch (_) {}
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (_, scrollCtrl) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '앨범 공유',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  if (shareTargets.isNotEmpty) ...[
+                    const Text(
+                      '현재 공유 대상',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    ...shareTargets.map(
+                      (s) => ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.person_outline),
+                        ),
+                        title: Text(
+                          s['nickname'] ?? 'user${s['userId'] ?? ''}',
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            try {
+                              await AlbumApi.unshareTarget(
+                                albumId: widget.albumId,
+                                userId: s['userId'],
+                              );
+                              shareTargets.removeWhere(
+                                (e) => e['userId'] == s['userId'],
+                              );
+                              (ctx as Element).markNeedsBuild();
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('공유 해제되었습니다.')),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('공유 해제 실패: $e')),
+                              );
+                            }
+                          },
+                          child: const Text('제거'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: '친구 검색 (닉네임/이메일)',
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                    onChanged: (q) async {
+                      if (q.trim().isEmpty) {
+                        friends = await FriendApi.getFriends();
+                      } else {
+                        final searchResults = await FriendApi.search(q);
+                        friends = searchResults.where((f) {
+                          final isFriend = (f['isFriend'] as bool?) ?? false;
+                          return isFriend;
+                        }).toList();
+                      }
+                      // ignore: use_build_context_synchronously
+                      (ctx as Element).markNeedsBuild();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  ...List.generate(friends.length, (idx) {
+                    final f = friends[idx];
+                    final id = f['userId'] as int;
+                    final nick = f['nickname'] as String? ?? '친구$id';
+                    final avatarUrl =
+                        (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
+                    final checked = selectedIds.contains(id);
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage:
+                            avatarUrl != null && avatarUrl.isNotEmpty
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: (avatarUrl == null || avatarUrl.isEmpty)
+                            ? const Icon(Icons.person_outline)
+                            : null,
+                      ),
+                      title: Text(nick),
+                      trailing: Checkbox(
+                        value: checked,
+                        onChanged: (v) {
+                          if (v == true) {
+                            selectedIds.add(id);
+                          } else {
+                            selectedIds.remove(id);
+                          }
+                          (ctx as Element).markNeedsBuild();
+                        },
+                      ),
+                      onTap: () {
+                        if (checked) {
+                          selectedIds.remove(id);
+                        } else {
+                          selectedIds.add(id);
+                        }
+                        (ctx as Element).markNeedsBuild();
+                      },
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            try {
+                              final url = await AlbumApi.createShareLink(
+                                widget.albumId,
+                                expiryHours: 48,
+                                permission: 'view',
+                              );
+                              await Clipboard.setData(ClipboardData(text: url));
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('공유 링크가 복사되었습니다.'),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('링크 생성 실패: $e')),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.link),
+                          label: const Text('링크 생성/복사'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: selectedIds.isEmpty
+                              ? null
+                              : () => Navigator.pop(ctx, selectedIds.toList()),
+                          icon: const Icon(Icons.check),
+                          label: Text('${selectedIds.length}명에게 공유'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((value) async {
+      final list = (value as List<int>?) ?? [];
+      if (list.isEmpty) return;
+      try {
+        final res = await AlbumApi.shareAlbum(
+          albumId: widget.albumId,
+          friendIdList: list,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(res['message'] ?? '공유 완료')));
+      } catch (e) {
+        if (!mounted) return;
+        final msg = _mapShareError(e.toString());
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    });
+  }
+
+  String _mapShareError(String raw) {
+    if (raw.contains('NOT_FRIEND')) return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    if (raw.contains('FORBIDDEN')) return '이 앨범을 공유할 권한이 없습니다.';
+    if (raw.contains('ALBUM_NOT_FOUND')) return '앨범을 찾을 수 없습니다.';
+    return '공유 중 오류가 발생했습니다.';
+  }
+
   // _showPhotoActions (미사용) 제거
 
   @override
@@ -79,109 +404,79 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         photoIdList: [],
       ),
     );
-    if (album.albumId == -1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (album.albumId == -1 && !_isLoadingDetail) {
+      _isLoadingDetail = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
-          context.read<AlbumProvider>().loadDetail(widget.albumId);
+          try {
+            await context.read<AlbumProvider>().loadDetail(widget.albumId);
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isLoadingDetail = false;
+              });
+            }
+          }
         }
       });
     }
-    // 앨범은 있으나 상세(사진 목록)가 비어 있으면 상세 재요청
-    final shouldFetchDetail = album.albumId != -1 && album.photoIdList.isEmpty;
+    // 앨범은 있으나 상세(사진 목록)가 비어 있으면 상세 재요청 (무한 로딩 방지)
+    final shouldFetchDetail =
+        album.albumId != -1 && album.photoIdList.isEmpty && !_isLoadingDetail;
     if (shouldFetchDetail) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isLoadingDetail = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
-          context.read<AlbumProvider>().loadDetail(widget.albumId);
+          try {
+            await context.read<AlbumProvider>().loadDetail(widget.albumId);
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isLoadingDetail = false;
+              });
+            }
+          }
         }
       });
     }
-    final photos = context.watch<PhotoProvider>().items.where(
-      (p) => album.photoIdList.contains(p.photoId),
-    );
-    final selected = <int>{};
 
     return Scaffold(
       appBar: AppBar(
         title: Text(album.title.isEmpty ? '앨범' : album.title),
         actions: [
           IconButton(
-            tooltip: '사진 선택',
-            icon: const Icon(Icons.checklist_rtl),
-            onPressed: () {
-              // 길게 눌러 선택과 동일: 안내 토스트
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('사진을 길게 눌러 선택하세요.')));
-            },
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_horiz),
-            onSelected: (v) async {
-              switch (v) {
-                case 'share':
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('공유는 추후 지원 예정입니다.')),
-                  );
-                  break;
-                case 'add':
-                  if (!_working) await _addPhotos();
-                  break;
-                case 'edit':
-                  await showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
-                  );
-                  break;
-                case 'delete':
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('앨범 삭제'),
-                      content: const Text('이 앨범을 삭제하시겠습니까?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('취소'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('삭제'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) {
-                    try {
-                      final res = await AlbumApi.deleteAlbum(widget.albumId);
-                      if (!mounted) return;
-                      context.read<AlbumProvider>().removeAlbum(widget.albumId);
-                      Navigator.pop(context); // 상세 화면 닫기
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            (res['message'] as String?) ?? '앨범이 삭제되었습니다.',
-                          ),
-                        ),
-                      );
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
-                    }
-                  }
-                  break;
+            tooltip: albumProvider.isFavorited(widget.albumId)
+                ? '즐겨찾기 해제'
+                : '즐겨찾기',
+            icon: Icon(
+              albumProvider.isFavorited(widget.albumId)
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              color: albumProvider.isFavorited(widget.albumId)
+                  ? Colors.red
+                  : null,
+            ),
+            onPressed: () async {
+              final current = albumProvider.isFavorited(widget.albumId);
+              try {
+                if (current) {
+                  await AlbumApi.unfavoriteAlbum(widget.albumId);
+                  if (!mounted) return;
+                  albumProvider.setFavorite(widget.albumId, false);
+                } else {
+                  await AlbumApi.favoriteAlbum(widget.albumId);
+                  if (!mounted) return;
+                  albumProvider.setFavorite(widget.albumId, true);
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('처리 실패: $e')));
               }
             },
-            itemBuilder: (c) => const [
-              PopupMenuItem(value: 'share', child: Text('공유')),
-              PopupMenuItem(value: 'add', child: Text('사진 추가')),
-              PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
-              PopupMenuItem(value: 'delete', child: Text('앨범 삭제')),
-            ],
           ),
+          if (_roleLoading || _myRole != 'VIEWER') _buildActionsMenu(context),
         ],
       ),
       body: Column(
@@ -233,8 +528,34 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           Expanded(
             child: shouldFetchDetail
                 ? const Center(child: CircularProgressIndicator())
-                : StatefulBuilder(
-                    builder: (context, setInner) {
+                : FutureBuilder<Map<String, dynamic>>(
+                    future: AlbumApi.getAlbum(widget.albumId),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final data = snapshot.data!;
+                      final List photoListData =
+                          (data['photoList'] as List? ?? []);
+
+                      if (photoListData.isEmpty) {
+                        return const Center(child: Text('사진이 없습니다'));
+                      }
+
+                      // photoList를 PhotoItem으로 변환
+                      final photos = photoListData.map((p) {
+                        final photoData = p as Map<String, dynamic>;
+                        return PhotoItem(
+                          photoId: (photoData['photoId'] as num).toInt(),
+                          imageUrl: photoData['imageUrl'] as String? ?? '',
+                          takenAt: photoData['takenAt'] as String? ?? '',
+                          location: photoData['location'] as String? ?? '',
+                          brand: photoData['brand'] as String? ?? '',
+                          tagList: const [], // 간단 요약용이므로 빈 리스트
+                        );
+                      }).toList();
+
                       return GridView.builder(
                         padding: const EdgeInsets.all(12),
                         gridDelegate:
@@ -243,46 +564,56 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                               mainAxisSpacing: 8,
                               crossAxisSpacing: 8,
                             ),
+                        cacheExtent: 500,
                         itemCount: photos.length,
                         itemBuilder: (_, i) {
-                          final p = photos.elementAt(i);
-                          final isSel = selected.contains(p.photoId);
-                          return GestureDetector(
-                            onDoubleTap: () async {
-                              try {
-                                await AlbumApi.setCoverPhoto(
-                                  albumId: widget.albumId,
-                                  photoId: p.photoId,
-                                );
-                                if (!mounted) return;
-                                context.read<AlbumProvider>().updateCoverUrl(
-                                  widget.albumId,
-                                  p.imageUrl,
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('대표사진이 설정되었습니다.'),
-                                  ),
-                                );
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('대표 설정 실패: $e')),
-                                );
-                              }
-                            },
-                            onLongPress: () {
-                              setInner(() {
-                                if (isSel) {
-                                  selected.remove(p.photoId);
+                          final p = photos[i];
+                          final isSel = _selected.contains(p.photoId);
+                          return RepaintBoundary(
+                            child: _PhotoGridItem(
+                              photo: p,
+                              isSelectionMode: _isSelectionMode,
+                              initialSelected: isSel,
+                              onSelectionChanged: (photoId) {
+                                // _selected Set만 업데이트 (부모 rebuild 완전 방지)
+                                if (_selected.contains(photoId)) {
+                                  _selected.remove(photoId);
                                 } else {
-                                  selected.add(p.photoId);
+                                  _selected.add(photoId);
                                 }
-                              });
-                            },
-                            onTap: () {
-                              if (selected.isEmpty) {
-                                // 전체화면 뷰어로 진입 (사진탭과 동일)
+                                // ValueNotifier 즉시 업데이트 (addPostFrameCallback 제거) (해결책 B)
+                                _selectedNotifier.value = Set<int>.from(
+                                  _selected,
+                                );
+                              },
+                              onDoubleTap: () async {
+                                if (_isSelectionMode) return;
+                                try {
+                                  final res = await AlbumApi.setThumbnail(
+                                    albumId: widget.albumId,
+                                    photoId: p.photoId,
+                                  );
+                                  if (!mounted) return;
+                                  final newUrl =
+                                      (res['thumbnailUrl'] as String?) ??
+                                      p.imageUrl;
+                                  context.read<AlbumProvider>().updateCoverUrl(
+                                    widget.albumId,
+                                    newUrl,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('대표사진이 설정되었습니다.'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('대표 설정 실패: $e')),
+                                  );
+                                }
+                              },
+                              onView: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -293,33 +624,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                                     ),
                                   ),
                                 );
-                              } else {
-                                setInner(() {
-                                  if (isSel) {
-                                    selected.remove(p.photoId);
-                                  } else {
-                                    selected.add(p.photoId);
-                                  }
-                                });
-                              }
-                            },
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Image.network(
-                                  p.imageUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      const ColoredBox(
-                                        color: Color(0xFFE0E0E0),
-                                      ),
-                                ),
-                                if (isSel)
-                                  Container(
-                                    color: Colors.blue.withOpacity(0.25),
-                                  ),
-                                // i 버튼 제거 요청에 따라 상세 오버레이 제거
-                              ],
+                              },
                             ),
                           );
                         },
@@ -329,22 +634,144 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: ElevatedButton.icon(
-            onPressed: _working
-                ? null
-                : () async {
-                    // 선택된 사진 삭제
-                    final toRemove = selected.toList();
-                    await _removeSelected(toRemove);
-                  },
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('선택 사진 삭제'),
-          ),
-        ),
+      bottomNavigationBar: ValueListenableBuilder<Set<int>>(
+        valueListenable: _selectedNotifier,
+        builder: (context, selectedSet, _) {
+          if (!_isSelectionMode || selectedSet.isEmpty) {
+            return const SizedBox.shrink();
+          }
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ElevatedButton.icon(
+                onPressed: _working
+                    ? null
+                    : () async {
+                        // 선택된 사진 삭제
+                        final toRemove = selectedSet.toList();
+                        await _removeSelected(toRemove);
+                        setState(() {
+                          _selected.clear();
+                          _isSelectionMode = false;
+                          _selectedNotifier.value = <int>{};
+                        });
+                      },
+                icon: const Icon(Icons.delete_outline),
+                label: Text('선택 사진 삭제 (${selectedSet.length})'),
+              ),
+            ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget _buildActionsMenu(BuildContext context) {
+    // 역할별 허용 액션 계산
+    final role = _myRole ?? 'VIEWER';
+    final isOwnerLike = role == 'OWNER' || role == 'CO_OWNER';
+    final isEditor = role == 'EDITOR';
+    final showShare = isOwnerLike || isEditor;
+    final showAdd = isOwnerLike || isEditor;
+    final showEdit = isOwnerLike || isEditor;
+    final showDelete = isOwnerLike;
+    final showMembers = isOwnerLike;
+    return Row(
+      children: [
+        IconButton(
+          tooltip: '사진 선택',
+          icon: Icon(_isSelectionMode ? Icons.done : Icons.checklist_rtl),
+          onPressed: () {
+            setState(() {
+              _isSelectionMode = !_isSelectionMode;
+              if (!_isSelectionMode) {
+                _selected.clear();
+                _selectedNotifier.value = <int>{};
+              }
+            });
+          },
+        ),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_horiz),
+          onSelected: (v) async {
+            switch (v) {
+              case 'share':
+                await _showShareSheet(context);
+                break;
+              case 'add':
+                if (!_working) await _addPhotos();
+                break;
+              case 'edit':
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
+                );
+                break;
+              case 'members':
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AlbumMembersScreen(albumId: widget.albumId),
+                  ),
+                );
+                break;
+              case 'delete':
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('앨범 삭제'),
+                    content: const Text('이 앨범을 삭제하시겠습니까?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('취소'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('삭제'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  try {
+                    final res = await AlbumApi.deleteAlbum(widget.albumId);
+                    if (!mounted) return;
+                    context.read<AlbumProvider>().removeAlbum(widget.albumId);
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          (res['message'] as String?) ?? '앨범이 삭제되었습니다.',
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
+                  }
+                }
+                break;
+            }
+          },
+          itemBuilder: (c) => [
+            if (showShare)
+              const PopupMenuItem(value: 'share', child: Text('공유')),
+            if (showAdd)
+              const PopupMenuItem(value: 'add', child: Text('사진 추가')),
+            if (showEdit)
+              const PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
+            if (showMembers)
+              const PopupMenuItem(value: 'members', child: Text('멤버 조회')),
+            if (showDelete)
+              const PopupMenuItem(value: 'delete', child: Text('앨범 삭제')),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -572,6 +999,16 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                       coverPhotoId: _coverId,
                                     );
                                     if (!mounted) return;
+                                    // 목록 카드 즉시 반영
+                                    context.read<AlbumProvider>().updateMeta(
+                                      albumId: widget.albumId,
+                                      title: _titleCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _titleCtrl.text.trim(),
+                                      description: _descCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _descCtrl.text.trim(),
+                                    );
                                     if (_titleCtrl.text.trim().isNotEmpty ||
                                         _descCtrl.text.trim().isNotEmpty) {
                                       // 간단히 닫고 상위에서 새로고침은 유지
@@ -620,6 +1057,156 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+class _PhotoGridItem extends StatefulWidget {
+  final PhotoItem photo;
+  final bool isSelectionMode;
+  final bool initialSelected;
+  final ValueChanged<int> onSelectionChanged;
+  final VoidCallback onDoubleTap;
+  final VoidCallback onView;
+
+  const _PhotoGridItem({
+    required this.photo,
+    required this.isSelectionMode,
+    required this.initialSelected,
+    required this.onSelectionChanged,
+    required this.onDoubleTap,
+    required this.onView,
+  });
+
+  @override
+  State<_PhotoGridItem> createState() => _PhotoGridItemState();
+}
+
+class _PhotoGridItemState extends State<_PhotoGridItem> {
+  final GlobalKey<_SelectionCheckboxState> _checkboxKey = GlobalKey();
+
+  void _handleTap() {
+    if (widget.isSelectionMode) {
+      // 체크박스를 직접 토글하여 즉각적인 시각적 피드백 (부모 알림은 제외)
+      _checkboxKey.currentState?.toggle(notifyParent: false);
+      // 부모에게 알림 (비동기 처리)
+      Future.microtask(() {
+        widget.onSelectionChanged(widget.photo.photoId);
+      });
+    } else {
+      widget.onView();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTap: widget.onDoubleTap,
+      onTap: _handleTap,
+      behavior: HitTestBehavior.opaque,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            widget.photo.imageUrl,
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
+            cacheWidth: 200,
+            cacheHeight: 200,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded) return child;
+              return frame == null
+                  ? const ColoredBox(color: Color(0xFFE0E0E0))
+                  : child;
+            },
+            errorBuilder: (_, __, ___) =>
+                const ColoredBox(color: Color(0xFFE0E0E0)),
+          ),
+          if (widget.isSelectionMode)
+            Positioned(
+              left: 6,
+              top: 6,
+              child: _SelectionCheckbox(
+                key: _checkboxKey,
+                initialSelected: widget.initialSelected,
+                onChanged: () {
+                  widget.onSelectionChanged(widget.photo.photoId);
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectionCheckbox extends StatefulWidget {
+  final bool initialSelected;
+  final VoidCallback onChanged;
+
+  const _SelectionCheckbox({
+    super.key,
+    required this.initialSelected,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SelectionCheckbox> createState() => _SelectionCheckboxState();
+}
+
+class _SelectionCheckboxState extends State<_SelectionCheckbox> {
+  late bool _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialSelected;
+  }
+
+  @override
+  void didUpdateWidget(_SelectionCheckbox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSelected != widget.initialSelected) {
+      _selected = widget.initialSelected;
+    }
+  }
+
+  void toggle({bool notifyParent = false}) {
+    // setState로 즉시 업데이트 (동기적, 가장 빠름)
+    setState(() {
+      _selected = !_selected;
+    });
+    // 부모에게 알림이 필요한 경우에만 호출
+    if (notifyParent) {
+      Future.microtask(() {
+        widget.onChanged();
+      });
+    }
+  }
+
+  void _handleTap() {
+    // 체크박스를 직접 터치한 경우에만 부모에게 알림
+    toggle(notifyParent: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _handleTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: _selected ? Colors.blue : Colors.black45,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          _selected ? Icons.check : Icons.radio_button_unchecked,
+          size: 16,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 }

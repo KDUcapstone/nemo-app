@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'user_provider.dart';
 import 'photo_provider.dart';
 import 'album_provider.dart';
+import 'notification_provider.dart';
 
 final List<ChangeNotifierProvider> globalProviders = [
   ChangeNotifierProvider<UserProvider>(create: (_) => UserProvider()),
   ChangeNotifierProvider<PhotoProvider>(create: (_) => PhotoProvider()),
   ChangeNotifierProvider<AlbumProvider>(create: (_) => AlbumProvider()),
+  ChangeNotifierProvider<NotificationProvider>(create: (_) => NotificationProvider()),
 ];
 
 class AppProviders extends StatelessWidget {

@@ -32,11 +32,35 @@ public class OpenApiGroupConfig {
     }
 
     @Bean
+    public GroupedOpenApi mapApi() {
+        return GroupedOpenApi.builder()
+                .group("map")
+                .pathsToMatch("/api/map/**")
+                .build();
+    }
+
+
+    @Bean
+    public GroupedOpenApi friendApi() {
+        return GroupedOpenApi.builder()
+                .group("friend")
+                .pathsToMatch("/api/friends/**")
+                .build();
+    }
+
+    @Bean
     public GroupedOpenApi etcApi() {
         return GroupedOpenApi.builder()
                 .group("etc")
                 .pathsToMatch("/api/**")
                 .pathsToExclude("/api/auth/**", "/api/users/**", "/api/albums/**")
+                .build();
+    }
+    @Bean
+    public GroupedOpenApi photoApi() {
+        return GroupedOpenApi.builder()
+                .group("photo")
+                .pathsToMatch("/api/photos/**")
                 .build();
     }
 }

@@ -26,11 +26,15 @@ class PhotoItem {
 
 class PhotoProvider extends ChangeNotifier {
   final List<PhotoItem> _items = [];
+  // 모킹 모드에서 전체 원본 보관
+  final List<PhotoItem> _allMockItems = [];
+  static const Object _paramNotSet = Object();
   List<PhotoItem> get items => List.unmodifiable(_items);
   bool _loadedOnce = false;
   // Filters and pagination
   bool _favoriteOnly = false;
   String? _tagFilter;
+  String? _brandFilter;
   String _sort = 'takenAt,desc';
   int _page = 0;
   final int _size = 20;
@@ -39,6 +43,7 @@ class PhotoProvider extends ChangeNotifier {
 
   bool get favoriteOnly => _favoriteOnly;
   String? get tagFilter => _tagFilter;
+  String? get brandFilter => _brandFilter;
   String get sort => _sort;
   bool get isLoading => _isLoading;
   bool get hasMore => _hasMore;
@@ -51,13 +56,25 @@ class PhotoProvider extends ChangeNotifier {
 
   void add(PhotoItem item) {
     _items.insert(0, item);
+    if (AppConstants.useMockApi) {
+      _allMockItems.insert(0, item);
+    }
     notifyListeners();
   }
 
   void addFromResponse(Map<String, dynamic> res) {
+    final photoId = res['photoId'] as int;
+    // 이미 존재하는 사진인지 확인
+    final existingIdx = _items.indexWhere((e) => e.photoId == photoId);
+    if (existingIdx != -1) {
+      // 이미 존재하면 업데이트만 수행
+      updateFromResponse(res);
+      return;
+    }
+    // 새 사진인 경우에만 추가
     add(
       PhotoItem(
-        photoId: res['photoId'] as int,
+        photoId: photoId,
         imageUrl: (res['imageUrl'] ?? '') as String,
         takenAt: res['takenAt'] as String? ?? '',
         location: res['location'] as String? ?? '',
@@ -72,6 +89,7 @@ class PhotoProvider extends ChangeNotifier {
   void updateFromResponse(Map<String, dynamic> res) {
     final id = res['photoId'] as int;
     final idx = _items.indexWhere((e) => e.photoId == id);
+    final mockIdx = _allMockItems.indexWhere((e) => e.photoId == id);
     if (idx == -1) return;
     _items[idx] = PhotoItem(
       photoId: id,
@@ -85,11 +103,17 @@ class PhotoProvider extends ChangeNotifier {
           ? (res['favorite'] == true)
           : _items[idx].favorite,
     );
+    if (AppConstants.useMockApi && mockIdx != -1) {
+      _allMockItems[mockIdx] = _items[idx];
+    }
     notifyListeners();
   }
 
   void removeById(int photoId) {
     _items.removeWhere((e) => e.photoId == photoId);
+    if (AppConstants.useMockApi) {
+      _allMockItems.removeWhere((e) => e.photoId == photoId);
+    }
     notifyListeners();
   }
 
@@ -157,7 +181,12 @@ class PhotoProvider extends ChangeNotifier {
         favorite: false,
       ),
     ];
-    _items.addAll(samples);
+    _allMockItems
+      ..clear()
+      ..addAll(samples);
+    _items
+      ..clear()
+      ..addAll(samples);
     notifyListeners();
   }
 
@@ -174,14 +203,60 @@ class PhotoProvider extends ChangeNotifier {
     await resetAndLoad();
   }
 
-  Future<void> resetAndLoad({bool? favorite, String? tag, String? sort}) async {
+  Future<void> resetAndLoad({
+    Object? favorite = _paramNotSet,
+    Object? tag = _paramNotSet,
+    Object? brand = _paramNotSet,
+    String? sort,
+  }) async {
+    debugPrint(
+      '[PhotoProvider] resetAndLoad called with '
+      'favorite=${favorite == _paramNotSet ? '(unchanged)' : favorite}, '
+      'tag=${tag == _paramNotSet ? '(unchanged)' : tag}, '
+      'brand=${brand == _paramNotSet ? '(unchanged)' : brand}, sort=$sort',
+    );
+    if (favorite != _paramNotSet) {
+      _favoriteOnly = favorite == true;
+    }
+    if (tag != _paramNotSet) {
+      _tagFilter = tag as String?;
+    }
+    if (brand != _paramNotSet) {
+      _brandFilter = brand as String?;
+    }
+    if (sort != null && sort.isNotEmpty) {
+      _sort = sort;
+    }
+
     if (AppConstants.useMockApi) {
-      // 모킹에선 초기 더미만 유지
+      // 모킹 모드: 로컬 필터/정렬 적용
+      Iterable<PhotoItem> view = _allMockItems.isEmpty ? _items : _allMockItems;
+      if (_brandFilter != null && _brandFilter!.isNotEmpty) {
+        view = view.where((e) => e.brand == _brandFilter);
+      }
+      if (_tagFilter != null && _tagFilter!.isNotEmpty) {
+        view = view.where((e) => e.tagList.contains(_tagFilter));
+      }
+      if (_favoriteOnly) {
+        view = view.where((e) => e.favorite);
+      }
+      final list = view.toList();
+      if (_sort == 'takenAt,asc') {
+        list.sort((a, b) => a.takenAt.compareTo(b.takenAt));
+      } else if (_sort == 'takenAt,desc') {
+        list.sort((a, b) => b.takenAt.compareTo(a.takenAt));
+      }
+      debugPrint(
+        '[PhotoProvider] mock mode applying filters '
+        'favoriteOnly=$_favoriteOnly tag=$_tagFilter brand=$_brandFilter '
+        'resultCount=${list.length} total=${_allMockItems.length}',
+      );
+      _items
+        ..clear()
+        ..addAll(list);
+      notifyListeners();
       return;
     }
-    _favoriteOnly = favorite ?? _favoriteOnly;
-    _tagFilter = tag ?? _tagFilter;
-    if (sort != null && sort.isNotEmpty) _sort = sort;
     _page = 0;
     _hasMore = true;
     _items.clear();
@@ -196,19 +271,23 @@ class PhotoProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final api = PhotoApi();
-      final list = await api.getPhotos(
+      final response = await api.getPhotos(
         favorite: _favoriteOnly ? true : null,
         tag: _tagFilter,
+        brand: _brandFilter,
         sort: _sort,
         page: _page,
         size: _size,
       );
-      if (list.isEmpty) {
+      // API 명세서: { content: [], page: {} } 구조
+      final List content = (response['content'] as List?) ?? [];
+      final pageInfo = response['page'] as Map<String, dynamic>?;
+      if (content.isEmpty) {
         _hasMore = false;
       } else {
         final existingIds = _items.map((e) => e.photoId).toSet();
-        for (final m in list) {
-          final id = m['photoId'] as int;
+        for (final m in content) {
+          final id = (m as Map)['photoId'] as int;
           if (existingIds.contains(id)) continue;
           _items.add(
             PhotoItem(
@@ -223,15 +302,38 @@ class PhotoProvider extends ChangeNotifier {
             ),
           );
         }
-        if (list.length < _size) {
-          _hasMore = false;
+        // pageInfo에서 totalPages 확인하여 hasMore 결정
+        if (pageInfo != null) {
+          final currentPage = pageInfo['number'] as int? ?? _page;
+          final totalPages = pageInfo['totalPages'] as int? ?? 1;
+          _hasMore = currentPage < totalPages - 1;
+          _page = currentPage + 1;
         } else {
-          _page += 1;
+          if (content.length < _size) {
+            _hasMore = false;
+          } else {
+            _page += 1;
+          }
         }
       }
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// 로그인/로그아웃 시 상태 초기화
+  void reset() {
+    _items.clear();
+    _allMockItems.clear();
+    _loadedOnce = false;
+    _favoriteOnly = false;
+    _tagFilter = null;
+    _brandFilter = null;
+    _sort = 'takenAt,desc';
+    _page = 0;
+    _isLoading = false;
+    _hasMore = true;
+    notifyListeners();
   }
 }

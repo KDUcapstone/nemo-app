@@ -18,6 +18,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _errorText;
 
   @override
   void dispose() {
@@ -30,8 +32,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
     if (value == null || value.isEmpty) {
       return '이메일을 입력해주세요';
     }
-    // 문자열 끝 앵커는 $ 이어야 합니다. (잘못된 \'\$\' 제거)
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    // 간단하고 관용적인 이메일 패턴: 공백/@ 제외한 문자열 + @ + 도메인 + 점 + TLD
+    // 종료 앵커($)가 리터럴로 매칭되던 문제(\$)를 수정하고, TLD 길이를 제한하지 않음
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     if (!emailRegex.hasMatch(value)) {
       return '올바른 이메일 형식을 입력해주세요';
     }
@@ -49,35 +52,130 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
   }
 
   void _handleLogin() async {
+    if (_isLoading) return;
     if (_formKey.currentState!.validate()) {
       try {
+        setState(() {
+          _isLoading = true;
+          _errorText = null;
+        });
         final authService = AuthService();
         final result = await authService.login(
           _emailController.text,
           _passwordController.text,
         );
 
-        if (result['success'] == true && mounted) {
+        // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
+        // AuthService.login()은 성공 시 userId, nickname, accessToken, profileImageUrl을 최상위에도 제공
+        if (result['userId'] != null &&
+            result['accessToken'] != null &&
+            mounted) {
+          setState(() {
+            _isLoading = false;
+          });
           final userProvider = Provider.of<UserProvider>(
             context,
             listen: false,
           );
           userProvider.setUser(
-            userId: result['userId'],
-            nickname: result['nickname'],
-            accessToken: result['accessToken'],
-            profileImageUrl: result['profileImageUrl'],
+            userId: result['userId'] as int,
+            nickname: result['nickname'] as String? ?? '',
+            accessToken: result['accessToken'] as String,
+            profileImageUrl: result['profileImageUrl'] as String?,
+            context: context,
           );
-          // 로그인 성공 신호를 상위(LoginScreen)로 전달하여 거기서 네비게이션 처리
+          // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
+          final nick = (result['nickname'] as String?)?.trim();
+          // 닉네임이 비어있거나 인코딩 문제가 있을 경우 안전하게 처리
+          final displayNick = (nick != null && nick.isNotEmpty) ? nick : '사용자';
+          _showToast('환영합니다 $displayNick님!');
           Navigator.pop(context, true);
+        } else {
+          // 예상치 못한 응답 형식
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorText = '로그인에 실패했습니다.';
+            });
+          }
         }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('로그인 실패: $e'), backgroundColor: Colors.red),
-        );
+        setState(() {
+          _isLoading = false;
+          final errorMsg = e.toString();
+
+          // Exception 접두사 및 기술적 메시지 제거, 사용자 친화적인 메시지로 변환
+          String userMessage;
+          if (errorMsg.startsWith('Exception: ')) {
+            userMessage = errorMsg.substring('Exception: '.length);
+            // 네트워크 오류 메시지 정리
+            if (userMessage.startsWith('네트워크 오류: ')) {
+              userMessage = '네트워크 오류가 발생했습니다.';
+            } else if (userMessage.contains('네트워크')) {
+              userMessage = '네트워크 오류가 발생했습니다.';
+            }
+            // 기술적인 오류 코드나 메시지가 포함된 경우 일반 메시지로 변환
+            if (userMessage.contains('(40') ||
+                userMessage.contains('(50') ||
+                userMessage.contains('statusCode') ||
+                userMessage.contains('HttpException')) {
+              userMessage = '로그인에 실패했습니다.';
+            }
+          } else if (errorMsg.contains('네트워크') ||
+              errorMsg.contains('Network')) {
+            userMessage = '네트워크 오류가 발생했습니다.';
+          } else {
+            userMessage = '로그인에 실패했습니다.';
+          }
+
+          _errorText = userMessage;
+        });
       }
     }
+  }
+
+  void _showToast(String message) {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    if (overlay == null) return;
+    final entry = OverlayEntry(
+      builder: (_) => IgnorePointer(
+        child: SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 64),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(seconds: 2), () {
+      // OverlayEntry는 위젯 생명주기와 무관하게 제거 가능
+      entry.remove();
+    });
   }
 
   @override
@@ -141,6 +239,8 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                     strongBorder: true,
                     controller: _emailController,
                     validator: _validateEmail,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                   ),
                   const SizedBox(height: 12),
                   _IconInputField(
@@ -150,9 +250,58 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                     strongBorder: true,
                     controller: _passwordController,
                     validator: _validatePassword,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _handleLogin(),
                   ),
+                  if (_errorText != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _errorText!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
-                  _PrimaryButton(text: '로그인', onTap: _handleLogin),
+                  if (_isLoading)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary.withOpacity(0.45),
+                            AppColors.primary.withOpacity(0.35),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 6,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const SizedBox(
+                        height: 20,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    _PrimaryButton(text: '로그인', onTap: _handleLogin),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -198,10 +347,12 @@ class _IconInputField extends StatefulWidget {
   final String hintText;
   final bool obscureText;
   final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
   final IconData icon;
   final bool strongBorder;
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
+  final void Function(String)? onSubmitted;
   final TextEditingController? controller;
 
   const _IconInputField({
@@ -209,9 +360,11 @@ class _IconInputField extends StatefulWidget {
     required this.icon,
     this.obscureText = false,
     this.keyboardType,
+    this.textInputAction,
     this.strongBorder = false,
     this.validator,
     this.onChanged,
+    this.onSubmitted,
     this.controller,
   });
 
@@ -243,6 +396,8 @@ class _IconInputFieldState extends State<_IconInputField> {
       focusNode: _focusNode,
       obscureText: widget.obscureText,
       keyboardType: widget.keyboardType,
+      textInputAction: widget.textInputAction,
+      onFieldSubmitted: widget.onSubmitted,
       validator: widget.validator,
       onChanged: widget.onChanged,
       decoration: InputDecoration(

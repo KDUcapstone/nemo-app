@@ -1,65 +1,62 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-// ignore: depend_on_referenced_packages
-import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
 import 'package:frontend/services/photo_upload_api.dart';
-import 'package:provider/provider.dart';
-import 'package:frontend/providers/photo_provider.dart';
+import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 
-/// QR 페이로드를 받아 사진을 다운로드하고 업로드까지 수행하는 공용 유틸
-Future<void> handleQrImport(BuildContext context, String payload) async {
-  final match = RegExp(r'https?://[^\s]+').firstMatch(payload);
-  if (match == null) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('지원되지 않는 QR 형식입니다.')));
-    return;
-  }
-  final url = match.group(0)!;
-
-  try {
-    final resp = await http.get(Uri.parse(url));
-    if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
-      final Uint8List bytes = resp.bodyBytes;
-      final tempDir = Directory.systemTemp;
-      final fileName = 'qr_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final filePath = p.join(tempDir.path, fileName);
-      final file = await File(filePath).writeAsBytes(bytes);
-
-      final nowIso = DateFormat("yyyy-MM-ddTHH:mm:ss").format(DateTime.now());
-      final api = PhotoUploadApi();
-      final result = await api.uploadPhotoViaQr(
-        qrCode: payload,
-        imageFile: file,
-        takenAtIso: nowIso,
-        location: '포토부스(추정)',
-        brand: '인생네컷',
-        tagList: const ['QR업로드'],
-        friendIdList: const [],
-      );
-
-      if (!context.mounted) return;
-      // 상태 반영 (목록 갱신)
-      context.read<PhotoProvider>().addFromResponse(result);
-      // 성공 알림
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('업로드 완료 (ID: ${result['photoId']})')),
-      );
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('이미지를 불러오지 못했습니다 (${resp.statusCode})')),
-        );
-      }
-    }
-  } catch (e) {
+/// QR 코드를 스캔한 후 임시 등록 API 호출하고 상세정보 입력 화면으로 이동
+/// 명세서: POST /api/photos/qr-import - QR 코드로 이미지 가져오기 + 미리보기용 imageUrl 반환
+Future<void> handleQrImport(BuildContext context, String qrCode) async {
+  if (qrCode.isEmpty) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('가져오기 실패: $e')));
+      ).showSnackBar(const SnackBar(content: Text('QR 코드가 비어있습니다.')));
     }
+    return;
+  }
+
+  if (!context.mounted) return;
+
+  // 로딩 표시
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(child: CircularProgressIndicator()),
+  );
+
+  try {
+    // QR 임시 등록 API 호출
+    final api = PhotoUploadApi();
+    final result = await api.importPhotoFromQr(qrCode: qrCode);
+
+    if (!context.mounted) return;
+
+    // 로딩 닫기
+    Navigator.pop(context);
+
+    // 상세정보 입력 화면으로 이동 (photoId, imageUrl 등 포함)
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoAddDetailScreen(
+          imageFile: null,
+          qrCode: qrCode,
+          qrImportResult:
+              result, // photoId, imageUrl, takenAt, location, brand, status 포함
+          defaultTakenAt: result['takenAt'] != null
+              ? DateTime.tryParse(result['takenAt'] as String)
+              : DateTime.now(),
+        ),
+      ),
+    );
+  } catch (e) {
+    if (!context.mounted) return;
+
+    // 로딩 닫기
+    Navigator.pop(context);
+
+    // 에러 메시지 표시
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+    );
   }
 }
