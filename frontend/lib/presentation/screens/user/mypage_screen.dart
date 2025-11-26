@@ -45,7 +45,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   // 임시 사용자 데이터 (실제로는 API에서 가져옴)
   Map<String, dynamic> _userInfo = {
-    'id': 1,
+    'userId': 1,
     'email': 'user@example.com',
     'nickname': '사용자',
     'profileImageUrl': null,
@@ -100,41 +100,32 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Future<void> _loadUserInfo() async {
-    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
     try {
       final authService = AuthService();
-      final response = await authService.getUserInfo(); // { userId, email, nickname, profileImageUrl, createdAt }
+      final response = await authService
+          .getUserInfo(); // { userId, email, nickname, profileImageUrl, createdAt }
 
-      if (!mounted) return;
       setState(() {
         _userInfo = response;
-        _nicknameController.text = response['nickname'] as String? ?? '';
+        _nicknameController.text = response['nickname'] as String;
         _isLoading = false;
       });
-
-      // 선택: Provider에 최신 닉네임/이미지도 반영하고 싶으면
-      if (mounted) {
-        final userProvider = Provider.of<UserProvider>(context, listen: false);
-        userProvider.nickname = response['nickname'] as String?;
-        userProvider.profileImageUrl = response['profileImageUrl'] as String?;
-        userProvider.notifyListeners();
-      }
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '사용자 정보를 불러오지 못했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('사용자 정보를 불러오는 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -149,7 +140,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
         imageQuality: 80,
       );
 
-      if (!mounted) return;
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -173,7 +163,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
         imageQuality: 80,
       );
 
-      if (!mounted) return;
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -200,10 +189,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  // QR 가져오기 기능은 하단 탭의 QR 스캔 화면에서 제공됩니다.
-  // 마이페이지에서는 더 이상 사용하지 않습니다.
+  // QR 스캔 진입은 하단 탭에서 제공되며, 마이페이지에서는 제거되었습니다.
+
+  // QR 가져오기는 현재 마이페이지에서 직접 호출하지 않습니다. (탭 구조 적용)
   // ignore: unused_element
-  @Deprecated('QR 가져오기는 QR 스캔 화면에서 처리합니다.')
   Future<void> _importFromQr(String payload) async {
     final match = RegExp(r'https?://[^\s]+').firstMatch(payload);
     if (match == null) {
@@ -247,9 +236,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('가져오기 실패: $e')));
+      final errorStr = e.toString();
+      final msg = errorStr.startsWith('Exception: ')
+          ? errorStr.substring('Exception: '.length)
+          : '가져오기에 실패했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -257,45 +248,46 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   Future<void> _updateUserInfo() async {
     final formState = _formKey.currentState;
-    if (formState != null && !formState.validate()) return;
+    if (formState != null) {
+      if (!formState.validate()) return;
+    }
 
-    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
     try {
       final authService = AuthService();
+      Map<String, dynamic> updatedInfo;
 
-      // 1) 서버에 실제로 프로필 업데이트 요청 (multipart)
-      final updated = await authService.updateUserProfile(
-        nickname: _nicknameController.text.trim(),
-        image: _selectedImage, // null이면 서버에서 무시
-      );
+      // 이미지 파일이 있으면 multipart 방식으로 업데이트
+      if (_selectedImage != null) {
+        updatedInfo = await authService.updateProfileWithImage(
+          nickname: _nicknameController.text.trim(),
+          imageFile: _selectedImage!,
+        );
+      } else {
+        // 이미지가 없으면 JSON 방식으로 업데이트 (닉네임만)
+        updatedInfo = await authService.updateProfile(
+          nickname: _nicknameController.text.trim(),
+        );
+      }
 
-      // 2) 서버에서 응답 온 값으로 다시 세팅
-      if (!mounted) return;
+      // 업데이트된 정보로 상태 갱신
       setState(() {
         _userInfo = {
-          'userId': updated['userId'],
-          'email': updated['email'],
-          'nickname': updated['nickname'],
-          'profileImageUrl': updated['profileImageUrl'],
-          'createdAt': _userInfo['createdAt'], // 가입일은 그대로
+          'userId': updatedInfo['userId'],
+          'email': updatedInfo['email'] ?? _userInfo['email'],
+          'nickname':
+              updatedInfo['nickname'] ?? _nicknameController.text.trim(),
+          'profileImageUrl':
+              updatedInfo['profileImageUrl'] ?? _userInfo['profileImageUrl'],
+          'createdAt': updatedInfo['createdAt'] ?? _userInfo['createdAt'],
         };
-
         _isEditing = false;
-        _selectedImage = null;
         _isLoading = false;
+        _selectedImage = null; // 선택된 이미지 초기화
       });
-
-      // 3) Provider에도 반영 (상단 앱바/다른 화면에서 쓸 때)
-      if (mounted) {
-        final userProvider = Provider.of<UserProvider>(context, listen: false);
-        userProvider.nickname = updated['nickname'] as String?;
-        userProvider.profileImageUrl = updated['profileImageUrl'] as String?;
-        userProvider.notifyListeners();
-      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -306,17 +298,17 @@ class _MyPageScreenState extends State<MyPageScreen> {
         );
       }
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '정보 수정에 실패했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('정보 수정 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -364,7 +356,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       // UserProvider에서도 로그아웃 처리
       if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
-        userProvider.logout();
+        userProvider.logout(context: context);
       }
 
       if (mounted) {
@@ -383,11 +375,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorStr = e.toString();
+        final msg = errorStr.startsWith('Exception: ')
+            ? errorStr.substring('Exception: '.length)
+            : '로그아웃에 실패했습니다.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('로그아웃 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
     }
@@ -664,11 +657,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
       });
 
       if (mounted) {
+        final errorMsg = e.toString();
+        String message;
+        if (errorMsg.contains('403') ||
+            errorMsg.contains('INVALID_CURRENT_PASSWORD') ||
+            errorMsg.contains('비밀번호')) {
+          message = '비밀번호가 틀렸습니다';
+        } else if (errorMsg.contains('410') || errorMsg.contains('이미 탈퇴')) {
+          message = '이미 탈퇴 처리된 사용자입니다.';
+        } else {
+          // Exception: 접두사 제거
+          if (errorMsg.startsWith('Exception: ')) {
+            message = errorMsg.substring('Exception: '.length);
+          } else {
+            message = '회원탈퇴에 실패했습니다.';
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('회원탈퇴 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     }
@@ -723,7 +729,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           nicknameController: _nicknameController,
                           email: _userInfo['email'],
                           nickname: _userInfo['nickname'],
-                          profileImageUrl: _userInfo['profileImageUrl'], // ✅ 여기!!
+                          profileImageUrl:
+                              _userInfo['profileImageUrl'], // ✅ 여기!!
                           selectedImage: _selectedImage,
                           onEdit: () => setState(() => _isEditing = true),
                           onCancel: () => setState(() {

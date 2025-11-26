@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import 'photo_provider.dart';
+import 'album_provider.dart';
 
 class UserProvider extends ChangeNotifier {
   int? userId;
@@ -14,6 +17,7 @@ class UserProvider extends ChangeNotifier {
     required String nickname,
     required String accessToken,
     String? profileImageUrl,
+    BuildContext? context,
   }) {
     this.userId = userId;
     this.nickname = nickname;
@@ -24,9 +28,15 @@ class UserProvider extends ChangeNotifier {
     AuthService.setAccessToken(accessToken);
 
     notifyListeners();
+
+    // 로그인 시 다른 Provider 초기화 및 새로고침
+    if (context != null) {
+      _resetOtherProviders(context);
+      _refreshOtherProviders(context);
+    }
   }
 
-  void logout() {
+  void logout({BuildContext? context}) {
     userId = null;
     nickname = null;
     profileImageUrl = null;
@@ -36,5 +46,32 @@ class UserProvider extends ChangeNotifier {
     AuthService.clearAccessToken();
 
     notifyListeners();
+
+    // 로그아웃 시 다른 Provider 초기화
+    if (context != null) {
+      _resetOtherProviders(context);
+    }
+  }
+
+  void _resetOtherProviders(BuildContext context) {
+    try {
+      final photoProvider = Provider.of<PhotoProvider>(context, listen: false);
+      photoProvider.reset();
+      final albumProvider = Provider.of<AlbumProvider>(context, listen: false);
+      albumProvider.reset();
+    } catch (e) {
+      // Provider가 없을 수 있으므로 무시
+    }
+  }
+
+  void _refreshOtherProviders(BuildContext context) {
+    try {
+      final photoProvider = Provider.of<PhotoProvider>(context, listen: false);
+      photoProvider.fetchListIfNeeded();
+      final albumProvider = Provider.of<AlbumProvider>(context, listen: false);
+      albumProvider.resetAndLoad();
+    } catch (e) {
+      // Provider가 없을 수 있으므로 무시
+    }
   }
 }

@@ -314,9 +314,6 @@ class _MapContentState extends State<_MapContent> {
       final bounds = await _mapController!.getContentBounds();
       final cameraPosition = await _mapController!.getCameraPosition();
 
-      debugPrint('🗺️ [Map] bounds: ${bounds.northEast}, ${bounds.southWest}');
-      debugPrint('🗺️ [Map] camera zoom: ${cameraPosition.zoom}');
-
       final response = await MapApi.getViewport(
         neLat: bounds.northEast.latitude,
         neLng: bounds.northEast.longitude,
@@ -340,17 +337,14 @@ class _MapContentState extends State<_MapContent> {
       for (final item in items) {
         try {
           await _addMarker(item);
-          debugPrint('✅ [Map] 마커 추가 성공: ${item['placeId']}');
-        } catch (e, stack) {
+        } catch (e) {
           debugPrint('❌ [Map] 마커 추가 실패: ${item['placeId']}, 에러: $e');
-          debugPrint('Stack trace: $stack');
         }
       }
 
       debugPrint('📍 [Map] 최종 마커 개수: ${_markers.length}개');
-    } catch (e, stack) {
+    } catch (e) {
       debugPrint('❌ [Map] 포토부스 로딩 실패: $e');
-      debugPrint('Stack trace: $stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -375,15 +369,10 @@ class _MapContentState extends State<_MapContent> {
     final brand = item['brand'] as String?;
     final isCluster = item['cluster'] == true;
 
-    debugPrint(
-      '🔨 [Marker] 생성 시작: $placeId (cluster: $isCluster, brand: $brand)',
-    );
-
     final marker = NMarker(id: placeId, position: NLatLng(latitude, longitude));
 
     if (isCluster) {
       final count = item['count'] as int? ?? 0;
-      debugPrint('🔨 [Marker] 클러스터 마커 생성: count=$count');
       marker.setIcon(
         await NOverlayImage.fromWidget(
           context: context,
@@ -416,10 +405,8 @@ class _MapContentState extends State<_MapContent> {
           size: const Size(32, 32),
         ),
       );
-      debugPrint('✅ [Marker] 클러스터 마커 아이콘 설정 완료');
     } else {
       String iconPath = _getMarkerIconPath(brand);
-      debugPrint('🔨 [Marker] 아이콘 경로: $iconPath');
       try {
         final ByteData data = await rootBundle.load(iconPath);
         final Uint8List imageBytes = data.buffer.asUint8List();
@@ -458,10 +445,7 @@ class _MapContentState extends State<_MapContent> {
             size: const Size(36, 36),
           ),
         );
-        debugPrint('✅ [Marker] 에셋 이미지 로드 성공');
-      } catch (e, stack) {
-        debugPrint('⚠️ [Marker] 에셋 이미지 로드 실패, 기본 마커 사용: $e');
-        debugPrint('Stack: $stack');
+      } catch (e) {
         marker.setIcon(
           await NOverlayImage.fromWidget(
             context: context,
@@ -495,7 +479,6 @@ class _MapContentState extends State<_MapContent> {
             size: const Size(36, 36),
           ),
         );
-        debugPrint('✅ [Marker] 기본 마커 아이콘 설정 완료');
       }
 
       marker.setOnTapListener((overlay) {
@@ -505,7 +488,6 @@ class _MapContentState extends State<_MapContent> {
 
     _mapController!.addOverlay(marker);
     _markers.add(marker);
-    debugPrint('✅ [Marker] 지도에 추가 완료: $placeId');
   }
 
   String _getMarkerIconPath(String? brand) {
@@ -712,8 +694,15 @@ class _HomeMapPlaceholderCard extends StatelessWidget {
   }
 }
 
-class _MemoryShelfRow extends StatelessWidget {
+class _MemoryShelfRow extends StatefulWidget {
   const _MemoryShelfRow();
+
+  @override
+  State<_MemoryShelfRow> createState() => _MemoryShelfRowState();
+}
+
+class _MemoryShelfRowState extends State<_MemoryShelfRow> {
+  bool _hasTriedLoad = false;
 
   @override
   Widget build(BuildContext context) {
@@ -727,7 +716,10 @@ class _MemoryShelfRow extends StatelessWidget {
     }
 
     final albumProvider = context.watch<AlbumProvider>();
-    if (albumProvider.albums.isEmpty && !albumProvider.isLoading) {
+    if (albumProvider.albums.isEmpty &&
+        !albumProvider.isLoading &&
+        !_hasTriedLoad) {
+      _hasTriedLoad = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
           context.read<AlbumProvider>().resetAndLoad(sort: 'createdAt,desc');

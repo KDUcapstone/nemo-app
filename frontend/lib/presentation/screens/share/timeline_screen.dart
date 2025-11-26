@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/services/timeline_api.dart';
 import 'package:frontend/services/auth_service.dart';
-import 'package:intl/intl.dart';
 import 'package:frontend/presentation/screens/share/timeline_photo_story_screen.dart';
+import 'dart:io';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -14,194 +14,175 @@ class TimelineScreen extends StatefulWidget {
 
 class _TimelineScreenState extends State<TimelineScreen> {
   final TimelineApi _api = TimelineApi();
-  final ScrollController _scrollController = ScrollController();
-
-  // 캘린더 타임랩스 데이터 (날짜별 썸네일 정보)
-  Map<String, Map<String, dynamic>> _timelapseData = {};
-
-  // 타임라인 데이터 (날짜별 사진 목록)
-  Map<String, List<Map<String, dynamic>>> _timelineData = {};
-
-  DateTime? _joinDate;
-  bool _loadingUserInfo = true;
+  final AuthService _authService = AuthService();
+  Map<String, Map<String, dynamic>> _timelineDataByDate = {};
+  Map<String, List<Map<String, dynamic>>> _timelapseDataByMonth = {};
+  DateTime? _joinedDate; // 가입 월
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadUserInfoAndInitialize();
+    _loadInitialData();
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  /// 사용자 정보를 로드하여 가입일을 확인하고 캘린더 초기화
-  Future<void> _loadUserInfoAndInitialize() async {
+  Future<void> _loadInitialData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
-      final authService = AuthService();
-      final userInfo = await authService.getUserInfo();
+      // 사용자 정보에서 가입일 가져오기
+      DateTime? joinedDate;
+      try {
+        final userInfo = await _authService.getUserInfo();
+        final createdAtStr = userInfo['createdAt'] as String?;
+        if (createdAtStr != null && createdAtStr.isNotEmpty) {
+          joinedDate = DateTime.parse(createdAtStr);
+          // 가입일을 해당 월의 첫 날로 설정
+          joinedDate = DateTime(joinedDate.year, joinedDate.month, 1);
+        }
+      } catch (e) {
+        // 사용자 정보 로드 실패 시 현재 월로 설정
+        final now = DateTime.now();
+        joinedDate = DateTime(now.year, now.month, 1);
+      }
 
-      if (!mounted) return;
+      // 가입일이 없으면 현재 월로 설정
+      if (joinedDate == null) {
+        final now = DateTime.now();
+        joinedDate = DateTime(now.year, now.month, 1);
+      }
 
-      // 가입일 파싱
-      final createdAt = userInfo['createdAt'];
-      DateTime? joinDate;
-      if (createdAt != null) {
+      // 전체 타임라인 로드
+      final timelineData = await _api.getTimeline();
+      final timelineMap = <String, Map<String, dynamic>>{};
+      DateTime? earliestDate;
+      DateTime? latestDate;
+
+      for (final entry in timelineData) {
+        final dateStr = entry['date'] as String;
+        timelineMap[dateStr] = entry;
+
+        // 날짜 파싱하여 가장 이른/늦은 날짜 찾기
         try {
-          if (createdAt is String) {
-            joinDate = DateTime.parse(createdAt);
-          } else if (createdAt is int) {
-            // epoch milliseconds
-            joinDate = DateTime.fromMillisecondsSinceEpoch(createdAt);
+          final date = DateTime.parse(dateStr);
+          final dateMonth = DateTime(date.year, date.month, 1);
+
+          // 가장 이른 날짜 업데이트
+          if (earliestDate == null || dateMonth.isBefore(earliestDate)) {
+            earliestDate = dateMonth;
           }
-          // 월의 시작일로 정규화
-          if (joinDate != null) {
-            joinDate = DateTime(joinDate.year, joinDate.month, 1);
+
+          // 가장 늦은 날짜 업데이트
+          if (latestDate == null || dateMonth.isAfter(latestDate)) {
+            latestDate = dateMonth;
           }
-        } catch (_) {
-          // 파싱 실패 시 현재 월로부터 12개월 전을 기본값으로 사용
+        } catch (e) {
+          // 날짜 파싱 실패 시 무시
         }
       }
 
-      // 기본값: 현재 월로부터 12개월 전
+      // 캘린더 시작 월 결정: 가입 월과 가장 이른 사진 월 중 더 이른 것
+      DateTime startMonth = joinedDate;
+      if (earliestDate != null && earliestDate.isBefore(joinedDate)) {
+        startMonth = earliestDate;
+      }
+
+      // 캘린더 종료 월 결정: 현재 월과 가장 늦은 사진 월 중 더 늦은 것
       final now = DateTime.now();
-      final defaultJoinDate = DateTime(now.year, now.month - 11, 1);
+      final currentMonth = DateTime(now.year, now.month, 1);
+      DateTime endMonth = currentMonth;
+      if (latestDate != null && latestDate.isAfter(currentMonth)) {
+        endMonth = latestDate;
+      }
+
+      // 시작 월부터 종료 월까지 타임랩스 데이터 로드
+      final timelapseMap = <String, List<Map<String, dynamic>>>{};
+      DateTime month = DateTime(startMonth.year, startMonth.month, 1);
+      while (month.isBefore(endMonth) || month.isAtSameMomentAs(endMonth)) {
+        final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+        try {
+          final data = await _api.getTimelapse(
+            year: month.year,
+            month: month.month,
+          );
+          timelapseMap[key] = data;
+        } catch (e) {
+          // 특정 월 로드 실패해도 계속 진행
+        }
+        // 다음 달로 이동
+        if (month.month == 12) {
+          month = DateTime(month.year + 1, 1, 1);
+        } else {
+          month = DateTime(month.year, month.month + 1, 1);
+        }
+      }
 
       setState(() {
-        _joinDate = joinDate ?? defaultJoinDate;
-        _loadingUserInfo = false;
+        _timelineDataByDate = timelineMap;
+        _timelapseDataByMonth = timelapseMap;
+        _joinedDate = startMonth; // 시작 월을 joinedDate에 저장 (실제로는 캘린더 시작 월)
+        _isLoading = false;
       });
-
-      // 현재 월 데이터 로드
-      await _loadTimelapseForMonth(now.year, now.month);
-      await _loadRecentTimeline();
-
-      // 현재 월로 스크롤 (맨 위에 표시되도록)
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToCurrentMonth();
-        });
-      }
     } catch (e) {
-      if (!mounted) return;
-      // 에러 발생 시 기본값 사용
-      final now = DateTime.now();
       setState(() {
-        _joinDate = DateTime(now.year, now.month - 11, 1);
-        _loadingUserInfo = false;
+        _error = e.toString();
+        _isLoading = false;
       });
-      await _loadTimelapseForMonth(now.year, now.month);
-      await _loadRecentTimeline();
-
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToCurrentMonth();
-        });
-      }
     }
   }
 
-  /// 현재 월로 스크롤 (맨 위로)
-  void _scrollToCurrentMonth() {
-    if (!_scrollController.hasClients) return;
+  Future<void> _loadMonth(int year, int month) async {
+    final key = '$year-${month.toString().padLeft(2, '0')}';
+    if (_timelapseDataByMonth.containsKey(key)) return; // 이미 로드됨
 
-    // reverse 모드가 아니므로 스크롤을 맨 위(0)로 설정
-    // 현재 월이 index 0이므로 자동으로 맨 위에 표시됨
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(0.0);
-      }
-    });
-  }
-
-  /// 특정 월의 타임랩스 데이터 로드 (캘린더 표시용)
-  Future<void> _loadTimelapseForMonth(int year, int month) async {
-    if (!mounted) return;
     try {
       final data = await _api.getTimelapse(year: year, month: month);
-      if (!mounted) return;
       setState(() {
-        for (final item in data) {
-          final date = item['date'] as String;
-          _timelapseData[date] = item;
-        }
+        _timelapseDataByMonth[key] = data;
       });
     } catch (e) {
-      if (!mounted) return;
-      // 에러는 조용히 처리 (lazy loading 중일 수 있음)
+      // 로드 실패해도 무시
     }
   }
 
-  /// 최근 타임라인 데이터 로드
-  Future<void> _loadRecentTimeline() async {
-    try {
-      final data = await _api.getTimeline();
-      if (!mounted) return;
-      setState(() {
-        _timelineData.clear();
-        for (final item in data) {
-          final date = item['date'] as String;
-          final photos = (item['photos'] as List).cast<Map<String, dynamic>>();
-          _timelineData[date] = photos;
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      // 에러는 조용히 처리 (첫 로딩 시)
-    }
-  }
-
-  /// 특정 날짜의 사진 목록 로드 및 뷰어 화면 표시
-  Future<void> _loadPhotosForDate(DateTime date) async {
-    final dateKey = _getDateKey(date);
-    List<Map<String, dynamic>> photos;
-
-    // 이미 로드된 데이터가 있으면 사용
-    if (_timelineData.containsKey(dateKey)) {
-      photos = _timelineData[dateKey]!;
-    } else {
-      // 데이터가 없으면 로드
+  void _showPhotoStory(String date) async {
+    // 해당 날짜의 타임라인 데이터에서 사진 목록 가져오기
+    final entry = _timelineDataByDate[date];
+    if (entry == null) {
+      // 타임라인 데이터가 없으면 API로 다시 로드
       try {
-        final data = await _api.getTimeline(year: date.year, month: date.month);
-        if (!mounted) return;
-        setState(() {
-          for (final item in data) {
-            final d = item['date'] as String;
-            final photoList = (item['photos'] as List)
-                .cast<Map<String, dynamic>>();
-            _timelineData[d] = photoList;
+        final dateObj = DateTime.parse(date);
+        final timelineData = await _api.getTimeline(
+          year: dateObj.year,
+          month: dateObj.month,
+        );
+        final found = timelineData.firstWhere(
+          (e) => e['date'] == date,
+          orElse: () => <String, dynamic>{},
+        );
+        if (found.isNotEmpty) {
+          final photos = (found['photos'] as List).cast<Map<String, dynamic>>();
+          if (photos.isNotEmpty && mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    TimelinePhotoStoryScreen(photos: photos, initialIndex: 0),
+              ),
+            );
           }
-        });
-        photos = _timelineData[dateKey] ?? [];
+        }
       } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('사진을 불러오지 못했습니다: $e')));
-        return;
+        // 에러 무시
       }
-    }
-
-    if (!mounted) return;
-
-    // 사진이 없으면 아무 일도 하지 않음
-    if (photos.isEmpty) {
       return;
     }
 
-    // 사진이 있으면 뷰어 화면 표시
-    if (photos.length == 1) {
-      // 1장이면 전체화면 뷰어
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TimelinePhotoFullscreenScreen(photo: photos[0]),
-        ),
-      );
-    } else {
-      // 2장 이상이면 스토리 뷰어
+    final photos = (entry['photos'] as List).cast<Map<String, dynamic>>();
+    if (photos.isNotEmpty && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -212,15 +193,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
-  String _getDateKey(DateTime date) {
-    return DateFormat('yyyy-MM-dd').format(date);
-  }
-
-  Map<String, dynamic>? _getTimelapseData(DateTime date) {
-    final dateKey = _getDateKey(date);
-    return _timelapseData[dateKey];
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -229,137 +201,173 @@ class _TimelineScreenState extends State<TimelineScreen> {
         backgroundColor: AppColors.secondary,
         surfaceTintColor: Colors.transparent,
       ),
-      body: _buildScrollableCalendar(),
-    );
-  }
-
-  Widget _buildCalendarDay(DateTime date, int day) {
-    final timelapseData = _getTimelapseData(date);
-    final dateKey = _getDateKey(date);
-    // 실제 타임라인 데이터에 사진이 있는지 확인
-    final hasActualPhotos =
-        _timelineData.containsKey(dateKey) &&
-        _timelineData[dateKey]!.isNotEmpty;
-    final thumbnailUrl = timelapseData?['thumbnailUrl'] as String?;
-    // 타임랩스에서 사진이 있다고 나왔고, 실제 사진 데이터도 있을 때만 썸네일 표시
-    final shouldShowThumbnail =
-        hasActualPhotos &&
-        timelapseData?['hasPhoto'] == true &&
-        thumbnailUrl != null;
-
-    // 썸네일 URL이 있을 때만 사용
-    final displayThumbnailUrl = shouldShowThumbnail ? thumbnailUrl : null;
-
-    return GestureDetector(
-      onTap: () {
-        if (hasActualPhotos) {
-          _loadPhotosForDate(date);
-        }
-      },
-      child: Container(
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (displayThumbnailUrl != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  displayThumbnailUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      body: RefreshIndicator(
+        onRefresh: _loadInitialData,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '타임라인을 불러올 수 없습니다.',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _loadInitialData,
+                      child: const Text('다시 시도'),
+                    ),
+                  ],
                 ),
-              ),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: shouldShowThumbnail
-                    ? Colors.black.withOpacity(0.3)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$day',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.normal,
-                  color: shouldShowThumbnail
-                      ? Colors.white
-                      : AppColors.textPrimary,
-                ),
-              ),
-            ),
-          ],
-        ),
+              )
+            : _joinedDate != null
+            ? _CalendarTimelineView(
+                joinedDate: _joinedDate!,
+                timelineDataByDate: _timelineDataByDate,
+                timelapseDataByMonth: _timelapseDataByMonth,
+                onDateTap: _showPhotoStory,
+                onMonthVisible: _loadMonth,
+              )
+            : const Center(child: Text('캘린더를 불러올 수 없습니다.')),
       ),
     );
   }
+}
 
-  Widget _buildScrollableCalendar() {
-    if (_loadingUserInfo) {
-      return const Center(child: CircularProgressIndicator());
-    }
+class _CalendarTimelineView extends StatelessWidget {
+  final DateTime joinedDate; // 가입 월
+  final Map<String, Map<String, dynamic>> timelineDataByDate;
+  final Map<String, List<Map<String, dynamic>>> timelapseDataByMonth;
+  final void Function(String date) onDateTap;
+  final void Function(int year, int month) onMonthVisible;
 
-    if (_joinDate == null) {
-      return const Center(child: Text('캘린더를 불러올 수 없습니다.'));
-    }
+  const _CalendarTimelineView({
+    required this.joinedDate,
+    required this.timelineDataByDate,
+    required this.timelapseDataByMonth,
+    required this.onDateTap,
+    required this.onMonthVisible,
+  });
 
+  @override
+  Widget build(BuildContext context) {
     final now = DateTime.now();
-    final joinDate = _joinDate!;
+    final currentMonth = DateTime(now.year, now.month, 1);
+    final startMonth = DateTime(joinedDate.year, joinedDate.month, 1);
 
-    // 가입 월부터 현재 월까지의 총 월 수 계산
-    final totalMonths =
-        (now.year - joinDate.year) * 12 + (now.month - joinDate.month) + 1;
+    // 시작 월부터 현재 월까지 모든 월 생성
+    // timelapseDataByMonth의 키를 확인하여 실제 로드된 월 범위 확인
+    int maxYear = currentMonth.year;
+    int maxMonth = currentMonth.month;
+
+    // timelapseDataByMonth에서 가장 늦은 월 찾기
+    for (final key in timelapseDataByMonth.keys) {
+      final parts = key.split('-');
+      if (parts.length == 2) {
+        final year = int.tryParse(parts[0]);
+        final monthNum = int.tryParse(parts[1]);
+        if (year != null && monthNum != null) {
+          if (year > maxYear || (year == maxYear && monthNum > maxMonth)) {
+            maxYear = year;
+            maxMonth = monthNum;
+          }
+        }
+      }
+    }
+
+    final endMonth = DateTime(maxYear, maxMonth, 1);
+
+    final months = <DateTime>[];
+    DateTime month = startMonth;
+    while (month.isBefore(endMonth) || month.isAtSameMomentAs(endMonth)) {
+      months.add(month);
+      // 다음 달로 이동
+      if (month.month == 12) {
+        month = DateTime(month.year + 1, 1, 1);
+      } else {
+        month = DateTime(month.year, month.month + 1, 1);
+      }
+    }
+
+    // 최신순으로 정렬 (현재 월이 먼저)
+    months.sort((a, b) => b.compareTo(a));
 
     return ListView.builder(
-      controller: _scrollController,
-      itemCount: totalMonths,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      itemCount: months.length,
       itemBuilder: (context, index) {
-        // 현재 월(index 0)부터 과거로
-        final monthDate = DateTime(now.year, now.month - index);
-        final year = monthDate.year;
-        final month = monthDate.month;
-
-        // 가입 월보다 이전이면 표시하지 않음
-        if (monthDate.isBefore(DateTime(joinDate.year, joinDate.month))) {
-          return const SizedBox.shrink();
-        }
-
-        final firstDay = DateTime(year, month, 1);
-        final lastDay = DateTime(year, month + 1, 0);
-        final daysInMonth = lastDay.day;
-        final weekdayOfFirstDay = firstDay.weekday % 7;
-
-        // 해당 월의 타임랩스 데이터 로드 여부 확인
-        final monthKey = '$year-${month.toString().padLeft(2, '0')}';
-        final needsLoad = !_timelapseData.keys.any(
-          (key) => key.startsWith('$monthKey-'),
+        final month = months[index];
+        return _MonthCalendarWidget(
+          year: month.year,
+          month: month.month,
+          timelineDataByDate: timelineDataByDate,
+          timelapseData:
+              timelapseDataByMonth['${month.year}-${month.month.toString().padLeft(2, '0')}'],
+          onDateTap: onDateTap,
+          onVisible: () => onMonthVisible(month.year, month.month),
         );
+      },
+    );
+  }
+}
 
-        // 필요한 월의 데이터 로드 (lazy loading)
-        if (needsLoad) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _loadTimelapseForMonth(year, month);
-            }
-          });
+class _MonthCalendarWidget extends StatelessWidget {
+  final int year;
+  final int month;
+  final Map<String, Map<String, dynamic>> timelineDataByDate;
+  final List<Map<String, dynamic>>? timelapseData;
+  final void Function(String date) onDateTap;
+  final VoidCallback onVisible;
+
+  const _MonthCalendarWidget({
+    required this.year,
+    required this.month,
+    required this.timelineDataByDate,
+    this.timelapseData,
+    required this.onDateTap,
+    required this.onVisible,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 첫 렌더링 시 해당 월 데이터 로드
+    WidgetsBinding.instance.addPostFrameCallback((_) => onVisible());
+
+    final firstDay = DateTime(year, month, 1);
+    final lastDay = DateTime(year, month + 1, 0);
+    final firstWeekday = firstDay.weekday % 7; // 일요일 = 0
+    final daysInMonth = lastDay.day;
+
+    // 날짜별 썸네일 맵 생성
+    final dateThumbnailMap = <int, String?>{};
+    final datePhotoCountMap = <int, int>{};
+    if (timelapseData != null) {
+      for (final entry in timelapseData!) {
+        final dateStr = entry['date'] as String;
+        final dateObj = DateTime.parse(dateStr);
+        if (dateObj.year == year && dateObj.month == month) {
+          dateThumbnailMap[dateObj.day] = entry['thumbnailUrl'] as String?;
+          datePhotoCountMap[dateObj.day] = entry['photoCount'] as int? ?? 0;
         }
+      }
+    }
 
-        return Padding(
-          padding: const EdgeInsets.all(16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Text(
+            '$month월 $year',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '$month월 $year',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
               // 요일 헤더
               Row(
                 children: ['일', '월', '화', '수', '목', '금', '토']
@@ -368,10 +376,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                         child: Center(
                           child: Text(
                             day,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
@@ -380,31 +388,115 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     .toList(),
               ),
               const SizedBox(height: 8),
-              // 캘린더 그리드
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  mainAxisSpacing: 4,
-                  crossAxisSpacing: 4,
-                  childAspectRatio: 1.0,
+              // 달력 그리드
+              ...List.generate(
+                (daysInMonth + firstWeekday + 6) ~/ 7,
+                (weekIndex) => Row(
+                  children: List.generate(7, (dayIndex) {
+                    final cellIndex = weekIndex * 7 + dayIndex;
+                    final day = cellIndex - firstWeekday + 1;
+
+                    if (day < 1 || day > daysInMonth) {
+                      return Expanded(child: Container());
+                    }
+
+                    final thumbnailUrl = dateThumbnailMap[day];
+                    final photoCount = datePhotoCountMap[day] ?? 0;
+                    final hasPhoto = photoCount > 0;
+
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: GestureDetector(
+                          onTap: hasPhoto
+                              ? () {
+                                  final dateStr =
+                                      '$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+                                  onDateTap(dateStr);
+                                }
+                              : null,
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).scaffoldBackgroundColor,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  if (hasPhoto && thumbnailUrl != null)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: _buildThumbnail(thumbnailUrl),
+                                    ),
+                                  // 날짜 숫자
+                                  Positioned(
+                                    bottom: 4,
+                                    left: 4,
+                                    right: 4,
+                                    child: Text(
+                                      '$day',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: hasPhoto
+                                            ? Colors.white
+                                            : Colors.black87,
+                                        shadows: hasPhoto
+                                            ? [
+                                                Shadow(
+                                                  color: Colors.black54,
+                                                  blurRadius: 2,
+                                                ),
+                                              ]
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
-                itemCount: weekdayOfFirstDay + daysInMonth,
-                itemBuilder: (context, index) {
-                  if (index < weekdayOfFirstDay) {
-                    return const SizedBox.shrink();
-                  }
-                  final day = index - weekdayOfFirstDay + 1;
-                  final date = DateTime(year, month, day);
-                  return _buildCalendarDay(date, day);
-                },
               ),
-              const SizedBox(height: 20),
             ],
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 24),
+      ],
     );
+  }
+
+  Widget _buildThumbnail(String thumbnailUrl) {
+    final isFile = thumbnailUrl.isNotEmpty && !thumbnailUrl.startsWith('http');
+    return isFile
+        ? Image.file(
+            File(thumbnailUrl),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(color: Colors.grey[300]),
+          )
+        : Image.network(
+            thumbnailUrl,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
+            },
+            errorBuilder: (_, __, ___) => Container(color: Colors.grey[300]),
+          );
   }
 }

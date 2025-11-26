@@ -49,15 +49,18 @@ class AlbumProvider extends ChangeNotifier {
   final int _size = 10;
   String _sort = 'createdAt,desc';
   bool _favoriteOnly = false;
+  String _ownership = 'ALL'; // ALL, OWNED, SHARED
   final Set<int> _favoritedAlbumIds = <int>{};
   // 내가 공유 중/공유받은 앨범 ID 집합과 역할 맵
   final Set<int> _sharedAlbumIds = <int>{};
-  final Map<int, String> _albumIdToMyRole = <int, String>{}; // OWNER|CO_OWNER|EDITOR|VIEWER
+  final Map<int, String> _albumIdToMyRole =
+      <int, String>{}; // OWNER|CO_OWNER|EDITOR|VIEWER
 
   bool get isLoading => _isLoading;
   bool get hasMore => _hasMore;
   String get sort => _sort;
   bool get favoriteOnly => _favoriteOnly;
+  String get ownership => _ownership;
   bool isFavorited(int albumId) => _favoritedAlbumIds.contains(albumId);
   bool isShared(int albumId) => _sharedAlbumIds.contains(albumId);
   String? myRoleOf(int albumId) => _albumIdToMyRole[albumId];
@@ -70,10 +73,15 @@ class AlbumProvider extends ChangeNotifier {
         ..addAll(shared.map<int>((e) => (e['albumId'] as int)));
       _albumIdToMyRole
         ..clear()
-        ..addEntries(shared.map((e) => MapEntry(
+        ..addEntries(
+          shared.map(
+            (e) => MapEntry(
               e['albumId'] as int,
-              (e['myRole']?.toString() ?? 'VIEWER').toUpperCase(),
-            )));
+              (e['role']?.toString() ?? 'VIEWER')
+                  .toUpperCase(), // myRole → role
+            ),
+          ),
+        );
       notifyListeners();
     } catch (_) {
       // 무시
@@ -91,6 +99,48 @@ class AlbumProvider extends ChangeNotifier {
 
   void addFromResponse(Map<String, dynamic> res) {
     final albumId = res['albumId'] as int;
+
+    // photoIdList 파싱 (Long → int 변환 처리)
+    List<int> photoIdList = [];
+    if (res['photoIdList'] != null) {
+      try {
+        final list = res['photoIdList'] as List;
+        photoIdList = list.map((e) => (e as num).toInt()).toList();
+      } catch (e) {
+        // 파싱 실패 시 photoList에서 추출 시도
+        if (res['photoList'] != null) {
+          final photoList = res['photoList'] as List;
+          photoIdList = photoList
+              .map((p) {
+                try {
+                  return (p as Map)['photoId'] as num?;
+                } catch (_) {
+                  return null;
+                }
+              })
+              .whereType<num>()
+              .map((e) => e.toInt())
+              .toList();
+        }
+      }
+    } else if (res['photoList'] != null) {
+      // photoIdList가 없으면 photoList에서 추출
+      final photoList = res['photoList'] as List;
+      photoIdList = photoList
+          .map((p) {
+            try {
+              return (p as Map)['photoId'] as num?;
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<num>()
+          .map((e) => e.toInt())
+          .toList();
+    }
+
+    final photoCount = (res['photoCount'] as int?) ?? photoIdList.length;
+
     // 이미 존재하는 앨범인지 확인
     final existingIdx = _albums.indexWhere((e) => e.albumId == albumId);
     if (existingIdx != -1) {
@@ -100,12 +150,9 @@ class AlbumProvider extends ChangeNotifier {
         title: (res['title'] ?? '') as String,
         description: (res['description'] ?? '') as String,
         coverPhotoUrl: res['coverPhotoUrl'] as String?,
-        photoCount:
-            (res['photoCount'] as int?) ??
-            (res['photoIdList'] as List?)?.length ??
-            0,
+        photoCount: photoCount,
         createdAt: (res['createdAt'] as String?) ?? '',
-        photoIdList: ((res['photoIdList'] as List?)?.cast<int>()) ?? const [],
+        photoIdList: photoIdList,
       );
       notifyListeners();
       return;
@@ -116,12 +163,9 @@ class AlbumProvider extends ChangeNotifier {
       title: (res['title'] ?? '') as String,
       description: (res['description'] ?? '') as String,
       coverPhotoUrl: res['coverPhotoUrl'] as String?,
-      photoCount:
-          (res['photoCount'] as int?) ??
-          (res['photoIdList'] as List?)?.length ??
-          0,
+      photoCount: photoCount,
       createdAt: (res['createdAt'] as String?) ?? '',
-      photoIdList: ((res['photoIdList'] as List?)?.cast<int>()) ?? const [],
+      photoIdList: photoIdList,
     );
     _albums.insert(0, item);
     notifyListeners();
@@ -180,40 +224,93 @@ class AlbumProvider extends ChangeNotifier {
   }
 
   Future<void> loadDetail(int albumId) async {
-    final res = await AlbumApi.getAlbum(albumId);
-    final idx = _albums.indexWhere((e) => e.albumId == albumId);
-    final existing = idx != -1 ? _albums[idx] : null;
-    final item = AlbumItem(
-      albumId: albumId,
-      // 모킹/서버 응답이 부정확한 경우 기존 값을 우선 유지
-      title: (existing?.title.isNotEmpty == true)
-          ? existing!.title
-          : ((res['title'] ?? '') as String),
-      description: (existing?.description.isNotEmpty == true)
-          ? existing!.description
-          : ((res['description'] ?? '') as String),
-      coverPhotoUrl: res['coverPhotoUrl'] as String?,
-      photoCount:
+    try {
+      final res = await AlbumApi.getAlbum(albumId);
+      final idx = _albums.indexWhere((e) => e.albumId == albumId);
+      final existing = idx != -1 ? _albums[idx] : null;
+
+      // photoIdList 파싱 (Long → int 변환 처리)
+      List<int> photoIdList = [];
+      if (res['photoIdList'] != null) {
+        try {
+          final list = res['photoIdList'] as List;
+          photoIdList = list.map((e) => (e as num).toInt()).toList();
+        } catch (e) {
+          // 파싱 실패 시 photoList에서 추출 시도
+          if (res['photoList'] != null) {
+            final photoList = res['photoList'] as List;
+            photoIdList = photoList
+                .map((p) {
+                  try {
+                    return (p as Map)['photoId'] as num?;
+                  } catch (_) {
+                    return null;
+                  }
+                })
+                .whereType<num>()
+                .map((e) => e.toInt())
+                .toList();
+          }
+        }
+      } else if (res['photoList'] != null) {
+        // photoIdList가 없으면 photoList에서 추출
+        final photoList = res['photoList'] as List;
+        photoIdList = photoList
+            .map((p) {
+              try {
+                return (p as Map)['photoId'] as num?;
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<num>()
+            .map((e) => e.toInt())
+            .toList();
+      }
+
+      final photoCount =
           (res['photoCount'] as int?) ??
-          (res['photoIdList'] as List?)?.length ??
-          0,
-      createdAt: (res['createdAt'] as String?) ?? '',
-      photoIdList: ((res['photoIdList'] as List?)?.cast<int>()) ?? const [],
-    );
-    if (idx == -1) {
-      _albums.add(item);
-    } else {
-      _albums[idx] = item;
+          existing?.photoCount ??
+          photoIdList.length;
+
+      final item = AlbumItem(
+        albumId: albumId,
+        // 모킹/서버 응답이 부정확한 경우 기존 값을 우선 유지
+        title: (existing?.title.isNotEmpty == true)
+            ? existing!.title
+            : ((res['title'] ?? '') as String),
+        description: (existing?.description.isNotEmpty == true)
+            ? existing!.description
+            : ((res['description'] ?? '') as String),
+        coverPhotoUrl: res['coverPhotoUrl'] as String?,
+        photoCount: photoCount,
+        createdAt: (res['createdAt'] as String?) ?? '',
+        photoIdList: photoIdList,
+      );
+      if (idx == -1) {
+        _albums.add(item);
+      } else {
+        _albums[idx] = item;
+      }
+      notifyListeners();
+    } catch (e) {
+      // 에러 처리: 로그만 출력하고 무한 로딩 방지
+      debugPrint('앨범 상세 조회 실패 (albumId: $albumId): $e');
+      // 에러 발생 시에도 기존 앨범 정보는 유지
     }
-    notifyListeners();
   }
 
-  Future<void> resetAndLoad({String? sort, bool? favoriteOnly}) async {
+  Future<void> resetAndLoad({
+    String? sort,
+    bool? favoriteOnly,
+    String? ownership,
+  }) async {
     if (AppConstants.useMockApi) {
       // 모킹에선 서버 호출 대신 getAlbums 모킹을 그대로 사용
     }
     _sort = sort ?? _sort;
     _favoriteOnly = favoriteOnly ?? _favoriteOnly;
+    _ownership = ownership ?? _ownership;
     _albums.clear();
     _page = 0;
     _hasMore = true;
@@ -231,6 +328,7 @@ class AlbumProvider extends ChangeNotifier {
         page: _page,
         size: _size,
         favoriteOnly: _favoriteOnly ? true : null,
+        ownership: _ownership,
       );
       final List content = (res['content'] as List? ?? []);
       if (content.isEmpty) {
@@ -265,5 +363,20 @@ class AlbumProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// 로그인/로그아웃 시 상태 초기화
+  void reset() {
+    _albums.clear();
+    _isLoading = false;
+    _hasMore = true;
+    _page = 0;
+    _sort = 'createdAt,desc';
+    _favoriteOnly = false;
+    _ownership = 'ALL';
+    _favoritedAlbumIds.clear();
+    _sharedAlbumIds.clear();
+    _albumIdToMyRole.clear();
+    notifyListeners();
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 import 'package:frontend/services/photo_upload_api.dart';
+import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 
 /// QR 코드를 스캔한 후 임시 등록 API 호출하고 상세정보 입력 화면으로 이동
 /// 명세서: POST /api/photos/qr-import - QR 코드로 이미지 가져오기 + 미리보기용 imageUrl 반환
@@ -26,7 +26,7 @@ Future<void> handleQrImport(BuildContext context, String qrCode) async {
   try {
     // QR 임시 등록 API 호출
     final api = PhotoUploadApi();
-    final result = await api.qrImport(qrCode: qrCode);
+    final result = await api.importPhotoFromQr(qrCode: qrCode);
 
     if (!context.mounted) return;
 
@@ -43,7 +43,7 @@ Future<void> handleQrImport(BuildContext context, String qrCode) async {
           qrImportResult:
               result, // photoId, imageUrl, takenAt, location, brand, status 포함
           defaultTakenAt: result['takenAt'] != null
-              ? DateTime.parse(result['takenAt'])
+              ? DateTime.tryParse(result['takenAt'] as String)
               : DateTime.now(),
         ),
       ),

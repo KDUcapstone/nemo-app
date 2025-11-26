@@ -23,9 +23,8 @@ class StorageQuotaCard extends StatelessWidget {
     final int displayMax = (capFreeAtTwenty && isFree) ? 20 : quota.maxPhotos;
     final int used = quota.usedPhotos.clamp(0, 1 << 31);
 
-    final double progress = displayMax > 0
-        ? (used / displayMax).clamp(0.0, 1.0)
-        : 0.0;
+    final double progress =
+        displayMax > 0 ? (used / displayMax).clamp(0.0, 1.0) : 0.0;
 
     final NumberFormat nf = NumberFormat.decimalPattern();
 
@@ -41,10 +40,7 @@ class StorageQuotaCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.blueGrey.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),
@@ -65,9 +61,7 @@ class StorageQuotaCard extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 12,
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
+                backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                 color: _progressColor(context, progress),
               ),
             ),
@@ -79,10 +73,7 @@ class StorageQuotaCard extends StatelessWidget {
                 Center(
                   child: Text(
                     '${(progress * 100).toStringAsFixed(1)}%',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                    ),
+                    style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -102,14 +93,7 @@ class StorageQuotaCard extends StatelessWidget {
             Center(
               child: FilledButton(
                 onPressed: onUpgrade,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(90, 12),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                ),
-                child: const Text('업그레이드', style: TextStyle(fontSize: 12)),
+                child: const Text('업그레이드'),
               ),
             ),
           ],
@@ -124,3 +108,5 @@ class StorageQuotaCard extends StatelessWidget {
     return Theme.of(context).colorScheme.primary;
   }
 }
+
+

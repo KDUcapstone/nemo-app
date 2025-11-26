@@ -44,7 +44,120 @@ class MapApi {
     if (res.statusCode != 200) {
       throw Exception('map init 실패: ${res.statusCode}');
     }
-    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    if (res.statusCode == 401) {
+      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
+      throw Exception(body['message'] ?? '유효한 액세스 토큰이 필요합니다.');
+    }
+    throw Exception('map init 실패: ${res.statusCode}');
+  }
+
+  // GET /api/map/photos - 지도용 사진 위치 데이터 조회
+  // API 명세서: 위치 정보가 있는 사진들을 반환하여 지도 위에 표시
+  static Future<List<Map<String, dynamic>>> getMapPhotos() async {
+    if (AppConstants.useMockApi) {
+      await Future<void>.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return [
+        {
+          'photoId': 101,
+          'latitude': 37.5567,
+          'longitude': 126.9234,
+          'imageUrl': 'https://picsum.photos/seed/photo101/800/1066',
+          'takenAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+          'brand': '인생네컷',
+          'location': '홍대 포토그레이',
+        },
+        {
+          'photoId': 104,
+          'latitude': 37.5389,
+          'longitude': 127.0732,
+          'imageUrl': 'https://picsum.photos/seed/photo104/800/1066',
+          'takenAt': DateTime.now().subtract(const Duration(days: 6)).toIso8601String(),
+          'brand': '포토시그널',
+          'location': '건대입구역 포토시그널',
+        },
+      ];
+    }
+    final res = await ApiClient.get('/api/map/photos');
+    if (res.statusCode == 200) {
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      if (decoded is List) {
+        return decoded.cast<Map<String, dynamic>>();
+      }
+      return const <Map<String, dynamic>>[];
+    }
+    if (res.statusCode == 401) {
+      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
+      throw Exception(body['message'] ?? '로그인이 필요합니다.');
+    }
+    throw Exception('지도용 사진 위치 조회 실패 (${res.statusCode})');
+  }
+
+  // GET /api/map/photos/detail - 특정 위치 상세 사진 조회
+  // API 명세서: location 또는 latitude+longitude 기반 필터링
+  static Future<Map<String, dynamic>> getMapPhotosDetail({
+    String? location,
+    double? latitude,
+    double? longitude,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future<void>.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      if (location == null && (latitude == null || longitude == null)) {
+        throw Exception('장소 이름 또는 좌표 정보가 필요합니다.');
+      }
+      return {
+        'location': location ?? '테스트 위치',
+        'photos': [
+          {
+            'photoId': 101,
+            'imageUrl': 'https://picsum.photos/seed/photo101/800/1066',
+            'takenAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+            'brand': '인생네컷',
+          },
+          {
+            'photoId': 102,
+            'imageUrl': 'https://picsum.photos/seed/photo102/800/1066',
+            'takenAt': DateTime.now().subtract(const Duration(days: 1, hours: 1)).toIso8601String(),
+            'brand': '인생네컷',
+          },
+        ],
+      };
+    }
+    final query = <String, String>{};
+    if (location != null && location.isNotEmpty) {
+      query['location'] = location;
+    }
+    if (latitude != null && longitude != null) {
+      query['latitude'] = latitude.toString();
+      query['longitude'] = longitude.toString();
+    }
+    
+    if (query.isEmpty) {
+      throw Exception('장소 이름 또는 좌표 정보가 필요합니다.');
+    }
+    
+    final res = await ApiClient.get(
+      '/api/map/photos/detail',
+      queryParameters: query,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 400) {
+      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
+      final error = body['error'] as String?;
+      if (error == 'LOCATION_REQUIRED') {
+        throw Exception(body['message'] ?? '장소 이름 또는 좌표 정보가 필요합니다.');
+      }
+      throw Exception(body['message'] ?? '잘못된 요청입니다.');
+    }
+    if (res.statusCode == 401) {
+      throw Exception('로그인이 필요합니다.');
+    }
+    throw Exception('특정 위치 상세 사진 조회 실패 (${res.statusCode})');
   }
 
   static Future<Map<String, dynamic>> getViewport({

@@ -203,9 +203,13 @@ class _FriendsListSection extends StatefulWidget {
 class _FriendsListSectionState extends State<_FriendsListSection> {
   List<Map<String, dynamic>> _friends = const [];
   List<Map<String, dynamic>> _filtered = const [];
+  List<Map<String, dynamic>> _searchResults = const []; // 검색 결과 (친구가 아닌 사용자 포함)
   bool _loading = true;
+  bool _searching = false; // 검색 중 플래그
   String _sort = 'latest'; // latest | nickname
   final Set<int> _selected = {};
+  String _searchQuery = ''; // 현재 검색어
+  final Set<int> _pendingRequestUserIds = {}; // 친구 요청을 보낸 사용자 ID 목록
 
   @override
   void initState() {
@@ -250,7 +254,7 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              '친구 목록',
+              '친구 찾기',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
             ),
             DropdownButton<String>(
@@ -279,17 +283,38 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
           ),
           onTapOutside: (_) => FocusScope.of(context).unfocus(),
           onChanged: (q) async {
+            _searchQuery = q;
             if (q.trim().isEmpty) {
-              setState(() => _applySort());
+              setState(() {
+                _searchResults = [];
+                _applySort();
+              });
             } else {
-              // 친구 목록 내에서만 로컬 검색
-              final query = q.toLowerCase();
-              final filtered = _friends.where((f) {
-                final nick = (f['nickname'] ?? '').toString().toLowerCase();
-                final email = (f['email'] ?? '').toString().toLowerCase();
-                return nick.contains(query) || email.contains(query);
-              }).toList();
-              setState(() => _filtered = filtered);
+              // API를 통한 친구 검색 (친구가 아닌 사용자도 포함)
+              setState(() => _searching = true);
+              try {
+                final results = await FriendApi.search(q.trim());
+                if (mounted && _searchQuery == q) {
+                  setState(() {
+                    _searchResults = results;
+                    _searching = false;
+                  });
+                }
+              } catch (e) {
+                if (mounted && _searchQuery == q) {
+                  setState(() {
+                    _searchResults = [];
+                    _searching = false;
+                  });
+                  final errorStr = e.toString();
+                  final msg = errorStr.startsWith('Exception: ')
+                      ? errorStr.substring('Exception: '.length)
+                      : '검색에 실패했습니다.';
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(msg)));
+                }
+              }
             }
           },
         ),
@@ -301,6 +326,171 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
           )
+        else if (_searchQuery.trim().isNotEmpty)
+          // 검색 모드: 검색 결과 표시 (친구가 아닌 사용자 포함)
+          _searching
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : _searchResults.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text(
+                    '검색 결과가 없습니다.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemBuilder: (context, i) {
+                    final f = _searchResults[i];
+                    final id = f['userId'] as int;
+                    final nick = (f['nickname'] ?? '') as String;
+                    final email = (f['email'] ?? '') as String;
+                    final avatar = (f['profileImageUrl'] ?? '') as String?;
+                    final isFriend = f['isFriend'] as bool? ?? false;
+                    final isRequestPending =
+                        (f['isRequestPending'] as bool?) == true ||
+                        _pendingRequestUserIds.contains(id);
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: (avatar != null && avatar.isNotEmpty)
+                            ? NetworkImage(avatar)
+                            : null,
+                        child: (avatar == null || avatar.isEmpty)
+                            ? const Icon(Icons.person_outline)
+                            : null,
+                      ),
+                      title: Text(nick),
+                      subtitle: Text(
+                        email,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: isFriend
+                          ? Checkbox(
+                              value: _selected.contains(id),
+                              onChanged: (checked) {
+                                setState(() {
+                                  if (checked == true) {
+                                    _selected.add(id);
+                                  } else {
+                                    _selected.remove(id);
+                                  }
+                                });
+                              },
+                            )
+                          : isRequestPending
+                          ? TextButton.icon(
+                              icon: const Icon(Icons.hourglass_empty, size: 18),
+                              label: const Text(
+                                '요청중',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                              onPressed: null,
+                            )
+                          : TextButton.icon(
+                              icon: const Icon(Icons.person_add, size: 18),
+                              label: const Text('요청'),
+                              onPressed: () async {
+                                try {
+                                  await FriendApi.addFriend(id);
+                                  if (!mounted) return;
+                                  // 요청 보낸 사용자 ID 추가
+                                  setState(() {
+                                    _pendingRequestUserIds.add(id);
+                                    // 검색 결과에도 반영
+                                    _searchResults = _searchResults.map((e) {
+                                      if ((e['userId'] as int) == id) {
+                                        return {...e, 'isRequestPending': true};
+                                      }
+                                      return e;
+                                    }).toList();
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('$nick님에게 친구 요청을 보냈습니다.'),
+                                    ),
+                                  );
+                                  // 친구 목록 새로고침
+                                  await _load();
+                                  // 검색 결과도 업데이트
+                                  if (_searchQuery.trim().isNotEmpty) {
+                                    final results = await FriendApi.search(
+                                      _searchQuery.trim(),
+                                    );
+                                    if (mounted) {
+                                      setState(() {
+                                        // 요청 보낸 사용자는 요청중 상태 유지
+                                        _searchResults = results.map((e) {
+                                          final userId = e['userId'] as int;
+                                          if (_pendingRequestUserIds.contains(
+                                            userId,
+                                          )) {
+                                            return {
+                                              ...e,
+                                              'isRequestPending': true,
+                                            };
+                                          }
+                                          return e;
+                                        }).toList();
+                                      });
+                                    }
+                                  }
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  final errorStr = e.toString();
+                                  String errorMsg;
+                                  if (errorStr.contains('ALREADY_FRIEND')) {
+                                    errorMsg = '이미 친구입니다.';
+                                  } else if (errorStr.contains(
+                                    'REQUEST_ALREADY_EXISTS',
+                                  )) {
+                                    errorMsg = '이미 친구 요청을 보냈습니다.';
+                                    // 이미 요청을 보낸 경우 상태 업데이트
+                                    setState(() {
+                                      _pendingRequestUserIds.add(id);
+                                      _searchResults = _searchResults.map((e) {
+                                        if ((e['userId'] as int) == id) {
+                                          return {
+                                            ...e,
+                                            'isRequestPending': true,
+                                          };
+                                        }
+                                        return e;
+                                      }).toList();
+                                    });
+                                  } else if (errorStr.contains(
+                                    'USER_NOT_FOUND',
+                                  )) {
+                                    errorMsg = '사용자를 찾을 수 없습니다.';
+                                  } else {
+                                    // Exception: 접두사 제거
+                                    if (errorStr.startsWith('Exception: ')) {
+                                      errorMsg = errorStr.substring(
+                                        'Exception: '.length,
+                                      );
+                                    } else {
+                                      errorMsg = '친구 요청에 실패했습니다.';
+                                    }
+                                  }
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(errorMsg)),
+                                  );
+                                }
+                              },
+                            ),
+                    );
+                  },
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemCount: _searchResults.length,
+                )
         else if (_filtered.isEmpty)
           const Padding(
             padding: EdgeInsets.all(12),
@@ -310,6 +500,7 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
             ),
           )
         else
+          // 일반 모드: 친구 목록 표시
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -376,13 +567,21 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                           );
                         } catch (e) {
                           final s = e.toString();
-                          final msg = s.contains('NOT_FRIEND')
-                              ? '친구로 등록되지 않은 사용자 포함'
-                              : s.contains('ALBUM_NOT_FOUND')
-                              ? '앨범을 찾을 수 없습니다'
-                              : s.contains('FORBIDDEN')
-                              ? '공유 권한이 없습니다'
-                              : '공유 실패: $e';
+                          String msg;
+                          if (s.contains('NOT_FRIEND')) {
+                            msg = '친구로 등록되지 않은 사용자 포함';
+                          } else if (s.contains('ALBUM_NOT_FOUND')) {
+                            msg = '앨범을 찾을 수 없습니다';
+                          } else if (s.contains('FORBIDDEN')) {
+                            msg = '공유 권한이 없습니다';
+                          } else {
+                            // Exception: 접두사 제거
+                            if (s.startsWith('Exception: ')) {
+                              msg = s.substring('Exception: '.length);
+                            } else {
+                              msg = '공유에 실패했습니다.';
+                            }
+                          }
                           _toast(context, msg);
                         }
                       },
@@ -416,8 +615,6 @@ Future<void> _showShareAlbumSheet(BuildContext context) async {
     builder: (_) => const _BottomSheetScaffold(child: _ShareAlbumSheet()),
   );
 }
-
-
 
 class _BottomSheetScaffold extends StatelessWidget {
   final Widget child;
@@ -527,8 +724,6 @@ class _ShareAlbumSheet extends StatelessWidget {
   }
 }
 
-
-
 // Handlers for Share actions
 Future<void> _handleCreateShareLink(BuildContext context) async {
   final albumId = await _pickAlbumId(context);
@@ -564,11 +759,19 @@ Future<void> _handleCreateShareLink(BuildContext context) async {
     );
   } catch (e) {
     final s = e.toString();
-    final msg = s.contains('ALBUM_NOT_FOUND')
-        ? '앨범을 찾을 수 없습니다.'
-        : s.contains('FORBIDDEN')
-        ? '해당 앨범을 공유할 권한이 없습니다.'
-        : '링크 생성 실패: $e';
+    String msg;
+    if (s.contains('ALBUM_NOT_FOUND')) {
+      msg = '앨범을 찾을 수 없습니다.';
+    } else if (s.contains('FORBIDDEN')) {
+      msg = '해당 앨범을 공유할 권한이 없습니다.';
+    } else {
+      // Exception: 접두사 제거
+      if (s.startsWith('Exception: ')) {
+        msg = s.substring('Exception: '.length);
+      } else {
+        msg = '링크 생성에 실패했습니다.';
+      }
+    }
     if (!context.mounted) return;
     _toast(context, msg);
   }
@@ -631,13 +834,21 @@ Future<void> _openFriendPickerAndShare(
     );
   } catch (e) {
     final s = e.toString();
-    final msg = s.contains('NOT_FRIEND')
-        ? '친구로 등록되지 않은 사용자 포함'
-        : s.contains('ALBUM_NOT_FOUND')
-        ? '앨범을 찾을 수 없습니다'
-        : s.contains('FORBIDDEN')
-        ? '공유 권한이 없습니다'
-        : '공유 실패: $e';
+    String msg;
+    if (s.contains('NOT_FRIEND')) {
+      msg = '친구로 등록되지 않은 사용자 포함';
+    } else if (s.contains('ALBUM_NOT_FOUND')) {
+      msg = '앨범을 찾을 수 없습니다';
+    } else if (s.contains('FORBIDDEN')) {
+      msg = '공유 권한이 없습니다';
+    } else {
+      // Exception: 접두사 제거
+      if (s.startsWith('Exception: ')) {
+        msg = s.substring('Exception: '.length);
+      } else {
+        msg = '공유에 실패했습니다.';
+      }
+    }
     _toast(context, msg);
   }
 }
@@ -904,10 +1115,12 @@ class _CollaborativeAlbumSection extends StatefulWidget {
   const _CollaborativeAlbumSection();
 
   @override
-  State<_CollaborativeAlbumSection> createState() => _CollaborativeAlbumSectionState();
+  State<_CollaborativeAlbumSection> createState() =>
+      _CollaborativeAlbumSectionState();
 }
 
-class _CollaborativeAlbumSectionState extends State<_CollaborativeAlbumSection> {
+class _CollaborativeAlbumSectionState
+    extends State<_CollaborativeAlbumSection> {
   int _pendingCount = 0;
   bool _loading = true;
   bool _loadingList = true;
@@ -968,7 +1181,10 @@ class _CollaborativeAlbumSectionState extends State<_CollaborativeAlbumSection> 
               const SizedBox(width: 8),
               if (!_loading && _pendingCount > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.redAccent,
                     borderRadius: BorderRadius.circular(999),
@@ -1021,7 +1237,10 @@ class _CollaborativeAlbumSectionState extends State<_CollaborativeAlbumSection> 
               }
               final isOwnerLike = role == 'OWNER' || role == 'CO_OWNER';
               return ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 0,
+                  vertical: 6,
+                ),
                 leading: SizedBox(
                   width: 56,
                   height: 56,
@@ -1031,13 +1250,27 @@ class _CollaborativeAlbumSectionState extends State<_CollaborativeAlbumSection> 
                         ? Image.network(
                             cover,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(color: Colors.grey[200]),
+                            errorBuilder: (_, __, ___) =>
+                                Container(color: Colors.grey[200]),
                           )
-                        : Container(color: Colors.grey[200], child: const Icon(Icons.photo_library_outlined)),
+                        : Container(
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.photo_library_outlined),
+                          ),
                   ),
                 ),
-                title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text('$roleKo · ${count}장', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                title: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '$roleKo · ${count}장',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
                 trailing: isOwnerLike
                     ? IconButton(
                         tooltip: '멤버 조회',
@@ -1046,7 +1279,8 @@ class _CollaborativeAlbumSectionState extends State<_CollaborativeAlbumSection> 
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => AlbumMembersScreen(albumId: albumId),
+                              builder: (_) =>
+                                  AlbumMembersScreen(albumId: albumId),
                             ),
                           );
                         },

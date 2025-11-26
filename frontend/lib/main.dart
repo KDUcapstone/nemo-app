@@ -1,6 +1,5 @@
 // 📁 lib/main.dart
 
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart'; // ✅ 폰트 적용을 위해 import
@@ -14,20 +13,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ✅ 네이버맵 초기화 (NaverMap 위젯 사용 전 필수!)
-  // 모바일 플랫폼(Android/iOS)에서만 초기화 (Windows/Web 등에서는 지원 안 됨)
-  if (Platform.isAndroid || Platform.isIOS) {
-    try {
-      await FlutterNaverMap().init(
-        clientId: 'iclhyt3mb3', // 네이버 클라우드 플랫폼에서 발급받은 Client ID
-        onAuthFailed: (ex) {
-          print('네이버맵 인증 실패: $ex');
-        },
-      );
-    } catch (e) {
-      // Windows/Web 등 지원되지 않는 플랫폼에서 실행 시 에러 무시
-      print('네이버맵 초기화 실패 (지원되지 않는 플랫폼일 수 있음): $e');
-    }
-  }
+  await FlutterNaverMap().init(
+    clientId: 'iclhyt3mb3', // 네이버 클라우드 플랫폼에서 발급받은 Client ID
+    onAuthFailed: (ex) {
+      print('네이버맵 인증 실패: $ex');
+    },
+  );
 
   runApp(const NemoApp());
 }

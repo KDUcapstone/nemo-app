@@ -8,7 +8,6 @@ import 'package:frontend/providers/photo_provider.dart';
 import 'photo_viewer_screen.dart';
 import 'package:frontend/presentation/screens/album/create_album_screen.dart';
 import 'package:frontend/presentation/screens/album/select_album_photos_screen.dart';
-import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
 import 'package:frontend/services/album_api.dart';
 import 'package:frontend/services/friend_api.dart';
@@ -119,9 +118,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                     onChanged: (v) {
                                       if (v == null) return;
                                       setState(() => _albumSort = v);
-                                      context
-                                          .read<AlbumProvider>()
-                                          .resetAndLoad(sort: v);
                                     },
                                     onToggleSharedOnly: (v) {
                                       setState(() => _albumSharedOnly = v);
@@ -145,16 +141,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             isAlbums: _showAlbums,
                             onChanged: (isAlbums) {
                               setState(() => _showAlbums = isAlbums);
-                              // 앨범 모드로 전환 시 Provider의 정렬 상태 동기화
-                              if (isAlbums) {
-                                final albumProvider = context
-                                    .read<AlbumProvider>();
-                                if (albumProvider.sort != _albumSort) {
-                                  albumProvider.resetAndLoad(sort: _albumSort);
-                                }
-                                // 공유 앨범 정보 갱신
-                                albumProvider.refreshSharedAlbums();
-                              }
                             },
                           ),
                         ),
@@ -230,10 +216,14 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 child: Stack(
                   children: [
-                    items.isEmpty
+                    // 사진 탭일 때만 items.isEmpty 체크, 앨범 탭일 때는 항상 앨범 목록 표시
+                    (!_showAlbums && items.isEmpty)
                         ? const _EmptyState()
                         : (_showAlbums
                               ? _AlbumListGrid(
+                                  key: ValueKey(
+                                    'album_grid_${_albumSort}_$_albumSharedOnly',
+                                  ),
                                   sort: _albumSort,
                                   sharedOnly: _albumSharedOnly,
                                 )
@@ -575,24 +565,30 @@ class _AlbumSortDropdown extends StatelessWidget {
             const PopupMenuDivider(height: 6),
             PopupMenuItem<String>(
               value: value, // 선택 시 정렬 값 유지
-              onTap: () => onToggleSharedOnly(!sharedOnly),
-              child: Row(
-                children: [
-                  Checkbox(
-                    value: sharedOnly,
-                    onChanged: (_) => onToggleSharedOnly(!sharedOnly),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+              enabled: false, // PopupMenuItem 자체 클릭 비활성화
+              child: InkWell(
+                onTap: () => onToggleSharedOnly(!sharedOnly),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: sharedOnly,
+                        onChanged: (_) => onToggleSharedOnly(!sharedOnly),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        '공유 앨범만 보기',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    '공유 앨범만 보기',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -715,7 +711,32 @@ class _FavoriteBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Icon(Icons.favorite, color: Colors.white, size: 18);
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 테두리용 검은색 하트 (약간 크게)
+        Icon(Icons.favorite, color: Colors.black.withOpacity(0.5), size: 20),
+        // 앞에 배치할 흰색 하트
+        const Icon(Icons.favorite, color: Colors.white, size: 18),
+      ],
+    );
+  }
+}
+
+class _ShareBadge extends StatelessWidget {
+  const _ShareBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 테두리용 검은색 공유 아이콘 (약간 크게)
+        Icon(Icons.share, color: Colors.black.withOpacity(0.5), size: 20),
+        // 앞에 배치할 흰색 공유 아이콘
+        const Icon(Icons.share, color: Colors.white, size: 18),
+      ],
+    );
   }
 }
 
@@ -776,7 +797,11 @@ class _DeleteButtonState extends State<_DeleteButton> {
 class _AlbumListGrid extends StatefulWidget {
   final String sort;
   final bool sharedOnly;
-  const _AlbumListGrid({required this.sort, this.sharedOnly = false});
+  const _AlbumListGrid({
+    super.key,
+    required this.sort,
+    this.sharedOnly = false,
+  });
 
   @override
   State<_AlbumListGrid> createState() => _AlbumListGridState();
@@ -784,39 +809,127 @@ class _AlbumListGrid extends StatefulWidget {
 
 class _AlbumListGridState extends State<_AlbumListGrid> {
   int? _pressedIndex;
+  List<Map<String, dynamic>> _albums = [];
+  bool _isLoading = false;
+  bool _hasMore = true;
+  int _page = 0;
+  final int _size = 10;
+  bool _hasLoadedOnce = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 앨범 탭을 눌렀을 때 항상 최신 앨범 목록 새로고침
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _loadAlbums(reset: true);
+    });
+  }
+
+  Future<void> _loadAlbums({bool reset = false}) async {
+    if (!mounted || _isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      if (reset) {
+        _albums = [];
+        _page = 0;
+        _hasMore = true;
+      }
+    });
+
+    try {
+      final ownership = widget.sharedOnly ? 'SHARED' : 'ALL';
+      // ownership이 'ALL'이면 공유 앨범 정보를 먼저 확인 (백엔드가 최신 정보를 반환하도록)
+      // 실제로는 백엔드에서 ownership='ALL'로 호출하면 자동으로 공유 앨범도 포함되지만,
+      // 공유 앨범 수락 직후에는 약간의 지연이 있을 수 있으므로 잠시 대기
+      if (ownership == 'ALL' && reset) {
+        // 공유 앨범 수락 직후 반영을 위해 짧은 대기
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (!mounted) return;
+      }
+      final res = await AlbumApi.getAlbums(
+        sort: widget.sort,
+        page: _page,
+        size: _size,
+        ownership: ownership,
+      );
+
+      if (!mounted) return;
+
+      final List content = (res['content'] as List? ?? []);
+      if (content.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoading = false;
+          _hasLoadedOnce = true; // 초기 로드 완료 표시 (앨범이 없어도 완료로 처리)
+        });
+      } else {
+        final existingIds = _albums.map((e) => e['albumId'] as int).toSet();
+        final newAlbums = <Map<String, dynamic>>[];
+        for (final m in content) {
+          final map = (m as Map).cast<String, dynamic>();
+          final albumId = map['albumId'] as int;
+          if (!existingIds.contains(albumId)) {
+            newAlbums.add(map);
+          }
+        }
+
+        setState(() {
+          _albums.addAll(newAlbums);
+          if (content.length < _size) {
+            _hasMore = false;
+          } else {
+            _page += 1;
+          }
+          _isLoading = false;
+          _hasLoadedOnce = true;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   void didUpdateWidget(_AlbumListGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // sort 값이 변경되었고, Provider의 sort와도 다르면 다시 로드
-    if (oldWidget.sort != widget.sort) {
-      final provider = context.read<AlbumProvider>();
-      if (provider.sort != widget.sort) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
-          }
-        });
-      }
+    // sort 또는 sharedOnly 값이 변경되면 다시 로드
+    if (oldWidget.sort != widget.sort ||
+        oldWidget.sharedOnly != widget.sharedOnly) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          await _loadAlbums(reset: true);
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 화면이 다시 활성화될 때마다 앨범 목록 새로고침
+    // (공유 앨범 수락 후 돌아왔을 때 반영되도록)
+    // _albums.isNotEmpty 조건 제거: 앨범이 없어도 새로고침하여 공유 앨범을 가져올 수 있도록
+    if (_hasLoadedOnce && !_isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          await _loadAlbums(reset: true);
+        }
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AlbumProvider>();
-    if (provider.albums.isEmpty && !provider.isLoading) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          context.read<AlbumProvider>().resetAndLoad(sort: widget.sort);
-        }
-      });
-    }
-
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
         if (n.metrics.pixels >= n.metrics.maxScrollExtent - 200) {
-          if (!provider.isLoading && provider.hasMore) {
-            provider.loadNextPage();
+          if (!_isLoading && _hasMore) {
+            _loadAlbums();
           }
         }
         return false;
@@ -828,14 +941,13 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
           crossAxisSpacing: 20,
           childAspectRatio: 0.78,
         ),
-        itemCount: provider.albums
-            .where((a) => !widget.sharedOnly || provider.isShared(a.albumId))
-            .length,
+        itemCount: _albums.length,
         itemBuilder: (_, i) {
-          final filtered = provider.albums
-              .where((a) => !widget.sharedOnly || provider.isShared(a.albumId))
-              .toList();
-          final a = filtered[i];
+          final a = _albums[i];
+          final albumId = a['albumId'] as int;
+          final title = (a['title'] ?? '') as String;
+          final coverPhotoUrl = a['coverPhotoUrl'] as String?;
+          final photoCount = (a['photoCount'] as int?) ?? 0;
           final scale = _pressedIndex == i ? 0.96 : 1.0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -854,8 +966,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                AlbumDetailScreen(albumId: a.albumId),
+                            builder: (_) => AlbumDetailScreen(albumId: albumId),
                           ),
                         );
                       },
@@ -872,15 +983,22 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                         if (action == null) return;
                         if (action == 'share') {
                           // AlbumDetailScreen으로 이동하지 않고 바로 공유 시트 표시
-                          await _showAlbumShareSheet(context, a.albumId);
+                          await _showAlbumShareSheet(context, albumId);
                         } else if (action == 'fav') {
                           try {
-                            await AlbumApi.favoriteAlbum(a.albumId);
+                            await AlbumApi.favoriteAlbum(albumId);
                             if (!mounted) return;
-                            context.read<AlbumProvider>().setFavorite(
-                              a.albumId,
-                              true,
-                            );
+                            setState(() {
+                              final idx = _albums.indexWhere(
+                                (e) => e['albumId'] == albumId,
+                              );
+                              if (idx != -1) {
+                                _albums[idx] = {
+                                  ..._albums[idx],
+                                  'favorited': true,
+                                };
+                              }
+                            });
                           } catch (e) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -889,12 +1007,19 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                           }
                         } else if (action == 'unfav') {
                           try {
-                            await AlbumApi.unfavoriteAlbum(a.albumId);
+                            await AlbumApi.unfavoriteAlbum(albumId);
                             if (!mounted) return;
-                            context.read<AlbumProvider>().setFavorite(
-                              a.albumId,
-                              false,
-                            );
+                            setState(() {
+                              final idx = _albums.indexWhere(
+                                (e) => e['albumId'] == albumId,
+                              );
+                              if (idx != -1) {
+                                _albums[idx] = {
+                                  ..._albums[idx],
+                                  'favorited': false,
+                                };
+                              }
+                            });
                           } catch (e) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -906,7 +1031,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => AlbumDetailScreen(
-                                albumId: a.albumId,
+                                albumId: albumId,
                                 autoOpenAction: action,
                               ),
                             ),
@@ -932,11 +1057,13 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                           );
                           if (ok == true) {
                             try {
-                              await AlbumApi.deleteAlbum(a.albumId);
+                              await AlbumApi.deleteAlbum(albumId);
                               if (!mounted) return;
-                              context.read<AlbumProvider>().removeAlbum(
-                                a.albumId,
-                              );
+                              setState(() {
+                                _albums.removeWhere(
+                                  (e) => e['albumId'] == albumId,
+                                );
+                              });
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('앨범이 삭제되었습니다.')),
                               );
@@ -954,9 +1081,9 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                         child: Stack(
                           children: [
                             Positioned.fill(
-                              child: a.coverPhotoUrl != null
+                              child: coverPhotoUrl != null
                                   ? Image.network(
-                                      a.coverPhotoUrl!,
+                                      coverPhotoUrl,
                                       fit: BoxFit.cover,
                                       errorBuilder: (_, __, ___) =>
                                           const ColoredBox(
@@ -965,9 +1092,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                     )
                                   : const ColoredBox(color: Color(0xFFE0E0E0)),
                             ),
-                            if (context.watch<AlbumProvider>().isFavorited(
-                              a.albumId,
-                            ))
+                            if ((a['favorited'] as bool?) == true)
                               const Positioned(
                                 right: 6,
                                 top: 6,
@@ -977,17 +1102,12 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                   color: Colors.white,
                                 ),
                               ),
-                            if (context.watch<AlbumProvider>().isShared(
-                              a.albumId,
-                            ))
+                            if ((a['role'] as String?) != null &&
+                                (a['role'] as String).toUpperCase() != 'OWNER')
                               const Positioned(
                                 left: 6,
                                 top: 6,
-                                child: Icon(
-                                  Icons.share,
-                                  size: 20,
-                                  color: Colors.white,
-                                ),
+                                child: _ShareBadge(),
                               ),
                             Positioned(
                               left: 0,
@@ -1016,14 +1136,14 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
               ),
               const SizedBox(height: 6),
               Text(
-                a.title,
+                title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               Text(
-                '${a.photoCount}장',
+                '${photoCount}장',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.black54, fontSize: 12),
               ),
@@ -1342,11 +1462,12 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
 }
 
 class _AlbumQuickActions extends StatelessWidget {
-  final AlbumItem album;
+  final Map<String, dynamic> album;
   const _AlbumQuickActions({required this.album});
 
   @override
   Widget build(BuildContext context) {
+    final isFav = (album['favorited'] as bool?) == true;
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -1378,21 +1499,13 @@ class _AlbumQuickActions extends StatelessWidget {
                 title: const Text('수정'),
                 onTap: () => Navigator.pop(context, 'edit'),
               ),
-              Builder(
-                builder: (ctx) {
-                  final isFav = context.read<AlbumProvider>().isFavorited(
-                    album.albumId,
-                  );
-                  return ListTile(
-                    leading: Icon(
-                      isFav ? Icons.favorite : Icons.favorite_border,
-                      color: isFav ? Colors.red : null,
-                    ),
-                    title: Text(isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'),
-                    onTap: () =>
-                        Navigator.pop(context, isFav ? 'unfav' : 'fav'),
-                  );
-                },
+              ListTile(
+                leading: Icon(
+                  isFav ? Icons.favorite : Icons.favorite_border,
+                  color: isFav ? Colors.red : null,
+                ),
+                title: Text(isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'),
+                onTap: () => Navigator.pop(context, isFav ? 'unfav' : 'fav'),
               ),
               ListTile(
                 leading: const Icon(Icons.delete_outline),

@@ -47,6 +47,7 @@ dependencies:
   geolocator: ^11.0.0
   permission_handler: ^11.0.0
   url_launcher: ^6.3.0
+  pdfx: ^2.9.2
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +73,7 @@ flutter:
     - lib/presentation/screens/login/assets/kakao_icon.png
     - lib/presentation/screens/login/assets/google_icon.png
     - assets/markers/
+    - assets/markers/privacy_policy.pdf
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

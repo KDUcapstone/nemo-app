@@ -65,7 +65,11 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
           _passwordController.text,
         );
 
-        if (result['success'] == true && mounted) {
+        // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
+        // AuthService.login()은 성공 시 userId, nickname, accessToken, profileImageUrl을 최상위에도 제공
+        if (result['userId'] != null &&
+            result['accessToken'] != null &&
+            mounted) {
           setState(() {
             _isLoading = false;
           });
@@ -74,26 +78,58 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             listen: false,
           );
           userProvider.setUser(
-            userId: result['userId'],
-            nickname: result['nickname'],
-            accessToken: result['accessToken'],
-            profileImageUrl: result['profileImageUrl'],
+            userId: result['userId'] as int,
+            nickname: result['nickname'] as String? ?? '',
+            accessToken: result['accessToken'] as String,
+            profileImageUrl: result['profileImageUrl'] as String?,
+            context: context,
           );
           // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
           final nick = (result['nickname'] as String?)?.trim();
-          _showToast(
-            '환영합니다 ${nick != null && nick.isNotEmpty ? nick : '사용자'}님!',
-          );
+          // 닉네임이 비어있거나 인코딩 문제가 있을 경우 안전하게 처리
+          final displayNick = (nick != null && nick.isNotEmpty) ? nick : '사용자';
+          _showToast('환영합니다 $displayNick님!');
           Navigator.pop(context, true);
+        } else {
+          // 예상치 못한 응답 형식
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorText = '로그인에 실패했습니다.';
+            });
+          }
         }
       } catch (e) {
         if (!mounted) return;
         setState(() {
           _isLoading = false;
-          final message = e.toString();
-          _errorText = message.startsWith('Exception: ')
-              ? message.substring('Exception: '.length)
-              : message;
+          final errorMsg = e.toString();
+
+          // Exception 접두사 및 기술적 메시지 제거, 사용자 친화적인 메시지로 변환
+          String userMessage;
+          if (errorMsg.startsWith('Exception: ')) {
+            userMessage = errorMsg.substring('Exception: '.length);
+            // 네트워크 오류 메시지 정리
+            if (userMessage.startsWith('네트워크 오류: ')) {
+              userMessage = '네트워크 오류가 발생했습니다.';
+            } else if (userMessage.contains('네트워크')) {
+              userMessage = '네트워크 오류가 발생했습니다.';
+            }
+            // 기술적인 오류 코드나 메시지가 포함된 경우 일반 메시지로 변환
+            if (userMessage.contains('(40') ||
+                userMessage.contains('(50') ||
+                userMessage.contains('statusCode') ||
+                userMessage.contains('HttpException')) {
+              userMessage = '로그인에 실패했습니다.';
+            }
+          } else if (errorMsg.contains('네트워크') ||
+              errorMsg.contains('Network')) {
+            userMessage = '네트워크 오류가 발생했습니다.';
+          } else {
+            userMessage = '로그인에 실패했습니다.';
+          }
+
+          _errorText = userMessage;
         });
       }
     }

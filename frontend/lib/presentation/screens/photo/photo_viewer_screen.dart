@@ -9,7 +9,7 @@ import 'photo_edit_screen.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/services/album_api.dart';
 
-class PhotoViewerScreen extends StatelessWidget {
+class PhotoViewerScreen extends StatefulWidget {
   final int photoId;
   final String imageUrl;
   final int? albumId; // 앨범에서 진입 시 앨범 ID 전달
@@ -21,14 +21,27 @@ class PhotoViewerScreen extends StatelessWidget {
   });
 
   @override
+  State<PhotoViewerScreen> createState() => _PhotoViewerScreenState();
+}
+
+class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
+  bool _showUI = true;
+
+  void _toggleUI() {
+    setState(() {
+      _showUI = !_showUI;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final uri = Uri.tryParse(imageUrl);
+    final uri = Uri.tryParse(widget.imageUrl);
     final isFile = uri == null || !uri.hasScheme;
     final Widget img = isFile
-        ? Image.file(File(imageUrl), fit: BoxFit.contain)
-        : Image.network(imageUrl, fit: BoxFit.contain);
+        ? Image.file(File(widget.imageUrl), fit: BoxFit.contain)
+        : Image.network(widget.imageUrl, fit: BoxFit.contain);
     final isFav = context.select<PhotoProvider, bool>((p) {
-      final idx = p.items.indexWhere((e) => e.photoId == photoId);
+      final idx = p.items.indexWhere((e) => e.photoId == widget.photoId);
       return idx != -1 ? p.items[idx].favorite : false;
     });
 
@@ -38,10 +51,13 @@ class PhotoViewerScreen extends StatelessWidget {
         child: Stack(
           children: [
             Positioned.fill(
-              child: InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4.0,
-                child: Center(child: img),
+              child: GestureDetector(
+                onTap: _toggleUI,
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4.0,
+                  child: Center(child: img),
+                ),
               ),
             ),
             // 위로 스와이프하면 상세 Half-sheet 열기
@@ -55,7 +71,7 @@ class PhotoViewerScreen extends StatelessWidget {
                       isScrollControlled: true,
                       isDismissible: true,
                       backgroundColor: Colors.transparent,
-                      builder: (_) => DetailSheetModal(photoId: photoId),
+                      builder: (_) => DetailSheetModal(photoId: widget.photoId),
                     );
                   }
                 },
@@ -64,165 +80,189 @@ class PhotoViewerScreen extends StatelessWidget {
             Positioned(
               top: 12,
               left: 12,
-              child: CircleAvatar(
-                backgroundColor: Colors.white24,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
+              child: AnimatedOpacity(
+                opacity: _showUI ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: CircleAvatar(
+                  backgroundColor: Colors.white24,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ),
               ),
             ),
             Positioned(
               top: 12,
               right: 12,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      border: Border.all(color: Colors.white24),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: '즐겨찾기',
-                          icon: Icon(
-                            isFav ? Icons.favorite : Icons.favorite_border,
-                            color: Colors.white,
-                          ),
-                          onPressed: () async {
-                            try {
-                              final api = PhotoApi();
-                              final ok = await api.toggleFavorite(
-                                photoId,
-                                currentFavorite: isFav,
-                              );
-                              if (!context.mounted) return;
-                              context.read<PhotoProvider>().updateFromResponse({
-                                'photoId': photoId,
-                                'favorite': ok,
-                              });
-                              // 성공 시 토스트 메시지 제거
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('즐겨찾기 실패: $e')),
-                                );
-                              }
-                            }
-                          },
+              child: AnimatedOpacity(
+                opacity: _showUI ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: !_showUI,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          border: Border.all(color: Colors.white24),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        IconButton(
-                          tooltip: '상세',
-                          icon: const Icon(
-                            Icons.info_outline,
-                            color: Colors.white,
-                          ),
-                          onPressed: () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              isDismissible: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) =>
-                                  DetailSheetModal(photoId: photoId),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          tooltip: '상세 편집',
-                          icon: const Icon(Icons.edit, color: Colors.white),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    PhotoEditScreen(photoId: photoId),
-                              ),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          tooltip: albumId != null ? '앨범에서 제거' : '삭제',
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.white,
-                          ),
-                          onPressed: () async {
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (_) => AlertDialog(
-                                title: Text(
-                                  albumId != null ? '앨범에서 제거' : '사진 삭제',
-                                ),
-                                content: Text(
-                                  albumId != null
-                                      ? '이 사진을 앨범에서 제거하시겠습니까?'
-                                      : '정말 삭제하시겠습니까?',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, false),
-                                    child: const Text('취소'),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: '즐겨찾기',
+                              icon: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // 테두리용 검은색 하트 (약간 크게)
+                                  Icon(
+                                    isFav ? Icons.favorite : Icons.favorite_border,
+                                    color: Colors.black.withOpacity(0.5),
+                                    size: 26,
                                   ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, true),
-                                    child: Text(albumId != null ? '제거' : '삭제'),
+                                  // 앞에 배치할 흰색 하트
+                                  Icon(
+                                    isFav ? Icons.favorite : Icons.favorite_border,
+                                    color: Colors.white,
+                                    size: 24,
                                   ),
                                 ],
                               ),
-                            );
-                            if (ok == true && context.mounted) {
-                              try {
-                                if (albumId != null) {
-                                  // 앨범에서 제거
-                                  // ignore: use_build_context_synchronously
-                                  await AlbumApi.removePhotos(
-                                    albumId: albumId!,
-                                    photoIds: [photoId],
-                                  );
-                                  if (!context.mounted) return;
-                                  // 앨범 상태만 수정
-                                  // ignore: use_build_context_synchronously
-                                  context.read<AlbumProvider>().removePhotos(
-                                    albumId!,
-                                    [photoId],
-                                  );
-                                } else {
+                              onPressed: () async {
+                                try {
                                   final api = PhotoApi();
-                                  await api.deletePhoto(photoId);
+                                  final response = await api.toggleFavorite(widget.photoId);
                                   if (!context.mounted) return;
-                                  context.read<PhotoProvider>().removeById(
-                                    photoId,
-                                  );
+                                  // API 명세서: { photoId, isFavorite, message }
+                                  final isFavorite = response['isFavorite'] as bool? ?? false;
+                                  context.read<PhotoProvider>().updateFromResponse({
+                                    'photoId': widget.photoId,
+                                    'favorite': isFavorite,
+                                    'isFavorite': isFavorite,
+                                  });
+                                  // 성공 시 토스트 메시지 제거
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('즐겨찾기 실패: $e')),
+                                    );
+                                  }
                                 }
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      albumId != null
-                                          ? '앨범에서 제거했습니다.'
-                                          : '사진이 성공적으로 삭제되었습니다.',
-                                    ),
+                              },
+                            ),
+                            IconButton(
+                              tooltip: '상세',
+                              icon: const Icon(
+                                Icons.info_outline,
+                                color: Colors.white,
+                              ),
+                              onPressed: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  isDismissible: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) =>
+                                      DetailSheetModal(photoId: widget.photoId),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              tooltip: '상세 편집',
+                              icon: const Icon(Icons.edit, color: Colors.white),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        PhotoEditScreen(photoId: widget.photoId),
                                   ),
                                 );
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('실패: $e')),
-                                  );
+                              },
+                            ),
+                            IconButton(
+                              tooltip: widget.albumId != null ? '앨범에서 제거' : '삭제',
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.white,
+                              ),
+                              onPressed: () async {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    title: Text(
+                                      widget.albumId != null ? '앨범에서 제거' : '사진 삭제',
+                                    ),
+                                    content: Text(
+                                      widget.albumId != null
+                                          ? '이 사진을 앨범에서 제거하시겠습니까?'
+                                          : '정말 삭제하시겠습니까?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, true),
+                                        child: Text(widget.albumId != null ? '제거' : '삭제'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true && context.mounted) {
+                                  try {
+                                    if (widget.albumId != null) {
+                                      // 앨범에서 제거
+                                      // ignore: use_build_context_synchronously
+                                      await AlbumApi.removePhotos(
+                                        albumId: widget.albumId!,
+                                        photoIds: [widget.photoId],
+                                      );
+                                      if (!context.mounted) return;
+                                      // 앨범 상태만 수정
+                                      // ignore: use_build_context_synchronously
+                                      context.read<AlbumProvider>().removePhotos(
+                                        widget.albumId!,
+                                        [widget.photoId],
+                                      );
+                                    } else {
+                                      final api = PhotoApi();
+                                      await api.deletePhoto(widget.photoId);
+                                      if (!context.mounted) return;
+                                      context.read<PhotoProvider>().removeById(
+                                        widget.photoId,
+                                      );
+                                    }
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          widget.albumId != null
+                                              ? '앨범에서 제거했습니다.'
+                                              : '사진이 성공적으로 삭제되었습니다.',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('실패: $e')),
+                                      );
+                                    }
+                                  }
                                 }
-                              }
-                            }
-                          },
+                              },
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
