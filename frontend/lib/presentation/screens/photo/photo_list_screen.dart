@@ -783,6 +783,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   bool _hasMore = true;
   int _page = 0;
   final int _size = 10;
+  bool _hasLoadedOnce = false;
 
   @override
   void initState() {
@@ -808,6 +809,14 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
 
     try {
       final ownership = widget.sharedOnly ? 'SHARED' : 'ALL';
+      // ownership이 'ALL'이면 공유 앨범 정보를 먼저 확인 (백엔드가 최신 정보를 반환하도록)
+      // 실제로는 백엔드에서 ownership='ALL'로 호출하면 자동으로 공유 앨범도 포함되지만,
+      // 공유 앨범 수락 직후에는 약간의 지연이 있을 수 있으므로 잠시 대기
+      if (ownership == 'ALL' && reset) {
+        // 공유 앨범 수락 직후 반영을 위해 짧은 대기
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (!mounted) return;
+      }
       final res = await AlbumApi.getAlbums(
         sort: widget.sort,
         page: _page,
@@ -822,6 +831,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
         setState(() {
           _hasMore = false;
           _isLoading = false;
+          _hasLoadedOnce = true; // 초기 로드 완료 표시 (앨범이 없어도 완료로 처리)
         });
       } else {
         final existingIds = _albums.map((e) => e['albumId'] as int).toSet();
@@ -842,6 +852,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
             _page += 1;
           }
           _isLoading = false;
+          _hasLoadedOnce = true;
         });
       }
     } catch (e) {
@@ -858,6 +869,21 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
     // sort 또는 sharedOnly 값이 변경되면 다시 로드
     if (oldWidget.sort != widget.sort ||
         oldWidget.sharedOnly != widget.sharedOnly) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          await _loadAlbums(reset: true);
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 화면이 다시 활성화될 때마다 앨범 목록 새로고침
+    // (공유 앨범 수락 후 돌아왔을 때 반영되도록)
+    // _albums.isNotEmpty 조건 제거: 앨범이 없어도 새로고침하여 공유 앨범을 가져올 수 있도록
+    if (_hasLoadedOnce && !_isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
           await _loadAlbums(reset: true);
