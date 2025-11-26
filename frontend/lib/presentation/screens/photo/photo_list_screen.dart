@@ -723,6 +723,23 @@ class _FavoriteBadge extends StatelessWidget {
   }
 }
 
+class _ShareBadge extends StatelessWidget {
+  const _ShareBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 테두리용 검은색 공유 아이콘 (약간 크게)
+        Icon(Icons.share, color: Colors.black.withOpacity(0.5), size: 20),
+        // 앞에 배치할 흰색 공유 아이콘
+        const Icon(Icons.share, color: Colors.white, size: 18),
+      ],
+    );
+  }
+}
+
 class _DeleteButtonState extends State<_DeleteButton> {
   bool _loading = false;
 
@@ -1090,11 +1107,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                               const Positioned(
                                 left: 6,
                                 top: 6,
-                                child: Icon(
-                                  Icons.share,
-                                  size: 20,
-                                  color: Colors.white,
-                                ),
+                                child: _ShareBadge(),
                               ),
                             Positioned(
                               left: 0,
