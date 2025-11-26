@@ -565,24 +565,30 @@ class _AlbumSortDropdown extends StatelessWidget {
             const PopupMenuDivider(height: 6),
             PopupMenuItem<String>(
               value: value, // 선택 시 정렬 값 유지
-              onTap: () => onToggleSharedOnly(!sharedOnly),
-              child: Row(
-                children: [
-                  Checkbox(
-                    value: sharedOnly,
-                    onChanged: (_) => onToggleSharedOnly(!sharedOnly),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+              enabled: false, // PopupMenuItem 자체 클릭 비활성화
+              child: InkWell(
+                onTap: () => onToggleSharedOnly(!sharedOnly),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: sharedOnly,
+                        onChanged: (_) => onToggleSharedOnly(!sharedOnly),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        '공유 앨범만 보기',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    '공유 앨범만 보기',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
