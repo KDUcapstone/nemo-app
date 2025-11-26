@@ -716,8 +716,8 @@ class _MemoryShelfRowState extends State<_MemoryShelfRow> {
     }
 
     final albumProvider = context.watch<AlbumProvider>();
-    if (albumProvider.albums.isEmpty && 
-        !albumProvider.isLoading && 
+    if (albumProvider.albums.isEmpty &&
+        !albumProvider.isLoading &&
         !_hasTriedLoad) {
       _hasTriedLoad = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {

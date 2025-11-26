@@ -80,6 +80,7 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
             nickname: result['nickname'] as String? ?? '',
             accessToken: result['accessToken'] as String,
             profileImageUrl: result['profileImageUrl'] as String?,
+            context: context,
           );
           // 환영 토스트 표시 후 상위(LoginScreen)로 성공 신호 전달
           final nick = (result['nickname'] as String?)?.trim();

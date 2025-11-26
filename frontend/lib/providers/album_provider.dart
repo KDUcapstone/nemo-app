@@ -364,4 +364,19 @@ class AlbumProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// 로그인/로그아웃 시 상태 초기화
+  void reset() {
+    _albums.clear();
+    _isLoading = false;
+    _hasMore = true;
+    _page = 0;
+    _sort = 'createdAt,desc';
+    _favoriteOnly = false;
+    _ownership = 'ALL';
+    _favoritedAlbumIds.clear();
+    _sharedAlbumIds.clear();
+    _albumIdToMyRole.clear();
+    notifyListeners();
+  }
 }

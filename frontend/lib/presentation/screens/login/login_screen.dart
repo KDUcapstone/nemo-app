@@ -197,6 +197,7 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
             nickname: result['nickname'] as String? ?? '',
             accessToken: result['accessToken'] as String,
             profileImageUrl: result['profileImageUrl'] as String?,
+            context: context,
           );
 
           // 로그인 성공 시 화면 이동

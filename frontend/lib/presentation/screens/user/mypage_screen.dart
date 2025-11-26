@@ -356,7 +356,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       // UserProvider에서도 로그아웃 처리
       if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
-        userProvider.logout();
+        userProvider.logout(context: context);
       }
 
       if (mounted) {

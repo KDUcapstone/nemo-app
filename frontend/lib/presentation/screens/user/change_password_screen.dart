@@ -93,7 +93,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       }
       if (!mounted) return;
       final userProvider = Provider.of<UserProvider>(context, listen: false);
-      userProvider.logout();
+      userProvider.logout(context: context);
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),

@@ -321,4 +321,19 @@ class PhotoProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// 로그인/로그아웃 시 상태 초기화
+  void reset() {
+    _items.clear();
+    _allMockItems.clear();
+    _loadedOnce = false;
+    _favoriteOnly = false;
+    _tagFilter = null;
+    _brandFilter = null;
+    _sort = 'takenAt,desc';
+    _page = 0;
+    _isLoading = false;
+    _hasMore = true;
+    notifyListeners();
+  }
 }
