@@ -32,6 +32,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   bool _albumSharedOnly = false;
   String? _brand;
   final ImagePicker _imagePicker = ImagePicker();
+  // 앨범 목록 새로고침을 위한 GlobalKey
+  final GlobalKey<_AlbumListGridState> _albumListGridKey =
+      GlobalKey<_AlbumListGridState>();
 
   @override
   void initState() {
@@ -178,6 +181,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                     );
                                     if (!mounted) return;
                                     if (created != null) {
+                                      // 앨범 생성 후 목록 새로고침
+                                      _albumListGridKey.currentState?.refresh();
                                       ScaffoldMessenger.of(
                                         context,
                                       ).showSnackBar(
@@ -221,9 +226,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         ? const _EmptyState()
                         : (_showAlbums
                               ? _AlbumListGrid(
-                                  key: ValueKey(
-                                    'album_grid_${_albumSort}_$_albumSharedOnly',
-                                  ),
+                                  key: _albumListGridKey,
                                   sort: _albumSort,
                                   sharedOnly: _albumSharedOnly,
                                 )
@@ -824,6 +827,11 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
       if (!mounted) return;
       await _loadAlbums(reset: true);
     });
+  }
+
+  // 앨범 목록 새로고침을 위한 public 메서드
+  void refresh() {
+    _loadAlbums(reset: true);
   }
 
   Future<void> _loadAlbums({bool reset = false}) async {
