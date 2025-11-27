@@ -18,6 +18,8 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.ImageOutputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -30,6 +32,15 @@ import java.util.UUID;
 @Component
 @Slf4j
 public class S3PhotoStorage implements PhotoStorage {
+
+    private static final int MAX_LONG_EDGE = 2048; // 긴 변 기준 최대 픽셀
+
+    static {
+        ImageIO.scanForPlugins();
+        boolean hasWriter = ImageIO.getImageWritersByFormatName("webp").hasNext()
+                || ImageIO.getImageWritersByMIMEType("image/webp").hasNext();
+        log.info("[S3PhotoStorage] WEBP writer available? {}", hasWriter);
+    }
 
     private final S3Client s3Client;
     private final String bucket;
@@ -86,13 +97,30 @@ public class S3PhotoStorage implements PhotoStorage {
         String detected = detectMime(data);
         String mime = chooseMime(reported, detected, file.getOriginalFilename());
 
-        // 이미지면 WEBP로 변환 (이미 webp면 그대로 둠)
-        if (isConvertibleImageMime(mime)) {
-            byte[] converted = convertToWebP(data, file.getOriginalFilename());
-            if (converted != null && converted.length > 0 && converted != data) {
-                data = converted;
-                mime = "image/webp";
-            }
+        // LOG: 업로드 들어온 원본 정보
+        log.info("[S3PhotoStorage] multipart upload start: name={}, requestSize={} bytes, "
+                        + "reportedMime={}, detectedMime={}",
+                file.getOriginalFilename(),
+                file.getSize(),
+                reported,
+                detected
+        );
+
+        int originalSize = data.length; // LOG용
+
+        // 이미지면 WEBP → JPEG → PNG 순으로 압축/변환 Best Effort
+        if (isImageMime(mime)) {
+            CompressedResult result = compressImageBestEffort(data, file.getOriginalFilename(), mime);
+            data = result.bytes;
+            mime = result.mime;
+
+            log.info("[S3PhotoStorage] multipart image result: name={}, originalSize={} bytes, "
+                            + "finalSize={} bytes, targetMime={}",
+                    file.getOriginalFilename(),
+                    originalSize,
+                    data.length,
+                    mime
+            );
         }
 
         String key = buildKey(mime, file.getOriginalFilename());
@@ -106,6 +134,11 @@ public class S3PhotoStorage implements PhotoStorage {
                     .build();
 
             s3Client.putObject(req, RequestBody.fromBytes(data));
+
+            // LOG: 최종 업로드 완료
+            log.info("[S3PhotoStorage] multipart upload done: key={}, size={} bytes, mime={}",
+                    key, data.length, mime);
+
             return key;
 
         } catch (S3Exception e) {
@@ -130,13 +163,30 @@ public class S3PhotoStorage implements PhotoStorage {
         String detected = detectMime(data);
         String mime = chooseMime(contentType, detected, originalFilename);
 
-        // QR에서 받아온 이미지도 WEBP로 변환
-        if (isConvertibleImageMime(mime)) {
-            byte[] converted = convertToWebP(data, originalFilename);
-            if (converted != null && converted.length > 0 && converted != data) {
-                data = converted;
-                mime = "image/webp";
-            }
+        int originalSize = data.length; // LOG용
+
+        // LOG: 바이트 기반 업로드 시작
+        log.info("[S3PhotoStorage] byte upload start: name={}, originalSize={} bytes, "
+                        + "contentType={}, detectedMime={}",
+                originalFilename,
+                originalSize,
+                contentType,
+                detected
+        );
+
+        // 이미지면 WEBP → JPEG → PNG 순으로 압축/변환 Best Effort
+        if (isImageMime(mime)) {
+            CompressedResult result = compressImageBestEffort(data, originalFilename, mime);
+            data = result.bytes;
+            mime = result.mime;
+
+            log.info("[S3PhotoStorage] byte image result: name={}, originalSize={} bytes, "
+                            + "finalSize={} bytes, targetMime={}",
+                    originalFilename,
+                    originalSize,
+                    data.length,
+                    mime
+            );
         }
 
         String key = buildKey(mime, originalFilename);
@@ -150,6 +200,11 @@ public class S3PhotoStorage implements PhotoStorage {
                     .build();
 
             s3Client.putObject(req, RequestBody.fromBytes(data));
+
+            // LOG: 최종 업로드 완료
+            log.info("[S3PhotoStorage] byte upload done: key={}, size={} bytes, mime={}",
+                    key, data.length, mime);
+
             return key;
 
         } catch (S3Exception e) {
@@ -252,47 +307,172 @@ public class S3PhotoStorage implements PhotoStorage {
         return "bin";
     }
 
-    /** WEBP로 변환할 수 있는 이미지 MIME 인지 여부 */
-    private static boolean isConvertibleImageMime(String mime) {
+    /** 어떤 이미지든 일단 "이미지면" 압축 대상 */
+    private static boolean isImageMime(String mime) {
         if (mime == null) return false;
-        String m = mime.toLowerCase(Locale.ROOT);
-        if (!m.startsWith("image/")) return false;
-        // 이미 webp면 변환 안 함
-        return !m.equals("image/webp");
+        return mime.toLowerCase(Locale.ROOT).startsWith("image/");
     }
 
+    // ---------- 여기부터 압축 Best Effort 로직 ----------
     /**
-     * 원본 바이트를 WEBP (고품질)로 변환
-     * - 변환 실패 시 원본 바이트 그대로 반환
+     * 1) 리사이즈 (긴 변 2048px 기준)
+     * 2) WEBP(품질 0.8) 시도
+     * 3) WEBP가 에러나거나 이득이 거의 없으면 JPEG(품질 0.85) 시도
+     * 4) 그래도 실패/이득 없음 → PNG 시도
+     * 5) 끝까지 안 되면 원본 + 원래 mime 유지
      */
-    private byte[] convertToWebP(byte[] original, String originalName) {
-        try (ByteArrayInputStream in = new ByteArrayInputStream(original);
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+    private CompressedResult compressImageBestEffort(byte[] original, String originalName, String originalMime) {
+        int originalSize = original.length;
+        BufferedImage image;
+        try (ByteArrayInputStream in = new ByteArrayInputStream(original)) {
+            image = ImageIO.read(in);
+        } catch (Exception e) {
+            throw new StorageException("이미지 디코딩 실패: " + originalName + " / " + e.getMessage(), e);
+        }
 
-            BufferedImage image = ImageIO.read(in);
-            if (image == null) {
-                log.warn("WEBP 변환 실패 (이미지로 읽을 수 없음): {}", originalName);
-                return original;
+        if (image == null) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT,
+                    "이미지 파일로 읽을 수 없습니다: " + originalName);
+        }
+
+        // 0) 너무 크면 리사이즈
+        BufferedImage work = resizeIfNecessary(image, originalName);
+
+        // 1) WEBP 우선 시도
+        try {
+            byte[] webp = encodeImage(work, "webp", 0.80f);
+            if (webp != null && webp.length > 0) {
+                double ratio = (double) webp.length / originalSize;
+                if (ratio < 0.95) { // 5% 이상 줄어들면 채택
+                    int saved = originalSize - webp.length;
+                    log.info("WEBP 압축 성공: {} (orig={} bytes -> {} bytes, saved={} bytes, ratio={}%)",
+                            originalName, originalSize, webp.length, saved, Math.round(ratio * 100));
+                    return new CompressedResult(webp, "image/webp");
+                } else {
+                    log.debug("WEBP 후보가 원본보다 크거나 이득이 적어 패스: {} (orig={} -> {} bytes, ratio={}%)",
+                            originalName, originalSize, webp.length, Math.round(ratio * 100));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("WEBP 압축 실패, JPEG 시도: {} / {}", originalName, e.getMessage());
+        }
+
+        // 2) JPEG 시도 (투명도 있으면 흰 배경)
+        try {
+            BufferedImage rgbImage = work;
+            if (work.getType() != BufferedImage.TYPE_INT_RGB) {
+                rgbImage = new BufferedImage(work.getWidth(), work.getHeight(), BufferedImage.TYPE_INT_RGB);
+                Graphics2D g2d = rgbImage.createGraphics();
+                g2d.setColor(Color.WHITE);
+                g2d.fillRect(0, 0, work.getWidth(), work.getHeight());
+                g2d.drawImage(work, 0, 0, null);
+                g2d.dispose();
             }
 
-            ImageWriter writer = null;
-            var writers = ImageIO.getImageWritersByFormatName("webp");
+            byte[] jpeg = encodeImage(rgbImage, "jpeg", 0.85f);
+            if (jpeg != null && jpeg.length > 0) {
+                double ratio = (double) jpeg.length / originalSize;
+                if (ratio < 0.98) { // 2% 이상 줄어들면 채택
+                    int saved = originalSize - jpeg.length;
+                    log.info("JPEG 압축 성공: {} (orig={} bytes -> {} bytes, saved={} bytes, ratio={}%)",
+                            originalName, originalSize, jpeg.length, saved, Math.round(ratio * 100));
+                    return new CompressedResult(jpeg, "image/jpeg");
+                } else {
+                    log.debug("JPEG 후보가 원본보다 크거나 이득이 적어 패스: {} (orig={} -> {} bytes, ratio={}%)",
+                            originalName, originalSize, jpeg.length, Math.round(ratio * 100));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("JPEG 압축 실패, PNG 시도: {} / {}", originalName, e.getMessage());
+        }
+
+        // 3) PNG 시도 (대부분의 사진에서는 보통 손해라 거의 안 쓸 가능성 높음)
+        try {
+            byte[] png = encodeImage(work, "png", null);
+            if (png != null && png.length > 0) {
+                double ratio = (double) png.length / originalSize;
+                if (ratio < 0.98) {
+                    int saved = originalSize - png.length;
+                    log.info("PNG 압축 성공: {} (orig={} bytes -> {} bytes, saved={} bytes, ratio={}%)",
+                            originalName, originalSize, png.length, saved, Math.round(ratio * 100));
+                    return new CompressedResult(png, "image/png");
+                } else {
+                    log.debug("PNG 후보가 원본보다 크거나 이득이 적어 패스: {} (orig={} -> {} bytes, ratio={}%)",
+                            originalName, originalSize, png.length, Math.round(ratio * 100));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("PNG 압축 실패, 원본 업로드: {} / {}", originalName, e.getMessage());
+        }
+
+        // 4) 전부 실패 or 이득 없음 → 원본 그대로
+        log.info("압축/변환해도 이득이 없어 원본 유지: {} (size={} bytes, mime={})",
+                originalName, originalSize, originalMime);
+        String finalMime = isGood(originalMime) ? originalMime : "application/octet-stream";
+        return new CompressedResult(original, finalMime);
+    }
+
+    /** 긴 변이 MAX_LONG_EDGE 보다 크면 비율 유지해서 리사이즈 */
+    private BufferedImage resizeIfNecessary(BufferedImage src, String originalName) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int longEdge = Math.max(w, h);
+
+        if (longEdge <= MAX_LONG_EDGE) {
+            return src; // 그대로 사용
+        }
+
+        double scale = (double) MAX_LONG_EDGE / (double) longEdge;
+        int newW = (int) Math.round(w * scale);
+        int newH = (int) Math.round(h * scale);
+
+        BufferedImage resized = new BufferedImage(newW, newH, src.getType() == 0
+                ? BufferedImage.TYPE_INT_ARGB
+                : src.getType());
+        Graphics2D g2d = resized.createGraphics();
+        g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g2d.drawImage(src, 0, 0, newW, newH, null);
+        g2d.dispose();
+
+        log.info("이미지 리사이즈: {} ({}x{} -> {}x{})",
+                originalName, w, h, newW, newH);
+
+        return resized;
+    }
+
+    private byte[] encodeImage(BufferedImage image, String formatName, Float quality) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageWriter writer = null;
+        ImageOutputStream ios = null;
+        try {
+            // 1) 포맷 이름으로 writer 찾기
+            var writers = ImageIO.getImageWritersByFormatName(formatName);
+            // 2) webp인 경우 MIME 기반으로 한 번 더 시도
+            if (!writers.hasNext() && "webp".equalsIgnoreCase(formatName)) {
+                writers = ImageIO.getImageWritersByMIMEType("image/webp");
+            }
             if (!writers.hasNext()) {
-                log.warn("WEBP ImageWriter 없음 - 원본 그대로 업로드: {}", originalName);
-                return original;
+                throw new IllegalStateException("ImageWriter not found for format: " + formatName);
             }
+
             writer = writers.next();
 
+            if ("webp".equalsIgnoreCase(formatName)) {
+                log.info("[WEBP] Using writer implementation: {}", writer.getClass().getName());
+            }
+
             ImageWriteParam param = writer.getDefaultWriteParam();
-            if (param.canWriteCompressed()) {
+
+            if (quality != null && param.canWriteCompressed()) {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
 
-                // 가능한 compression type 중 Lossless가 있으면 우선 사용
+                // ★ compressionType 먼저 지정
                 String[] types = param.getCompressionTypes();
                 if (types != null && types.length > 0) {
                     String chosen = types[0];
                     for (String t : types) {
-                        if (t.toLowerCase(Locale.ROOT).contains("lossless")) {
+                        if (t != null && t.toLowerCase(Locale.ROOT).contains("lossy")) {
                             chosen = t;
                             break;
                         }
@@ -300,26 +480,39 @@ public class S3PhotoStorage implements PhotoStorage {
                     param.setCompressionType(chosen);
                 }
 
-                // 화질 거의 최대 (0.0 ~ 1.0)
-                param.setCompressionQuality(0.9f);
+                param.setCompressionQuality(quality); // 0.0 ~ 1.0
             }
 
-            try (ImageOutputStream ios = ImageIO.createImageOutputStream(out)) {
-                writer.setOutput(ios);
-                writer.write(null, new IIOImage(image, null, null), param);
-            } finally {
-                writer.dispose();
+            ios = ImageIO.createImageOutputStream(out);
+            writer.setOutput(ios);
+            writer.write(null, new IIOImage(image, null, null), param);
+
+            byte[] encoded = out.toByteArray();
+
+            if ("webp".equalsIgnoreCase(formatName)) {
+                log.info("[WEBP] Encoded size={} bytes (quality={})", encoded.length, quality);
             }
 
-            byte[] webp = out.toByteArray();
-            if (webp.length == 0) {
-                log.warn("WEBP 변환 결과가 비어 있음 - 원본 사용: {}", originalName);
-                return original;
+            // ★ 여기서 0바이트면 실패로 간주해서 예외 던짐
+            if (encoded.length == 0) {
+                throw new IllegalStateException("Encoded image is empty for format: " + formatName);
             }
-            return webp;
-        } catch (Exception e) {
-            log.warn("WEBP 변환 중 예외 발생 - 원본 사용: {} / {}", originalName, e.getMessage());
-            return original;
+
+            return encoded;
+        } finally {
+            if (ios != null) ios.close();
+            if (writer != null) writer.dispose();
+            out.close();
+        }
+    }
+
+    private static class CompressedResult {
+        final byte[] bytes;
+        final String mime;
+
+        CompressedResult(byte[] bytes, String mime) {
+            this.bytes = bytes;
+            this.mime = mime;
         }
     }
 
