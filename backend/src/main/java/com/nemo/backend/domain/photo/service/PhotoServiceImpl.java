@@ -92,12 +92,8 @@ public class PhotoServiceImpl implements PhotoService {
             throw new ApiException(ErrorCode.INVALID_ARGUMENT, "image 또는 qrUrl/qrCode 중 하나는 필수입니다.");
         }
 
-        // QR 중복 차단
-        if (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) {
-            String qrHash = sha256Hex(qrUrlOrPayload);
-            photoRepository.findByQrHash(qrHash)
-                    .ifPresent(p -> { throw new ApiException(ErrorCode.CONFLICT, "이미 업로드된 QR입니다."); });
-        }
+        // 🔥 QR 중복 차단 로직 제거됨
+        //    → 동일 QR이라도 매번 새로운 Photo를 생성
 
         String storedImage;
         String storedThumb;
@@ -137,15 +133,12 @@ public class PhotoServiceImpl implements PhotoService {
         }
         if (takenAt == null) takenAt = LocalDateTime.now();
 
-        String qrHash = (qrUrlOrPayload != null && !qrUrlOrPayload.isBlank()) ? sha256Hex(qrUrlOrPayload) : null;
-
+        // ✅ QR 해시(qrHash) 저장 제거: 더 이상 중복 체크/보관 안 함
         // ✅ videoUrl 필드 제거: DB에는 image / thumbnail / location 등만 저장
         Photo photo = new Photo(
                 userId,
-                null,
                 storedImage,
                 storedThumb,
-                qrHash,
                 brand,
                 takenAt,
                 location
