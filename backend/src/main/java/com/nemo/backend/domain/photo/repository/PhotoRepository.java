@@ -11,15 +11,10 @@ import java.util.Optional;
 
 public interface PhotoRepository extends JpaRepository<Photo, Long> {
 
-    Optional<Photo> findByQrHash(String qrHash);
-
     Page<Photo> findByUserIdAndDeletedIsFalseOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
     // ✅ 즐겨찾기만 필터
     Page<Photo> findByUserIdAndDeletedIsFalseAndFavoriteTrueOrderByCreatedAtDesc(Long userId, Pageable pageable);
-
-    // ✅ 앨범 내 사진들 (삭제 안 된 것만) 최신순
-    List<Photo> findByAlbum_IdAndDeletedIsFalseOrderByCreatedAtDesc(Long albumId);
 
     // ✅ 특정 사진이 살아있는지 검사할 때 사용
     Optional<Photo> findByIdAndDeletedIsFalse(Long id);

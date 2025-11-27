@@ -6,6 +6,7 @@ import com.nemo.backend.global.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -32,7 +33,12 @@ public class Album extends BaseEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    // 앨범에 포함된 사진
-    @OneToMany(mappedBy = "album")
-    private List<Photo> photos;
+    // ✅ 앨범에 포함된 사진 (N:N)
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "album_photos",
+            joinColumns = @JoinColumn(name = "album_id"),
+            inverseJoinColumns = @JoinColumn(name = "photo_id")
+    )
+    private List<Photo> photos = new ArrayList<>();
 }
