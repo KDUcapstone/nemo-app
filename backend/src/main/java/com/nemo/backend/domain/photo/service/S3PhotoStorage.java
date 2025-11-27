@@ -3,6 +3,7 @@ package com.nemo.backend.domain.photo.service;
 
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -12,6 +13,14 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Locale;
@@ -19,6 +28,7 @@ import java.util.UUID;
 
 @Primary
 @Component
+@Slf4j
 public class S3PhotoStorage implements PhotoStorage {
 
     private final S3Client s3Client;
@@ -76,6 +86,15 @@ public class S3PhotoStorage implements PhotoStorage {
         String detected = detectMime(data);
         String mime = chooseMime(reported, detected, file.getOriginalFilename());
 
+        // 이미지면 WEBP로 변환 (이미 webp면 그대로 둠)
+        if (isConvertibleImageMime(mime)) {
+            byte[] converted = convertToWebP(data, file.getOriginalFilename());
+            if (converted != null && converted.length > 0 && converted != data) {
+                data = converted;
+                mime = "image/webp";
+            }
+        }
+
         String key = buildKey(mime, file.getOriginalFilename());
 
         try {
@@ -110,6 +129,16 @@ public class S3PhotoStorage implements PhotoStorage {
 
         String detected = detectMime(data);
         String mime = chooseMime(contentType, detected, originalFilename);
+
+        // QR에서 받아온 이미지도 WEBP로 변환
+        if (isConvertibleImageMime(mime)) {
+            byte[] converted = convertToWebP(data, originalFilename);
+            if (converted != null && converted.length > 0 && converted != data) {
+                data = converted;
+                mime = "image/webp";
+            }
+        }
+
         String key = buildKey(mime, originalFilename);
 
         try {
@@ -220,6 +249,77 @@ public class S3PhotoStorage implements PhotoStorage {
         String guessed = guessFromName(originalName);
         if (guessed != null) return extensionForMime(guessed, null);
         return "bin";
+    }
+
+    /** WEBP로 변환할 수 있는 이미지 MIME 인지 여부 */
+    private static boolean isConvertibleImageMime(String mime) {
+        if (mime == null) return false;
+        String m = mime.toLowerCase(Locale.ROOT);
+        if (!m.startsWith("image/")) return false;
+        // 이미 webp면 변환 안 함
+        return !m.equals("image/webp");
+    }
+
+    /**
+     * 원본 바이트를 WEBP (고품질)로 변환
+     * - 변환 실패 시 원본 바이트 그대로 반환
+     */
+    private byte[] convertToWebP(byte[] original, String originalName) {
+        try (ByteArrayInputStream in = new ByteArrayInputStream(original);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+
+            BufferedImage image = ImageIO.read(in);
+            if (image == null) {
+                log.warn("WEBP 변환 실패 (이미지로 읽을 수 없음): {}", originalName);
+                return original;
+            }
+
+            ImageWriter writer = null;
+            var writers = ImageIO.getImageWritersByFormatName("webp");
+            if (!writers.hasNext()) {
+                log.warn("WEBP ImageWriter 없음 - 원본 그대로 업로드: {}", originalName);
+                return original;
+            }
+            writer = writers.next();
+
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+
+                // 가능한 compression type 중 Lossless가 있으면 우선 사용
+                String[] types = param.getCompressionTypes();
+                if (types != null && types.length > 0) {
+                    String chosen = types[0];
+                    for (String t : types) {
+                        if (t.toLowerCase(Locale.ROOT).contains("lossless")) {
+                            chosen = t;
+                            break;
+                        }
+                    }
+                    param.setCompressionType(chosen);
+                }
+
+                // 화질 거의 최대 (0.0 ~ 1.0)
+                param.setCompressionQuality(0.9f);
+            }
+
+            try (ImageOutputStream ios = ImageIO.createImageOutputStream(out)) {
+                writer.setOutput(ios);
+                writer.write(null, new IIOImage(image, null, null), param);
+            } finally {
+                writer.dispose();
+            }
+
+            byte[] webp = out.toByteArray();
+            if (webp.length == 0) {
+                log.warn("WEBP 변환 결과가 비어 있음 - 원본 사용: {}", originalName);
+                return original;
+            }
+            return webp;
+        } catch (Exception e) {
+            log.warn("WEBP 변환 중 예외 발생 - 원본 사용: {} / {}", originalName, e.getMessage());
+            return original;
+        }
     }
 
     public static class StorageException extends RuntimeException {
