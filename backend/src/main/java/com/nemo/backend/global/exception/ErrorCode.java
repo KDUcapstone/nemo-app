@@ -56,6 +56,18 @@ public enum ErrorCode {
     INVALID_ARGUMENT(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "잘못된 입력입니다."),
     UPSTREAM_FAILED(HttpStatus.BAD_GATEWAY,  "UPSTREAM_FAILED", "원격 자산 추출 실패했습니다."),
 
+    // 사진/앨범 도메인
+    PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_NOT_FOUND", "사진을 찾을 수 없습니다."),
+    NO_DOWNLOADABLE_PHOTOS(HttpStatus.NOT_FOUND, "NO_DOWNLOADABLE_PHOTOS", "다운로드 가능한 사진이 없습니다."), // ⬅️ 추가
+    ALBUM_NOT_FOUND(HttpStatus.NOT_FOUND, "ALBUM_NOT_FOUND", "앨범을 찾을 수 없습니다."),
+    ALBUM_SHARE_NOT_FOUND(HttpStatus.NOT_FOUND, "ALBUM_SHARE_NOT_FOUND", "공유 앨범 정보를 찾을 수 없습니다."),
+    ALBUM_FORBIDDEN(HttpStatus.FORBIDDEN, "ALBUM_FORBIDDEN", "해당 앨범에 대한 권한이 없습니다."),
+    ALBUM_SHARE_ALREADY_EXISTS(HttpStatus.CONFLICT, "ALBUM_SHARE_ALREADY_EXISTS", "이미 초대된 사용자입니다."),
+    ALBUM_SHARE_CANNOT_MODIFY_SELF_ROLE(HttpStatus.BAD_REQUEST, "ALBUM_SHARE_CANNOT_MODIFY_SELF_ROLE", "자기 자신의 역할은 수정할 수 없습니다."),
+    ALBUM_SHARE_OWNER_CANNOT_LEAVE(HttpStatus.BAD_REQUEST, "ALBUM_SHARE_OWNER_CANNOT_LEAVE", "소유자는 앨범을 탈퇴할 수 없습니다."),
+    ALBUM_SHARE_ALREADY_ACCEPTED(HttpStatus.BAD_REQUEST, "ALBUM_SHARE_ALREADY_ACCEPTED", "이미 수락된 초대입니다."),
+
+
     // 캘린더 타임라인 코드
     INVALID_QUERY(HttpStatus.BAD_REQUEST, "INVALID_QUERY", "year와 month 파라미터는 필수입니다.");
 

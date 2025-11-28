@@ -3,7 +3,9 @@ package com.nemo.backend.domain.photo.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nemo.backend.domain.photo.dto.PhotoDownloadUrlDto;
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
+import com.nemo.backend.domain.photo.dto.SelectedPhotosDownloadUrlsResponse;
 import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.global.exception.ApiException;
@@ -26,12 +28,14 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.*;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.nemo.backend.domain.photo.service.S3PhotoStorage.StorageException;
 
@@ -269,9 +273,112 @@ public class PhotoServiceImpl implements PhotoService {
         return next;
     }
 
+    // ========================================================
+    // 7) 선택 사진 다운로드 URL 목록 조회
+    // ========================================================
+    @Override
+    @Transactional(readOnly = true)
+    public SelectedPhotosDownloadUrlsResponse getDownloadUrls(Long userId, List<Long> photoIdList) {
+        if (photoIdList == null || photoIdList.isEmpty()) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "photoIdList는 비어 있을 수 없습니다.");
+        }
+
+        // 중복 제거
+        List<Long> distinctIds = photoIdList.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        List<Photo> photos = photoRepository.findAllById(distinctIds);
+
+        List<PhotoDownloadUrlDto> items = photos.stream()
+                .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                // ✅ 현재는 "내 사진 탭" 기준으로, 소유자만 다운로드 가능하게
+                .filter(p -> userId.equals(p.getUserId()))
+                .map(p -> {
+                    String downloadUrl = p.getImageUrl(); // 명세상 downloadUrl – 원본 이미지 URL
+                    String filename = buildDownloadFilename(p.getImageUrl(), p.getId());
+                    Long fileSize = resolveFileSizeFromImageUrl(p.getImageUrl());
+
+                    return PhotoDownloadUrlDto.builder()
+                            .photoId(p.getId())
+                            .downloadUrl(downloadUrl)
+                            .filename(filename)
+                            .fileSize(fileSize)
+                            .build();
+                })
+                .toList();
+
+        if (items.isEmpty()) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "다운로드 가능한 사진이 없습니다.");
+        }
+
+        return SelectedPhotosDownloadUrlsResponse.builder()
+                .photos(items)
+                .build();
+    }
+
+    /** download용 파일 이름 생성 – URL 확장자 기준, 없으면 .jpg */
+    private String buildDownloadFilename(String imageUrl, Long photoId) {
+        String ext = "jpg";
+        if (imageUrl != null) {
+            try {
+                String path = new URL(imageUrl).getPath();
+                String name = path.substring(path.lastIndexOf('/') + 1);
+                int dot = name.lastIndexOf('.');
+                if (dot > 0 && dot < name.length() - 1) {
+                    ext = name.substring(dot + 1);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return "nemo_photo_" + photoId + "." + ext;
+    }
+
+    /** imageUrl → S3 key 추출 후, S3에서 파일 크기 조회 */
+    private Long resolveFileSizeFromImageUrl(String imageUrl) {
+        String key = extractStorageKeyFromUrl(imageUrl);
+        if (key == null) return null;
+
+        if (storage instanceof S3PhotoStorage s3) {
+            try {
+                return s3.getObjectSize(key);
+            } catch (Exception e) {
+                log.warn("[PHOTO][download] 파일 크기 조회 실패 key={}, err={}", key, e.toString());
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * publicBaseUrl + "/files/{key}" 형태의 URL에서 S3 key만 추출
+     * 예: http://localhost:8080/files/albums/2025-11-27/xxx.webp
+     *  -> albums/2025-11-27/xxx.webp
+     */
+    private String extractStorageKeyFromUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+
+        String base = publicBaseUrl;
+        // publicBaseUrl 뒤에 슬래시 여러 개 있으면 제거
+        base = base.replaceAll("/+$", "");
+
+        if (!url.startsWith(base)) {
+            // 우리 서비스에서 관리하는 URL 형식이 아니면 S3 삭제/용량 조회 안 함
+            return null;
+        }
+
+        String path = url.substring(base.length()); // "/files/...."
+        if (!path.startsWith("/files/")) {
+            return null;
+        }
+
+        return path.substring("/files/".length()); // "albums/2025-11-27/xxx.webp"
+    }
+
     // ======================================================================
     // 아래부터는 QR 파싱 / HTTP 유틸 / life4cut 전용 로직
-    // 🔥 요청대로 알고리즘/로직은 그대로 두고, 사용처만 위에서 조정
+    //  (기존 로직 그대로 유지)
     // ======================================================================
 
     private AssetPair fetchAssetsFromQrPayload(String startUrl) {
@@ -860,29 +967,4 @@ public class PhotoServiceImpl implements PhotoService {
         }
     }
 
-    /**
-     * publicBaseUrl + "/files/{key}" 형태의 URL에서 S3 key만 추출
-     * 예: http://localhost:8080/files/albums/2025-11-27/xxx.webp
-     *  -> albums/2025-11-27/xxx.webp
-     */
-    private String extractStorageKeyFromUrl(String url) {
-        if (url == null || url.isBlank()) return null;
-
-        String base = publicBaseUrl;
-        // publicBaseUrl 뒤에 슬래시 여러 개 있으면 제거
-        base = base.replaceAll("/+$", "");
-
-        if (!url.startsWith(base)) {
-            // 우리 서비스에서 관리하는 URL 형식이 아니면 S3 삭제 안 함
-            return null;
-        }
-
-        String path = url.substring(base.length()); // "/files/...."
-        if (!path.startsWith("/files/")) {
-            return null;
-        }
-
-        String key = path.substring("/files/".length()); // "albums/2025-11-27/xxx.webp"
-        return key;
-    }
 }

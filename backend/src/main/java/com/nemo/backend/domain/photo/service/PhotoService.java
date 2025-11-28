@@ -2,11 +2,13 @@
 package com.nemo.backend.domain.photo.service;
 
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
+import com.nemo.backend.domain.photo.dto.SelectedPhotosDownloadUrlsResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public interface PhotoService {
 
@@ -55,4 +57,7 @@ public interface PhotoService {
     );
 
     boolean toggleFavorite(Long userId, Long photoId);
+
+    // ✅ 선택된 사진들에 대한 다운로드 URL 목록 조회
+    SelectedPhotosDownloadUrlsResponse getDownloadUrls(Long userId, List<Long> photoIdList);
 }

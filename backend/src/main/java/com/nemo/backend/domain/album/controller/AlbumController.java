@@ -264,4 +264,15 @@ public class AlbumController {
         AlbumFavoriteResponse resp = albumService.setFavorite(userId, albumId, false);
         return ResponseEntity.ok(resp);
     }
+
+    // ✅ 11) GET /api/albums/{albumId}/download-urls : 앨범 전체 사진 다운로드 URL 목록
+    @GetMapping("/{albumId}/download-urls")
+    public ResponseEntity<AlbumDownloadUrlsResponse> getAlbumDownloadUrls(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long albumId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumDownloadUrlsResponse resp = albumService.getAlbumDownloadUrls(userId, albumId);
+        return ResponseEntity.ok(resp);
+    }
 }

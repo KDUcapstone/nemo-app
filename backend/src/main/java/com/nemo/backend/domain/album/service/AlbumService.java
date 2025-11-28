@@ -8,12 +8,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.nemo.backend.domain.photo.repository.PhotoRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.entity.Album;
 import com.nemo.backend.domain.album.entity.AlbumShare;
@@ -23,13 +17,19 @@ import com.nemo.backend.domain.album.repository.AlbumFavoriteRepository;
 import com.nemo.backend.domain.album.repository.AlbumRepository;
 import com.nemo.backend.domain.album.repository.AlbumShareRepository;
 import com.nemo.backend.domain.photo.entity.Photo;
+import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.domain.photo.service.PhotoStorage;
+import com.nemo.backend.domain.photo.service.S3PhotoStorage;
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional(readOnly = true)
@@ -473,6 +473,47 @@ public class AlbumService {
         }
     }
 
+    // 8) 앨범 전체 사진 다운로드 URL 조회
+    public AlbumDownloadUrlsResponse getAlbumDownloadUrls(Long userId, Long albumId) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
+
+        if (!canAccessAlbum(userId, album)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
+        }
+
+        List<Photo> photos = (album.getPhotos() == null)
+                ? List.of()
+                : album.getPhotos().stream()
+                .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                .sorted(Comparator.comparing(Photo::getCreatedAt))
+                .toList();
+
+        int seq = 1;
+        List<AlbumPhotoDownloadUrlDto> photoDtos = new ArrayList<>();
+
+        for (Photo p : photos) {
+            String downloadUrl = p.getImageUrl();
+            String filename = buildDownloadFilename(p);
+            Long fileSize = resolveFileSize(p);
+
+            photoDtos.add(AlbumPhotoDownloadUrlDto.builder()
+                    .photoId(p.getId())
+                    .sequence(seq++)
+                    .downloadUrl(downloadUrl)
+                    .filename(filename)
+                    .fileSize(fileSize)
+                    .build());
+        }
+
+        return AlbumDownloadUrlsResponse.builder()
+                .albumId(album.getId())
+                .albumTitle(album.getName())
+                .photoCount(photoDtos.size())
+                .photos(photoDtos)
+                .build();
+    }
+
     // 내부 유틸
     private String toPublicUrl(String key) {
         if (key == null) return null;
@@ -551,4 +592,53 @@ public class AlbumService {
                 .photoList(photoList)
                 .build();
     }
+
+    /** imageUrl → S3 key 추출 */
+    private String extractStorageKeyFromUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+
+        String base = publicBaseUrl.replaceAll("/+$", "");
+        if (!url.startsWith(base)) {
+            return null;
+        }
+
+        String path = url.substring(base.length()); // "/files/..."
+        if (!path.startsWith("/files/")) {
+            return null;
+        }
+        return path.substring("/files/".length());
+    }
+
+    /** photo.imageUrl 기준 파일 크기 조회 */
+    private Long resolveFileSize(Photo photo) {
+        String key = extractStorageKeyFromUrl(photo.getImageUrl());
+        if (key == null) return null;
+
+        if (photoStorage instanceof S3PhotoStorage s3) {
+            try {
+                return s3.getObjectSize(key);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** 다운로드용 파일 이름 생성 */
+    private String buildDownloadFilename(Photo photo) {
+        String url = photo.getImageUrl();
+        String ext = "jpg";
+        if (url != null) {
+            try {
+                String path = new java.net.URL(url).getPath();
+                String name = path.substring(path.lastIndexOf('/') + 1);
+                int dot = name.lastIndexOf('.');
+                if (dot > 0 && dot < name.length() - 1) {
+                    ext = name.substring(dot + 1);
+                }
+            } catch (Exception ignored) {}
+        }
+        return "nemo_photo_" + photo.getId() + "." + ext;
+    }
+
 }
