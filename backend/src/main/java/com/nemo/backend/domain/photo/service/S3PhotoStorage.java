@@ -216,6 +216,7 @@ public class S3PhotoStorage implements PhotoStorage {
         }
     }
 
+
     private String buildKey(String mime, String originalName) {
         String ext = extensionForMime(mime, originalName);
         String today = LocalDate.now().toString();
@@ -518,5 +519,27 @@ public class S3PhotoStorage implements PhotoStorage {
     public static class StorageException extends RuntimeException {
         public StorageException(String msg) { super(msg); }
         public StorageException(String msg, Throwable cause) { super(msg, cause); }
+    }
+
+    /** S3 객체 삭제 */
+    @Override
+    public void delete(String key) {
+        if (key == null || key.isBlank()) return;
+
+        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+
+        try {
+            DeleteObjectRequest req = DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(normalizedKey)
+                    .build();
+
+            s3Client.deleteObject(req);
+
+        } catch (NoSuchKeyException e) {
+            // 이미 안 존재하는 경우는 무시
+        } catch (S3Exception | SdkClientException e) {
+            throw new StorageException("S3 삭제 실패: " + e.getMessage(), e);
+        }
     }
 }

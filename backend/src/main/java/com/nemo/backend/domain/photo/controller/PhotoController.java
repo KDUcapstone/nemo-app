@@ -277,6 +277,7 @@ public class PhotoController {
     public ResponseEntity<PagedResponse<PhotoListItemDto>> list(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestParam(value = "favorite", required = false) Boolean favorite,
+            @RequestParam(value = "brand", required = false) String brand,   // ✅ 추가
             @RequestParam(value = "tag", required = false) String tag,
             @RequestParam(value = "sort", required = false, defaultValue = "takenAt,desc") String sortBy,
             @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
@@ -300,7 +301,9 @@ public class PhotoController {
         }
 
         Pageable pageable = PageRequest.of(page, size, sort);
-        var pageDto = photoService.list(userId, pageable, favorite);
+
+        // ✅ brand / tag 까지 전달
+        var pageDto = photoService.list(userId, pageable, favorite, brand, tag);
         DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
         List<PhotoListItemDto> items = pageDto.map(p -> PhotoListItemDto.builder()
