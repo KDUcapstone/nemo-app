@@ -93,7 +93,6 @@ public class PhotoServiceImpl implements PhotoService {
         }
 
         // 🔥 QR 중복 차단 로직 제거됨
-        //    → 동일 QR이라도 매번 새로운 Photo를 생성
 
         String storedImage;
         String storedThumb;
@@ -105,7 +104,6 @@ public class PhotoServiceImpl implements PhotoService {
                 storedImage = url;
                 storedThumb = url;
             } catch (ApiException ae) {
-                // 파일이 이미지가 아니면(HTML 등) → QR URL이 있으면 원격에서 다시 시도
                 if (ae.getErrorCode() == ErrorCode.INVALID_ARGUMENT && looksLikeUrl(qrUrlOrPayload)) {
                     AssetPair ap = fetchAssetsFromQrPayload(qrUrlOrPayload);
                     storedImage = ap.imageUrl;
@@ -118,7 +116,6 @@ public class PhotoServiceImpl implements PhotoService {
                 throw new ApiException(ErrorCode.STORAGE_FAILED, "파일 저장 실패: " + e.getMessage(), e);
             }
         } else {
-            // QR URL만 있는 경우: QR에서 원격 이미지 추출
             if (!looksLikeUrl(qrUrlOrPayload)) {
                 throw new InvalidQrException("지원하지 않는 QR/URL 포맷입니다.");
             }
@@ -133,8 +130,6 @@ public class PhotoServiceImpl implements PhotoService {
         }
         if (takenAt == null) takenAt = LocalDateTime.now();
 
-        // ✅ QR 해시(qrHash) 저장 제거: 더 이상 중복 체크/보관 안 함
-        // ✅ videoUrl 필드 제거: DB에는 image / thumbnail / location 등만 저장
         Photo photo = new Photo(
                 userId,
                 storedImage,
@@ -150,23 +145,30 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     // ========================================================
-    // 2) 사진 목록 조회 (favorite 필터)
+    // 2) 사진 목록 조회 (favorite + brand + tag 필터)
     // ========================================================
     @Override
     @Transactional(readOnly = true)
-    public Page<PhotoResponseDto> list(Long userId, Pageable pageable, Boolean favorite) {
-        Page<Photo> page;
-        if (Boolean.TRUE.equals(favorite)) {
-            page = photoRepository.findByUserIdAndDeletedIsFalseAndFavoriteTrueOrderByCreatedAtDesc(userId, pageable);
-        } else {
-            page = photoRepository.findByUserIdAndDeletedIsFalseOrderByCreatedAtDesc(userId, pageable);
-        }
+    public Page<PhotoResponseDto> list(Long userId,
+                                       Pageable pageable,
+                                       Boolean favorite,
+                                       String brand,
+                                       String tag) {
+
+        Page<Photo> page = photoRepository.findForList(userId, favorite, brand, tag, pageable);
         return page.map(PhotoResponseDto::new);
+    }
+
+    // 기존 시그니처도 그대로 유지 (interface default랑 맞춰줌)
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PhotoResponseDto> list(Long userId, Pageable pageable, Boolean favorite) {
+        return list(userId, pageable, favorite, null, null);
     }
 
     @Transactional(readOnly = true)
     public Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
-        return list(userId, pageable, null);
+        return list(userId, pageable, null, null, null);
     }
 
     // ========================================================
@@ -179,6 +181,24 @@ public class PhotoServiceImpl implements PhotoService {
         if (!photo.getUserId().equals(userId)) {
             throw new ApiException(ErrorCode.UNAUTHORIZED, "삭제 권한이 없습니다.");
         }
+
+        // ===== S3 저장소에서 실제 파일 삭제 (best-effort) =====
+        try {
+            String imageKey = extractStorageKeyFromUrl(photo.getImageUrl());
+            String thumbKey = extractStorageKeyFromUrl(photo.getThumbnailUrl());
+
+            if (imageKey != null) {
+                storage.delete(imageKey);
+            }
+            if (thumbKey != null && !thumbKey.equals(imageKey)) {
+                storage.delete(thumbKey);
+            }
+        } catch (Exception e) {
+            // S3 삭제 실패해도 서비스 전체 장애로 가지 않게 워닝만 남기고 넘어감
+            log.warn("[PHOTO][delete] S3 삭제 실패 photoId={}, err={}", photoId, e.toString());
+        }
+        // ===== 여기까지 S3 삭제 =====
+
         photo.setDeleted(true);
         photoRepository.save(photo);
     }
@@ -838,5 +858,31 @@ public class PhotoServiceImpl implements PhotoService {
             this.videoUrl = v;
             this.takenAt = ta;
         }
+    }
+
+    /**
+     * publicBaseUrl + "/files/{key}" 형태의 URL에서 S3 key만 추출
+     * 예: http://localhost:8080/files/albums/2025-11-27/xxx.webp
+     *  -> albums/2025-11-27/xxx.webp
+     */
+    private String extractStorageKeyFromUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+
+        String base = publicBaseUrl;
+        // publicBaseUrl 뒤에 슬래시 여러 개 있으면 제거
+        base = base.replaceAll("/+$", "");
+
+        if (!url.startsWith(base)) {
+            // 우리 서비스에서 관리하는 URL 형식이 아니면 S3 삭제 안 함
+            return null;
+        }
+
+        String path = url.substring(base.length()); // "/files/...."
+        if (!path.startsWith("/files/")) {
+            return null;
+        }
+
+        String key = path.substring("/files/".length()); // "albums/2025-11-27/xxx.webp"
+        return key;
     }
 }

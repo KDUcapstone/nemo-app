@@ -1,6 +1,8 @@
 // backend/src/main/java/com/nemo/backend/domain/album/controller/AlbumController.java
 package com.nemo.backend.domain.album.controller;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -38,7 +40,44 @@ public class AlbumController {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
         // favoriteOnly + ownership 반영
-        List<AlbumSummaryResponse> all = albumService.getAlbums(userId, ownership, favoriteOnly);
+        List<AlbumSummaryResponse> all =
+                new ArrayList<>(albumService.getAlbums(userId, ownership, favoriteOnly));
+
+        // ===== 정렬 적용 =====
+        String field = "createdAt";
+        boolean asc = false; // default = 최신순 (desc)
+
+        if (sort != null && !sort.isBlank()) {
+            String[] parts = sort.split(",");
+            field = parts[0].trim();
+            if (parts.length > 1) {
+                asc = "asc".equalsIgnoreCase(parts[1].trim());
+            }
+        }
+
+        Comparator<AlbumSummaryResponse> comparator;
+
+        switch (field) {
+            case "title", "name" -> {
+                comparator = Comparator.comparing(
+                        AlbumSummaryResponse::getTitle,
+                        String.CASE_INSENSITIVE_ORDER
+                );
+            }
+            case "createdAt" -> {
+                comparator = Comparator.comparing(AlbumSummaryResponse::getCreatedAt);
+            }
+            default -> {
+                // 잘못된 필드가 들어오면 createdAt 기준으로
+                comparator = Comparator.comparing(AlbumSummaryResponse::getCreatedAt);
+            }
+        }
+
+        if (!asc) {
+            comparator = comparator.reversed();
+        }
+        all.sort(comparator);
+        // ===== 정렬 끝 =====
 
         int fromIndex = Math.max(page * size, 0);
         if (fromIndex > all.size()) {
@@ -64,6 +103,7 @@ public class AlbumController {
                 )
         );
     }
+
 
     // 2) POST /api/albums : 앨범 생성
     @PostMapping
