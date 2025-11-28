@@ -41,6 +41,9 @@ public class JwtUtil {
     /** Access Token 유효 시간 (밀리초 단위) */
     private final long accessTtlMs;
 
+    /** 서버/클라이언트 시간차 허용 범위 (초 단위) – 여기선 3분 */
+    private static final long CLOCK_SKEW_SECONDS = 180L; // 180초 = 3분
+
     /**
      * 생성자
      * - application.yml(or .env)에 있는 설정 값을 주입받는다.
@@ -144,6 +147,7 @@ public class JwtUtil {
             return Jwts.parserBuilder()
                     .setSigningKey(key)     // 서명 검증용 키
                     .requireIssuer(issuer)  // issuer(발급자)도 일치하는지 체크
+                    .setAllowedClockSkewSeconds(CLOCK_SKEW_SECONDS) // 🔥 시간 오차 허용
                     .build()
                     .parseClaimsJws(token)  // 여기서 서명 검증 + 만료 검사
                     .getBody();

@@ -31,10 +31,10 @@ app:
 
 
   s3:
-    bucket: nemo-dev-photos
+    bucket: nemo-s3-test
     region: ap-northeast-2
-    endpoint: http://localhost:4566
-    accessKey: test
-    secretKey: test
-    pathStyle: true
-    createBucketIfMissing: true
+    endpoint: ""                    # AWS니까 endpoint 없음
+    accessKey: ${AWS_ACCESS_KEY}
+    secretKey: ${AWS_SECRET_KEY}
+    pathStyle: false
+    createBucketIfMissing: false

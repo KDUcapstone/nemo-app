@@ -7,7 +7,7 @@ spring:
     # ✅ 개발 중엔 local (CloudType DB 외부 접속)
     # ✅ 테스트용 H2는 dev
     # ✅ 실제 배포는 prod
-    active: dev
+    active: prod
   h2:
     console:
       enabled: true
