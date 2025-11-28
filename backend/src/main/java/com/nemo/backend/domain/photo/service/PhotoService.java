@@ -22,10 +22,23 @@ public interface PhotoService {
             String memo
     );
 
-    Page<PhotoResponseDto> list(Long userId, Pageable pageable, Boolean favorite);
+    // ✅ 브랜드/태그까지 포함한 메인 시그니처
+    Page<PhotoResponseDto> list(
+            Long userId,
+            Pageable pageable,
+            Boolean favorite,
+            String brand,
+            String tag
+    );
 
+    // ✅ 기존 시그니처 유지용 오버로드 (favorite만)
+    default Page<PhotoResponseDto> list(Long userId, Pageable pageable, Boolean favorite) {
+        return list(userId, pageable, favorite, null, null);
+    }
+
+    // ✅ 기존 기본 오버로드
     default Page<PhotoResponseDto> list(Long userId, Pageable pageable) {
-        return list(userId, pageable, null);
+        return list(userId, pageable, null, null, null);
     }
 
     void delete(Long userId, Long photoId);
