@@ -629,10 +629,10 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                 children: [
                   DropdownButtonFormField<String>(
                     value: _selectedBrand,
-                    decoration: InputDecoration(
-                      labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
-                      border: const OutlineInputBorder(),
-                    ),
+                decoration: InputDecoration(
+                  labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
+                  border: const OutlineInputBorder(),
+                ),
                     items: _brandOptions
                         .map(
                           (b) => DropdownMenuItem<String>(
@@ -665,11 +665,11 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                         ? (_) {
                             if (_selectedBrand == '직접 입력' &&
                                 _brandCtrl.text.trim().isEmpty) {
-                              return '포토부스 브랜드를 입력해주세요.';
-                            }
-                            return null;
-                          }
-                        : null,
+                          return '포토부스 브랜드를 입력해주세요.';
+                        }
+                        return null;
+                      }
+                    : null,
                   ),
                 ],
               ),

@@ -17,6 +17,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart';
 import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
 import 'package:frontend/widgets/notification_badge_icon.dart';
+import 'package:frontend/services/photo_download_service.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -35,6 +36,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   // 앨범 목록 새로고침을 위한 GlobalKey
   final GlobalKey<_AlbumListGridState> _albumListGridKey =
       GlobalKey<_AlbumListGridState>();
+  // 사진 탭 선택 다운로드용 상태
+  bool _photoSelectionMode = false;
+  final Set<int> _selectedPhotoIds = <int>{};
+  bool _photoDownloadWorking = false;
 
   @override
   void initState() {
@@ -86,7 +91,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final items = context.watch<PhotoProvider>().items;
     return Scaffold(
       appBar: null,
-      floatingActionButton: !_showAlbums
+      // 사진 선택 모드일 때는 갤러리 추가 FAB 숨기기
+      floatingActionButton: (!_showAlbums && !_photoSelectionMode)
           ? _GlassFloatingActionButton(onPressed: _pickFromGallery)
           : null,
       body: SafeArea(
@@ -143,7 +149,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           child: _TopToggle(
                             isAlbums: _showAlbums,
                             onChanged: (isAlbums) {
-                              setState(() => _showAlbums = isAlbums);
+                              setState(() {
+                                _showAlbums = isAlbums;
+                                if (isAlbums) {
+                                  // 앨범 탭으로 전환 시 사진 선택 상태 리셋
+                                  _photoSelectionMode = false;
+                                  _selectedPhotoIds.clear();
+                                  _photoDownloadWorking = false;
+                                }
+                              });
                             },
                           ),
                         ),
@@ -257,18 +271,53 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                             final item = items[i];
                                             return _PhotoCard(
                                               item: item,
+                                              isSelectionMode:
+                                                  _photoSelectionMode,
+                                              isSelected: _selectedPhotoIds
+                                                  .contains(item.photoId),
                                               onTap: () {
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        PhotoViewerScreen(
-                                                          photoId: item.photoId,
-                                                          imageUrl:
-                                                              item.imageUrl,
-                                                        ),
-                                                  ),
-                                                );
+                                                if (_photoSelectionMode) {
+                                                  setState(() {
+                                                    if (_selectedPhotoIds
+                                                        .contains(
+                                                          item.photoId,
+                                                        )) {
+                                                      _selectedPhotoIds.remove(
+                                                        item.photoId,
+                                                      );
+                                                      if (_selectedPhotoIds
+                                                          .isEmpty) {
+                                                        _photoSelectionMode =
+                                                            false;
+                                                      }
+                                                    } else {
+                                                      _selectedPhotoIds.add(
+                                                        item.photoId,
+                                                      );
+                                                    }
+                                                  });
+                                                } else {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          PhotoViewerScreen(
+                                                            photoId:
+                                                                item.photoId,
+                                                            imageUrl:
+                                                                item.imageUrl,
+                                                          ),
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                              onLongPress: () {
+                                                setState(() {
+                                                  _photoSelectionMode = true;
+                                                  _selectedPhotoIds.add(
+                                                    item.photoId,
+                                                  );
+                                                });
                                               },
                                             );
                                           },
@@ -285,6 +334,110 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                                     CircularProgressIndicator(
                                                       strokeWidth: 2,
                                                     ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_photoSelectionMode &&
+                                            _selectedPhotoIds.isNotEmpty)
+                                          Positioned(
+                                            left: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            child: SafeArea(
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(
+                                                  12,
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    TextButton(
+                                                      onPressed:
+                                                          _photoDownloadWorking
+                                                          ? null
+                                                          : () {
+                                                              setState(() {
+                                                                _photoSelectionMode =
+                                                                    false;
+                                                                _selectedPhotoIds
+                                                                    .clear();
+                                                              });
+                                                            },
+                                                      child: const Text('취소'),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: ElevatedButton.icon(
+                                                        onPressed:
+                                                            _photoDownloadWorking
+                                                            ? null
+                                                            : () async {
+                                                                setState(() {
+                                                                  _photoDownloadWorking =
+                                                                      true;
+                                                                });
+                                                                try {
+                                                                  final count =
+                                                                      await PhotoDownloadService.downloadPhotosToGallery(
+                                                                        _selectedPhotoIds
+                                                                            .toList(),
+                                                                      );
+                                                                  if (!mounted) {
+                                                                    return;
+                                                                  }
+                                                                  ScaffoldMessenger.of(
+                                                                    context,
+                                                                  ).showSnackBar(
+                                                                    SnackBar(
+                                                                      content: Text(
+                                                                        count > 0
+                                                                            ? '$count개의 사진을 갤러리에 저장했어요.'
+                                                                            : '다운로드 가능한 사진이 없습니다.',
+                                                                      ),
+                                                                    ),
+                                                                  );
+                                                                  setState(() {
+                                                                    _photoSelectionMode =
+                                                                        false;
+                                                                    _selectedPhotoIds
+                                                                        .clear();
+                                                                  });
+                                                                } catch (e) {
+                                                                  if (!mounted) {
+                                                                    return;
+                                                                  }
+                                                                  ScaffoldMessenger.of(
+                                                                    context,
+                                                                  ).showSnackBar(
+                                                                    SnackBar(
+                                                                      content: Text(
+                                                                        '다운로드 중 오류: $e',
+                                                                      ),
+                                                                    ),
+                                                                  );
+                                                                } finally {
+                                                                  if (mounted) {
+                                                                    setState(() {
+                                                                      _photoDownloadWorking =
+                                                                          false;
+                                                                    });
+                                                                  }
+                                                                }
+                                                              },
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .download_rounded,
+                                                        ),
+                                                        label: Text(
+                                                          '선택 다운로드 (${_selectedPhotoIds.length})',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 13,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -614,7 +767,16 @@ class _AlbumSortDropdown extends StatelessWidget {
 class _PhotoCard extends StatelessWidget {
   final PhotoItem item;
   final VoidCallback onTap;
-  const _PhotoCard({required this.item, required this.onTap});
+  final VoidCallback? onLongPress;
+  final bool isSelectionMode;
+  final bool isSelected;
+  const _PhotoCard({
+    required this.item,
+    required this.onTap,
+    this.onLongPress,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -628,6 +790,7 @@ class _PhotoCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Stack(
           children: [
             ClipRRect(
@@ -645,6 +808,22 @@ class _PhotoCard extends StatelessWidget {
                 children: [if (item.favorite) const _FavoriteBadge()],
               ),
             ),
+            if (isSelectionMode)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Colors.black45,
+                  child: Icon(
+                    isSelected
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -992,6 +1171,28 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                         if (action == 'share') {
                           // AlbumDetailScreen으로 이동하지 않고 바로 공유 시트 표시
                           await _showAlbumShareSheet(context, albumId);
+                        } else if (action == 'download') {
+                          try {
+                            final count =
+                                await PhotoDownloadService.downloadAlbumToGallery(
+                                  albumId,
+                                );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  count > 0
+                                      ? '$count장의 사진을 갤러리에 저장했어요.'
+                                      : '다운로드 가능한 사진이 없습니다.',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('다운로드 중 오류: $e')),
+                            );
+                          }
                         } else if (action == 'fav') {
                           try {
                             await AlbumApi.favoriteAlbum(albumId);
@@ -1501,6 +1702,11 @@ class _AlbumQuickActions extends StatelessWidget {
                 leading: const Icon(Icons.share_outlined),
                 title: const Text('공유'),
                 onTap: () => Navigator.pop(context, 'share'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.download_rounded),
+                title: const Text('다운로드'),
+                onTap: () => Navigator.pop(context, 'download'),
               ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),

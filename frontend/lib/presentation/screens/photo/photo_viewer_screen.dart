@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'photo_detail_screen.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import 'photo_edit_screen.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/services/album_api.dart';
 import 'package:frontend/providers/user_provider.dart';
+import 'package:frontend/services/photo_download_service.dart';
 
 class PhotoViewerScreen extends StatefulWidget {
   final int photoId;
@@ -270,6 +272,39 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                   );
                                 },
                               ),
+                            // 단일 사진 다운로드 버튼
+                            IconButton(
+                              tooltip: '다운로드',
+                              icon: const Icon(
+                                Icons.download_rounded,
+                                color: Colors.white,
+                              ),
+                              onPressed: () async {
+                                try {
+                                  final success =
+                                      await PhotoDownloadService.downloadSinglePhotoToGallery(
+                                        widget.photoId,
+                                      );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        success
+                                            ? '사진을 갤러리에 저장했어요.'
+                                            : '다운로드에 실패했습니다.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('다운로드 중 오류가 발생했습니다: $e'),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
                             IconButton(
                               tooltip: widget.albumId != null
                                   ? '앨범에서 제거'

@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 import 'package:frontend/presentation/screens/album/album_members_screen.dart';
 import 'package:frontend/providers/user_provider.dart';
+import 'package:frontend/services/photo_download_service.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
@@ -643,21 +644,80 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: ElevatedButton.icon(
-                onPressed: _working
-                    ? null
-                    : () async {
-                        // 선택된 사진 삭제
-                        final toRemove = selectedSet.toList();
-                        await _removeSelected(toRemove);
-                        setState(() {
-                          _selected.clear();
-                          _isSelectionMode = false;
-                          _selectedNotifier.value = <int>{};
-                        });
-                      },
-                icon: const Icon(Icons.delete_outline),
-                label: Text('선택 사진 삭제 (${selectedSet.length})'),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () async {
+                              try {
+                                final ids = selectedSet.toList();
+                                final count =
+                                    await PhotoDownloadService.downloadPhotosToGallery(
+                                      ids,
+                                    );
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 32,
+                                    ),
+                                    content: Text(
+                                      count > 0
+                                          ? '$count장의 사진을 갤러리에 저장했어요.'
+                                          : '다운로드 가능한 사진이 없습니다.',
+                                    ),
+                                  ),
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 32,
+                                    ),
+                                    content: Text('다운로드 중 오류가 발생했습니다: $e'),
+                                  ),
+                                );
+                              }
+                            },
+                      icon: const Icon(Icons.download_rounded),
+                      label: Text(
+                        '선택 다운로드 (${selectedSet.length})',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                      ),
+                      onPressed: _working
+                          ? null
+                          : () async {
+                              // 선택된 사진 삭제
+                              final toRemove = selectedSet.toList();
+                              await _removeSelected(toRemove);
+                              setState(() {
+                                _selected.clear();
+                                _isSelectionMode = false;
+                                _selectedNotifier.value = <int>{};
+                              });
+                            },
+                      icon: const Icon(Icons.delete_outline),
+                      label: Text('선택 삭제 (${selectedSet.length})'),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -711,6 +771,43 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   backgroundColor: Colors.transparent,
                   builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
                 );
+                break;
+              case 'download_all':
+                try {
+                  final count =
+                      await PhotoDownloadService.downloadAlbumToGallery(
+                        widget.albumId,
+                      );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 32,
+                      ),
+                      content: Text(
+                        count > 0
+                            ? '$count장의 사진을 갤러리에 저장했어요.'
+                            : '다운로드 가능한 사진이 없습니다.',
+                      ),
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 32,
+                      ),
+                      content: Text('다운로드 중 오류가 발생했습니다: $e'),
+                    ),
+                  );
+                }
                 break;
               case 'members':
                 await Navigator.push(
@@ -772,6 +869,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               const PopupMenuItem(value: 'add', child: Text('사진 추가')),
             if (showEdit)
               const PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
+            // 전체 다운로드는 VIEWER 이상 멤버 모두 허용 (백엔드에서 권한 검증)
+            const PopupMenuItem(value: 'download_all', child: Text('전체 다운로드')),
             if (showMembers)
               const PopupMenuItem(value: 'members', child: Text('멤버 조회')),
             if (showDelete)
