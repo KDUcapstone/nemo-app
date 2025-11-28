@@ -21,7 +21,6 @@ import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 import com.nemo.backend.web.PageMetaDto;
 import com.nemo.backend.web.PagedResponse;
-import com.nemo.backend.domain.file.S3FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
@@ -32,11 +31,8 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.core.io.ByteArrayResource;
 
 import java.net.URI; // ✅ 추가
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -57,10 +53,6 @@ public class PhotoController {
     private final PhotoRepository photoRepository;
     private final AlbumRepository albumRepository;
     private final AlbumShareRepository albumShareRepository;
-    private final S3FileService fileService;   // ✅ 추가
-
-    @org.springframework.beans.factory.annotation.Value("${app.public-base-url:http://localhost:8080}")
-    private String publicBaseUrl;              // ✅ 추가
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -466,62 +458,28 @@ public class PhotoController {
         return ResponseEntity.ok(body);
     }
 
+    // ========================================================
     // 8) 단일 사진 다운로드  (GET /api/photos/{photoId}/download)
     //     - 사진 소유자이거나
     //     - 사진이 포함된 앨범의 멤버(OWNER / CO_OWNER / EDITOR / VIEWER)인 경우만 허용
-    @GetMapping(value = "/{photoId}/download", produces = MediaType.ALL_VALUE)
-    public ResponseEntity<?> downloadPhoto(
+    // ========================================================
+    @GetMapping("/{photoId}/download")
+    public ResponseEntity<Void> downloadPhoto(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long photoId
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
         Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
-                .orElseThrow(() -> new ApiException(
-                        ErrorCode.PHOTO_NOT_FOUND,
-                        "해당 사진을 찾을 수 없습니다.")
-                );
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
 
         if (!canDownloadPhoto(userId, photo)) {
-            throw new ApiException(
-                    ErrorCode.FORBIDDEN,
-                    "해당 사진을 다운로드할 권한이 없습니다."
-            );
+            throw new ApiException(ErrorCode.UNAUTHORIZED, "해당 사진을 다운로드할 권한이 없습니다.");
         }
 
-        String imageUrl = photo.getImageUrl();
-        if (imageUrl == null || imageUrl.isBlank()) {
-            throw new ApiException(
-                    ErrorCode.PHOTO_NOT_FOUND,
-                    "해당 사진의 원본 파일을 찾을 수 없습니다."
-            );
-        }
-
-        // ✅ 우리 서비스가 관리하는 /files/{key} 형태면 S3에서 직접 200으로 내려줌
-        String key = extractStorageKeyFromUrl(imageUrl);
-        if (key != null) {
-            S3FileService.FileObject obj = fileService.get(key);
-            byte[] bytes = obj.bytes();
-            String ct = (obj.contentType() == null || obj.contentType().isBlank())
-                    ? "application/octet-stream"
-                    : obj.contentType();
-
-            String filename = key.substring(key.lastIndexOf('/') + 1);
-            String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8)
-                    .replace("+", "%20");
-
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(ct))
-                    .contentLength(bytes.length)
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename*=UTF-8''" + encoded)
-                    .body(new ByteArrayResource(bytes));
-        }
-
-        // ⚠️ 외부 CDN(URL이 우리 publicBaseUrl이 아닌 경우)은 여전히 302로 우회
         HttpHeaders headers = new HttpHeaders();
-        headers.setLocation(URI.create(imageUrl));
-        return new ResponseEntity<>(headers, HttpStatus.FOUND);
+        headers.setLocation(URI.create(photo.getImageUrl()));
+        return new ResponseEntity<>(headers, HttpStatus.FOUND); // 302 리다이렉트
     }
 
     // ========================================================
@@ -535,11 +493,7 @@ public class PhotoController {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
         if (body == null || body.photoIdList() == null || body.photoIdList().isEmpty()) {
-            // ✅ 명세: INVALID_REQUEST
-            throw new ApiException(
-                    ErrorCode.INVALID_REQUEST,
-                    "photoIdList는 비어 있을 수 없습니다."
-            );
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "photoIdList는 비어 있을 수 없습니다.");
         }
 
         SelectedPhotosDownloadUrlsResponse resp =
@@ -547,7 +501,6 @@ public class PhotoController {
 
         return ResponseEntity.ok(resp);
     }
-
 
     // ========================================================
     // 내부 DTO & 유틸
@@ -689,32 +642,4 @@ public class PhotoController {
             return Collections.emptyList();
         }
     }
-
-    /**
-     * publicBaseUrl + "/files/{key}" 형태의 URL에서 S3 key만 추출
-     * 예: http://localhost:8080/files/albums/2025-11-27/xxx.webp
-     *  -> albums/2025-11-27/xxx.webp
-     */
-    private String extractStorageKeyFromUrl(String url) {
-        if (url == null || url.isBlank()) return null;
-
-        String base = publicBaseUrl;
-        if (base == null || base.isBlank()) return null;
-
-        // publicBaseUrl 뒤의 여분 슬래시 제거
-        base = base.replaceAll("/+$", "");
-
-        if (!url.startsWith(base)) {
-            // 우리 서비스에서 관리하는 URL이 아니면 S3 조회 대상 아님
-            return null;
-        }
-
-        String path = url.substring(base.length()); // "/files/...."
-        if (!path.startsWith("/files/")) {
-            return null;
-        }
-
-        return path.substring("/files/".length());  // "albums/2025-11-27/xxx.webp"
-    }
-
 }

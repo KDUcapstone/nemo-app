@@ -504,16 +504,10 @@ public class AlbumService {
     // 8) 앨범 전체 사진 다운로드 URL 조회
     public AlbumDownloadUrlsResponse getAlbumDownloadUrls(Long userId, Long albumId) {
         Album album = albumRepository.findById(albumId)
-                .orElseThrow(() -> new ApiException(
-                        ErrorCode.ALBUM_NOT_FOUND,
-                        "해당 앨범을 찾을 수 없습니다.")
-                );
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
 
         if (!canAccessAlbum(userId, album)) {
-            throw new ApiException(
-                    ErrorCode.FORBIDDEN,
-                    "해당 앨범의 사진을 다운로드할 권한이 없습니다."
-            );
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다.");
         }
 
         List<Photo> photos = (album.getPhotos() == null)
@@ -523,7 +517,7 @@ public class AlbumService {
                 .sorted(Comparator.comparing(Photo::getCreatedAt))
                 .toList();
 
-        int seq = 0;   // ✅ 명세: 0부터 시작
+        int seq = 1;
         List<AlbumPhotoDownloadUrlDto> photoDtos = new ArrayList<>();
 
         for (Photo p : photos) {
@@ -547,7 +541,6 @@ public class AlbumService {
                 .photos(photoDtos)
                 .build();
     }
-
 
     // 내부 유틸
     private String toPublicUrl(String key) {
