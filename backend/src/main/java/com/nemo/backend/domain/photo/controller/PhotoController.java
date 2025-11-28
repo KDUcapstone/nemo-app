@@ -4,9 +4,16 @@ package com.nemo.backend.domain.photo.controller;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nemo.backend.domain.auth.util.AuthExtractor;
+import com.nemo.backend.domain.album.entity.Album;
+import com.nemo.backend.domain.album.entity.AlbumShare;
+import com.nemo.backend.domain.album.repository.AlbumRepository;
+import com.nemo.backend.domain.album.repository.AlbumShareRepository;
+import com.nemo.backend.domain.photo.entity.Photo;
+import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.domain.photo.dto.PhotoListItemDto;
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 import com.nemo.backend.domain.photo.dto.PhotoUploadRequest;
+import com.nemo.backend.domain.photo.dto.SelectedPhotosDownloadUrlsResponse;
 import com.nemo.backend.domain.photo.service.PhotoService;
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.domain.user.repository.UserRepository;
@@ -25,6 +32,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI; // ✅ 추가
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -42,14 +50,14 @@ public class PhotoController {
     private final PhotoService photoService;
     private final AuthExtractor authExtractor;
     private final UserRepository userRepository;
+    private final PhotoRepository photoRepository;
+    private final AlbumRepository albumRepository;
+    private final AlbumShareRepository albumShareRepository;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
     // ========================================================
     // 0) QR 임시 등록 (미리보기용)  (POST /api/photos/qr-import)
-    //    - QR 문자열을 받아서 원본 이미지를 조회·저장하고
-    //      미리보기용 imageUrl + photoId 등을 반환
-    //    - 이후 PATCH /api/photos/{photoId}/details 로 메타데이터 확정
     // ========================================================
     @Operation(
             summary = "QR 임시 등록 (미리보기)",
@@ -70,17 +78,16 @@ public class PhotoController {
             throw new ApiException(ErrorCode.INVALID_ARGUMENT, "qrCode는 필수입니다.");
         }
 
-        // QR 기반으로만 임시 업로드 (이미지/태그/친구/메모는 아직 빈 상태)
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                body.qrCode(),   // qrCode 문자열
-                null,            // image (없음)
-                null,            // brand (임시 단계에서는 비움)
-                null,            // location
-                null,            // takenAt
-                null,            // tagListJson
-                null,            // friendIdListJson
-                null             // memo
+                body.qrCode(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
         );
 
         String isoTakenAt = (dto.getTakenAt() != null)
@@ -93,7 +100,7 @@ public class PhotoController {
                 isoTakenAt,
                 dto.getLocation(),
                 dto.getBrand(),
-                "DRAFT" // 프론트에서 임시 상태로 사용할 수 있도록 고정값
+                "DRAFT"
         );
 
         return ResponseEntity
@@ -104,7 +111,6 @@ public class PhotoController {
 
     // ========================================================
     // 1) QR 기반 사진 업로드  (POST /api/photos)
-    //    - 명세 기준: qrCode + image 둘 다 필수
     // ========================================================
     @Operation(
             summary = "QR 사진 업로드",
@@ -131,7 +137,6 @@ public class PhotoController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
-        // 명세: qrCode + image 둘 다 필수
         if (qrCode == null || qrCode.isBlank()) {
             throw new ApiException(
                     ErrorCode.INVALID_ARGUMENT,
@@ -148,7 +153,7 @@ public class PhotoController {
 
         PhotoUploadRequest req = new PhotoUploadRequest(
                 image,
-                qrCode, // DTO 필드명은 qrUrl이지만 실제로는 qrCode 문자열을 그대로 전달
+                qrCode,
                 qrCode,
                 (takenAt != null) ? takenAt.toString() : null,
                 location,
@@ -158,7 +163,7 @@ public class PhotoController {
 
         PhotoResponseDto dto = photoService.uploadHybrid(
                 userId,
-                req.qrUrl(),     // qrCode 문자열
+                req.qrUrl(),
                 req.image(),
                 brand,
                 location,
@@ -277,7 +282,7 @@ public class PhotoController {
     public ResponseEntity<PagedResponse<PhotoListItemDto>> list(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestParam(value = "favorite", required = false) Boolean favorite,
-            @RequestParam(value = "brand", required = false) String brand,   // ✅ 추가
+            @RequestParam(value = "brand", required = false) String brand,
             @RequestParam(value = "tag", required = false) String tag,
             @RequestParam(value = "sort", required = false, defaultValue = "takenAt,desc") String sortBy,
             @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
@@ -302,7 +307,6 @@ public class PhotoController {
 
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        // ✅ brand / tag 까지 전달
         var pageDto = photoService.list(userId, pageable, favorite, brand, tag);
         DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
@@ -350,8 +354,8 @@ public class PhotoController {
                         : null,
                 dto.getLocation(),
                 dto.getBrand(),
-                Collections.emptyList(),     // tagList – 아직 별도 테이블 미구현
-                Collections.emptyList(),     // friendList – 아직 미구현
+                Collections.emptyList(),
+                Collections.emptyList(),
                 dto.getMemo() != null ? dto.getMemo() : "",
                 dto.isFavorite(),
                 new OwnerDto(
@@ -408,7 +412,7 @@ public class PhotoController {
                 dto.getLocation(),
                 dto.getBrand(),
                 body.tagList() != null ? body.tagList() : Collections.emptyList(),
-                Collections.emptyList(), // friendList 실제 매핑은 추후 구현
+                Collections.emptyList(),
                 dto.getMemo() != null ? dto.getMemo() : "",
                 dto.isFavorite(),
                 new OwnerDto(
@@ -452,6 +456,50 @@ public class PhotoController {
         body.put("photoId", photoId);
         body.put("message", "사진이 성공적으로 삭제되었습니다.");
         return ResponseEntity.ok(body);
+    }
+
+    // ========================================================
+    // 8) 단일 사진 다운로드  (GET /api/photos/{photoId}/download)
+    //     - 사진 소유자이거나
+    //     - 사진이 포함된 앨범의 멤버(OWNER / CO_OWNER / EDITOR / VIEWER)인 경우만 허용
+    // ========================================================
+    @GetMapping("/{photoId}/download")
+    public ResponseEntity<Void> downloadPhoto(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long photoId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
+
+        if (!canDownloadPhoto(userId, photo)) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED, "해당 사진을 다운로드할 권한이 없습니다.");
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setLocation(URI.create(photo.getImageUrl()));
+        return new ResponseEntity<>(headers, HttpStatus.FOUND); // 302 리다이렉트
+    }
+
+    // ========================================================
+    // 9) 선택 사진 다운로드 URL 목록 조회 (POST /api/photos/download-urls)
+    // ========================================================
+    @PostMapping("/download-urls")
+    public ResponseEntity<SelectedPhotosDownloadUrlsResponse> getDownloadUrls(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestBody SelectedPhotosDownloadRequest body
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+
+        if (body == null || body.photoIdList() == null || body.photoIdList().isEmpty()) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "photoIdList는 비어 있을 수 없습니다.");
+        }
+
+        SelectedPhotosDownloadUrlsResponse resp =
+                photoService.getDownloadUrls(userId, body.photoIdList());
+
+        return ResponseEntity.ok(resp);
     }
 
     // ========================================================
@@ -519,6 +567,58 @@ public class PhotoController {
             List<Long> friendIdList,
             String memo
     ) {}
+
+    public static record SelectedPhotosDownloadRequest(
+            List<Long> photoIdList
+    ) {}
+
+    // === 권한/앨범 유틸 ===
+
+    /**
+     * 단일 사진 다운로드 권한 체크
+     * - 사진 소유자이거나
+     * - 사진이 포함된 앨범의 멤버(OWNER / CO_OWNER / EDITOR / VIEWER)이면 true
+     */
+    private boolean canDownloadPhoto(Long userId, Photo photo) {
+        if (photo.getUserId() != null && photo.getUserId().equals(userId)) {
+            return true;
+        }
+        Set<Long> accessiblePhotoIds = getAlbumPhotoIdsUserCanAccess(userId);
+        return accessiblePhotoIds.contains(photo.getId());
+    }
+
+    /**
+     * 현재 사용자(userId)가 멤버로 접근 가능한 모든 앨범에 포함된 사진 ID 집합
+     * - 내가 소유한 앨범
+     * - 공유받아서 수락한 앨범(Status.ACCEPTED, active=true)
+     */
+    private Set<Long> getAlbumPhotoIdsUserCanAccess(Long userId) {
+        Set<Long> ids = new HashSet<>();
+
+        // 내가 소유한 앨범
+        List<Album> myAlbums = albumRepository.findByUserId(userId);
+        for (Album album : myAlbums) {
+            if (album.getPhotos() == null) continue;
+            album.getPhotos().stream()
+                    .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                    .forEach(p -> ids.add(p.getId()));
+        }
+
+        // 공유받은 앨범 (ACCEPTED + active)
+        List<AlbumShare> shares =
+                albumShareRepository.findByUserIdAndStatusAndActiveTrue(userId, AlbumShare.Status.ACCEPTED);
+        for (AlbumShare share : shares) {
+            Album album = share.getAlbum();
+            if (album == null || album.getPhotos() == null) continue;
+            album.getPhotos().stream()
+                    .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                    .forEach(p -> ids.add(p.getId()));
+        }
+
+        return ids;
+    }
+
+    // === 기존 JSON 파서 유틸 ===
 
     private List<String> parseStringArray(String jsonArray) {
         if (jsonArray == null || jsonArray.isBlank()) return Collections.emptyList();
