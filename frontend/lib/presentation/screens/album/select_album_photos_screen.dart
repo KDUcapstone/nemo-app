@@ -16,6 +16,52 @@ class _SelectAlbumPhotosScreenState extends State<SelectAlbumPhotosScreen> {
   String? _brand;
   String _sort = 'takenAt,desc';
 
+  // PhotoProvider의 원래 필터 상태 저장
+  bool? _originalFavoriteOnly;
+  String? _originalBrandFilter;
+  String? _originalTagFilter;
+  String? _originalSort;
+  bool _filtersRestored = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // PhotoProvider의 현재 필터 상태 저장
+    final provider = context.read<PhotoProvider>();
+    _originalFavoriteOnly = provider.favoriteOnly;
+    _originalBrandFilter = provider.brandFilter;
+    _originalTagFilter = provider.tagFilter;
+    _originalSort = provider.sort;
+
+    // 필터를 초기화하고 모든 사진 로드
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final photoProvider = context.read<PhotoProvider>();
+      await photoProvider.resetAndLoad(
+        favorite: false,
+        tag: null,
+        brand: null,
+        sort: 'takenAt,desc',
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    // 원래 필터 상태 복원
+    if (!_filtersRestored && _originalFavoriteOnly != null) {
+      final provider = context.read<PhotoProvider>();
+      provider.resetAndLoad(
+        favorite: _originalFavoriteOnly,
+        tag: _originalTagFilter,
+        brand: _originalBrandFilter,
+        sort: _originalSort,
+      );
+      _filtersRestored = true;
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final all = context.watch<PhotoProvider>().items;
@@ -184,7 +230,6 @@ class _FilterSortSheetState extends State<_FilterSortSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final brands = <String?>['', '인생네컷', '포토그레이', '포토이즘'];
     return SafeArea(
       child: SingleChildScrollView(
         padding: EdgeInsets.only(
