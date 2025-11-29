@@ -334,25 +334,40 @@ class AlbumProvider extends ChangeNotifier {
       if (content.isEmpty) {
         _hasMore = false;
       } else {
-        // 중복 체크 추가
-        final existingIds = _albums.map((e) => e.albumId).toSet();
-        for (final m in content) {
-          final map = (m as Map).cast<String, dynamic>();
-          final albumId = map['albumId'] as int;
-          // 이미 존재하는 앨범은 건너뛰기
-          if (existingIds.contains(albumId)) continue;
-          _albums.add(
-            AlbumItem(
-              albumId: albumId,
-              title: (map['title'] ?? '') as String,
-              description: (map['description'] ?? '') as String,
-              coverPhotoUrl: map['coverPhotoUrl'] as String?,
-              photoCount: (map['photoCount'] as int?) ?? 0,
-              createdAt: (map['createdAt'] as String?) ?? '',
-              photoIdList: const [],
-            ),
-          );
+      // 중복 체크 추가
+      final existingIds = _albums.map((e) => e.albumId).toSet();
+      for (final m in content) {
+        final map = (m as Map).cast<String, dynamic>();
+        final albumId = map['albumId'] as int;
+        // 이미 존재하는 앨범은 건너뛰기
+        if (existingIds.contains(albumId)) continue;
+        
+        // favoriteOnly 필터가 켜져있을 때, 로컬 즐겨찾기 상태도 확인
+        if (_favoriteOnly && !_favoritedAlbumIds.contains(albumId)) {
+          continue; // 즐겨찾기하지 않은 앨범은 제외
         }
+        
+        _albums.add(
+          AlbumItem(
+            albumId: albumId,
+            title: (map['title'] ?? '') as String,
+            description: (map['description'] ?? '') as String,
+            coverPhotoUrl: map['coverPhotoUrl'] as String?,
+            photoCount: (map['photoCount'] as int?) ?? 0,
+            createdAt: (map['createdAt'] as String?) ?? '',
+            photoIdList: const [],
+          ),
+        );
+        // 백엔드 응답에 favorited 필드가 있으면 _favoritedAlbumIds 업데이트
+        if (map.containsKey('favorited')) {
+          final favorited = map['favorited'] as bool? ?? false;
+          if (favorited) {
+            _favoritedAlbumIds.add(albumId);
+          } else {
+            _favoritedAlbumIds.remove(albumId);
+          }
+        }
+      }
         if (content.length < _size) {
           _hasMore = false;
         } else {
