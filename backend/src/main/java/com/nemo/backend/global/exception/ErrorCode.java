@@ -11,6 +11,8 @@ public enum ErrorCode {
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "이메일 또는 비밀번호를 확인해주세요."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다."),
     USER_ALREADY_DELETED(HttpStatus.GONE, "USER_ALREADY_DELETED", "이미 탈퇴 처리된 사용자입니다."),
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다."),
+
 
     // ============================================================
     // 🔹 추가: JWT / RefreshToken (인증 명세 기준)
@@ -55,6 +57,8 @@ public enum ErrorCode {
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 파라미터가 잘못되었습니다."),
     INVALID_ARGUMENT(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "잘못된 입력입니다."),
     UPSTREAM_FAILED(HttpStatus.BAD_GATEWAY,  "UPSTREAM_FAILED", "원격 자산 추출 실패했습니다."),
+    PHOTO_LIMIT_EXCEEDED(HttpStatus.FORBIDDEN, "PHOTO_LIMIT_EXCEEDED", "저장 가능한 최대 사진 장수를 초과했습니다."),
+
 
     // 캘린더 타임라인 코드
     INVALID_QUERY(HttpStatus.BAD_REQUEST, "INVALID_QUERY", "year와 month 파라미터는 필수입니다.");

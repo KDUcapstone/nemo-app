@@ -31,7 +31,7 @@ app:
 
 
   s3:
-    bucket: nemo-s3-test
+    bucket: nemo-s3-prod
     region: ap-northeast-2
     endpoint: ""                    # AWS니까 endpoint 없음
     accessKey: ${AWS_ACCESS_KEY}
