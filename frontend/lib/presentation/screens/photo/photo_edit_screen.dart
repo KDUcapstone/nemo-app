@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:frontend/services/photo_api.dart';
 import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/providers/photo_provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:frontend/services/map_api.dart';
 
 class PhotoEditScreen extends StatefulWidget {
   final int photoId;
@@ -28,12 +30,27 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   bool _loadingFriends = false;
   List<Map<String, dynamic>> _friends = [];
   String _imageUrl = '';
+  // 브랜드 선택 옵션 (드롭다운 + 직접 입력)
+  final List<String> _brandOptions = const [
+    '직접 입력',
+    '인생네컷',
+    '포토이즘',
+    '하루필름',
+    '포토그레이',
+    '포토랩',
+  ];
+  String _selectedBrand = '직접 입력';
 
   @override
   void initState() {
     super.initState();
     _load();
     _loadFriends();
+    // 위치가 없는 경우, 현재 위치 기반 네이버 지도 데이터를 사용해 기본값 설정
+    // (브랜드 선택 시 자동 채움도 지원하지만, 편집 시에는 기존 값이 있으면 덮어쓰지 않음)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initDefaultLocationFromMap();
+    });
   }
 
   Future<void> _load() async {
@@ -46,6 +63,13 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       _brandCtrl.text = (res['brand'] as String?) ?? '';
       _tags = (res['tagList'] as List?)?.cast<String>() ?? [];
       _memoCtrl.text = (res['memo'] as String?) ?? '';
+      // 초기 브랜드를 옵션에 맞게 선택 상태로 설정
+      final currentBrand = _brandCtrl.text.trim();
+      if (currentBrand.isNotEmpty && _brandOptions.contains(currentBrand)) {
+        _selectedBrand = currentBrand;
+      } else {
+        _selectedBrand = '직접 입력';
+      }
 
       // 촬영일시 파싱
       final t = res['takenAt'] as String?;
@@ -95,6 +119,185 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     _memoCtrl.dispose();
     _tagCtrl.dispose();
     super.dispose();
+  }
+
+  /// 브랜드 선택 시, 해당 브랜드의 주변 지점 중 가장 가까운 곳을 위치로 자동 채움
+  /// - 이미 위치가 입력되어 있으면 건드리지 않음
+  /// - 권한 거부/실패 시 조용히 무시
+  Future<void> _updateLocationByBrand(String brand) async {
+    if (!mounted) return;
+    // 이미 사용자가 직접 위치를 입력해둔 경우는 덮어쓰지 않음
+    if (_locationCtrl.text.trim().isNotEmpty) return;
+
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+
+      // 현재 위치 기준으로 작은 뷰포트 생성 (약 수백 m 반경)
+      const delta = 0.01;
+      final lat = position.latitude;
+      final lng = position.longitude;
+
+      final response = await MapApi.getViewport(
+        neLat: lat + delta,
+        neLng: lng + delta,
+        swLat: lat - delta,
+        swLng: lng - delta,
+        zoom: 15,
+        cluster: true,
+        limit: 50,
+        brand: brand, // 선택한 브랜드로 필터링
+      );
+
+      if (!mounted) return;
+      final items = response['items'] as List<dynamic>? ?? const [];
+      if (items.isEmpty) return;
+
+      // 브랜드 이름이 포함된 포토부스만 필터링 (추가 안전장치)
+      final brandItems = items.where((item) {
+        if (item is! Map) return false;
+        final itemName = item['name'] as String? ?? '';
+        final itemBrand = item['brand'] as String? ?? '';
+        return itemName.contains(brand) || itemBrand == brand;
+      }).toList();
+
+      if (brandItems.isEmpty) return;
+
+      // distanceMeter가 있는 경우 가장 가까운 포토부스를 사용
+      dynamic best = brandItems.first;
+      for (final item in brandItems) {
+        if (item is Map &&
+            item['cluster'] != true &&
+            item.containsKey('distanceMeter') &&
+            best is Map &&
+            best.containsKey('distanceMeter')) {
+          if ((item['distanceMeter'] as num).toDouble() <
+              (best['distanceMeter'] as num).toDouble()) {
+            best = item;
+          }
+        }
+      }
+
+      if (best is! Map) return;
+      if (!mounted) return;
+      if (_locationCtrl.text.trim().isNotEmpty) return;
+
+      // 백엔드 응답 형식에 맞춰 brand/branch 조합 우선 사용
+      final bestBrand = best['brand'] as String?;
+      final branch = best['branch'] as String?;
+      final name = best['name'] as String?;
+      final roadAddress = best['roadAddress'] as String?;
+
+      String? locationText;
+      if (bestBrand != null && branch != null) {
+        locationText = '$bestBrand $branch'; // "인생네컷 홍대점" 형식
+      } else if (name != null && name.isNotEmpty) {
+        locationText = name; // 포토부스 이름
+      } else if (roadAddress != null && roadAddress.isNotEmpty) {
+        locationText = roadAddress; // 마지막 fallback
+      }
+
+      if (locationText != null && locationText.isNotEmpty) {
+        _locationCtrl.text = locationText;
+      }
+    } catch (_) {
+      // 위치/지도 로딩 실패 시 무시 (기본값 미설정 상태로 두기)
+    }
+  }
+
+  /// 현재 위치와 네이버 지도 API(MapApi.getViewport)를 사용해
+  /// 위치 기본값을 "현재 위치 근처 포토부스"로 설정
+  /// - 이미 위치가 입력되어 있으면 건드리지 않음
+  /// - 권한 거부/실패 시 조용히 무시
+  Future<void> _initDefaultLocationFromMap() async {
+    if (!mounted) return;
+    // 이미 위치가 채워져 있으면 그대로 둠
+    if (_locationCtrl.text.trim().isNotEmpty) return;
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+
+      // 현재 위치 기준으로 작은 뷰포트 생성 (약 수백 m 반경)
+      const delta = 0.01;
+      final lat = position.latitude;
+      final lng = position.longitude;
+
+      final response = await MapApi.getViewport(
+        neLat: lat + delta,
+        neLng: lng + delta,
+        swLat: lat - delta,
+        swLng: lng - delta,
+        zoom: 15,
+        cluster: true,
+        limit: 50,
+      );
+
+      if (!mounted) return;
+      final items = response['items'] as List<dynamic>? ?? const [];
+      if (items.isEmpty) return;
+
+      // distanceMeter가 있는 경우 가장 가까운 포토부스를 사용
+      dynamic best = items.first;
+      for (final item in items) {
+        if (item is Map &&
+            item['cluster'] != true &&
+            item.containsKey('distanceMeter') &&
+            best is Map &&
+            best.containsKey('distanceMeter')) {
+          if ((item['distanceMeter'] as num).toDouble() <
+              (best['distanceMeter'] as num).toDouble()) {
+            best = item;
+          }
+        }
+      }
+
+      if (best is! Map) return;
+      if (!mounted) return;
+      if (_locationCtrl.text.trim().isNotEmpty) return;
+
+      // 백엔드 응답 형식에 맞춰 brand/branch 조합 우선 사용
+      final brand = best['brand'] as String?;
+      final branch = best['branch'] as String?;
+      final name = best['name'] as String?;
+      final roadAddress = best['roadAddress'] as String?;
+
+      String? locationText;
+      if (brand != null && branch != null) {
+        locationText = '$brand $branch'; // "인생네컷 홍대점" 형식
+      } else if (name != null && name.isNotEmpty) {
+        locationText = name; // 포토부스 이름
+      } else if (roadAddress != null && roadAddress.isNotEmpty) {
+        locationText = roadAddress; // 마지막 fallback
+      }
+
+      if (locationText != null && locationText.isNotEmpty) {
+        _locationCtrl.text = locationText;
+      }
+    } catch (_) {
+      // 위치/지도 로딩 실패 시 무시 (기본값 미설정 상태로 두기)
+    }
   }
 
   Future<void> _selectTakenAt() async {
@@ -422,13 +625,50 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               const SizedBox(height: 16),
 
               // 브랜드
-              TextFormField(
-                controller: _brandCtrl,
-                decoration: const InputDecoration(
-                  labelText: '브랜드',
-                  hintText: '예: 인생네컷',
-                  border: OutlineInputBorder(),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _selectedBrand,
+                    decoration: const InputDecoration(
+                      labelText: '브랜드',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _brandOptions
+                        .map(
+                          (b) => DropdownMenuItem<String>(
+                            value: b,
+                            child: Text(b),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) async {
+                      if (value == null) return;
+                      setState(() {
+                        _selectedBrand = value;
+                        if (value != '직접 입력') {
+                          _brandCtrl.text = value;
+                        } else {
+                          _brandCtrl.clear();
+                        }
+                      });
+
+                      // 브랜드를 선택한 경우에만 위치 자동 채움
+                      if (value != '직접 입력') {
+                        await _updateLocationByBrand(value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _brandCtrl,
+                    enabled: _selectedBrand == '직접 입력',
+                    decoration: const InputDecoration(
+                      hintText: '직접 입력 (예: 인생네컷)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 
@@ -493,7 +733,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               if (_selectedFriendIds.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SizedBox(
-                  height: 60,
+                  height: 70,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _friends
@@ -512,8 +752,10 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                       final nick =
                           f['nickname'] as String? ?? '친구${f['userId']}';
                       return Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           CircleAvatar(
+                            radius: 20,
                             backgroundImage:
                                 avatarUrl != null && avatarUrl.isNotEmpty
                                 ? NetworkImage(avatarUrl)
@@ -528,6 +770,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                             child: Text(
                               nick,
                               overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                               style: const TextStyle(fontSize: 12),
                               textAlign: TextAlign.center,
                             ),

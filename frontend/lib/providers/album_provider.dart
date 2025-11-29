@@ -341,6 +341,12 @@ class AlbumProvider extends ChangeNotifier {
           final albumId = map['albumId'] as int;
           // 이미 존재하는 앨범은 건너뛰기
           if (existingIds.contains(albumId)) continue;
+
+          // favoriteOnly 필터가 켜져있을 때, 로컬 즐겨찾기 상태도 확인
+          if (_favoriteOnly && !_favoritedAlbumIds.contains(albumId)) {
+            continue; // 즐겨찾기하지 않은 앨범은 제외
+          }
+
           _albums.add(
             AlbumItem(
               albumId: albumId,
@@ -352,6 +358,15 @@ class AlbumProvider extends ChangeNotifier {
               photoIdList: const [],
             ),
           );
+          // 백엔드 응답에 favorited 필드가 있으면 _favoritedAlbumIds 업데이트
+          if (map.containsKey('favorited')) {
+            final favorited = map['favorited'] as bool? ?? false;
+            if (favorited) {
+              _favoritedAlbumIds.add(albumId);
+            } else {
+              _favoritedAlbumIds.remove(albumId);
+            }
+          }
         }
         if (content.length < _size) {
           _hasMore = false;

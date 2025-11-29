@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/album_api.dart';
+import 'package:provider/provider.dart';
+import 'package:frontend/providers/album_provider.dart';
 
 class AlbumMembersScreen extends StatefulWidget {
   final int albumId;
@@ -40,8 +42,10 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
               return 3;
           }
         }
-        return rank(a['role']?.toString() ?? 'VIEWER')
-            .compareTo(rank(b['role']?.toString() ?? 'VIEWER'));
+
+        return rank(
+          a['role']?.toString() ?? 'VIEWER',
+        ).compareTo(rank(b['role']?.toString() ?? 'VIEWER'));
       });
       setState(() {
         _members = list;
@@ -71,6 +75,8 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
         final idx = _members.indexWhere((e) => (e['userId'] as int) == userId);
         if (idx != -1) _members[idx] = {..._members[idx], 'role': role};
       });
+      // 권한 변경 시 AlbumProvider 캐시 업데이트 (UI 즉시 반영)
+      await context.read<AlbumProvider>().refreshSharedAlbums();
       _showTopToast('권한이 $role(으)로 변경되었습니다.');
     } catch (e) {
       if (!mounted) return;
@@ -78,8 +84,8 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
       final msg = s.contains('INVALID_ROLE')
           ? '잘못된 권한 값입니다.'
           : s.contains('FORBIDDEN')
-              ? '권한이 없습니다.'
-              : '변경 실패: $e';
+          ? '권한이 없습니다.'
+          : '변경 실패: $e';
       _showTopToast(msg);
     }
   }
@@ -91,14 +97,23 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
         title: const Text('멤버 제거'),
         content: const Text('해당 사용자를 앨범에서 제거하시겠습니까?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('제거')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('제거'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
     try {
-      await AlbumApi.removeShareMember(albumId: widget.albumId, targetUserId: userId);
+      await AlbumApi.removeShareMember(
+        albumId: widget.albumId,
+        targetUserId: userId,
+      );
       if (!mounted) return;
       setState(() {
         _members.removeWhere((e) => (e['userId'] as int) == userId);
@@ -110,8 +125,8 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
       final msg = s.contains('CANNOT_REMOVE_OWNER')
           ? '소유자는 제거할 수 없습니다.'
           : s.contains('FORBIDDEN')
-              ? '권한이 없습니다.'
-              : '제거 실패: $e';
+          ? '권한이 없습니다.'
+          : '제거 실패: $e';
       _showTopToast(msg);
     }
   }
@@ -140,7 +155,9 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
       ),
     );
     Overlay.of(context).insert(entry);
-    Future.delayed(const Duration(milliseconds: 1500)).then((_) => entry.remove());
+    Future.delayed(
+      const Duration(milliseconds: 1500),
+    ).then((_) => entry.remove());
   }
 
   @override
@@ -150,55 +167,60 @@ class _AlbumMembersScreenState extends State<AlbumMembersScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                    itemCount: _members.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final m = _members[i];
-                      final userId = m['userId'] as int;
-                      final nick = m['nickname']?.toString() ?? 'user$userId';
-                      final role = m['role']?.toString() ?? 'VIEWER';
-                      String roleKo;
-                      switch (role) {
-                        case 'OWNER':
-                          roleKo = '소유주';
-                          break;
-                        case 'CO_OWNER':
-                          roleKo = '공동 소유주';
-                          break;
-                        case 'EDITOR':
-                          roleKo = '수정 가능';
-                          break;
-                        default:
-                          roleKo = '보기 가능';
-                      }
-                      return ListTile(
-                        leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-                        title: Text(nick),
-                        subtitle: Text(roleKo),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: '권한 변경',
-                              onPressed: () => _changeRole(userId),
-                              icon: const Icon(Icons.admin_panel_settings),
-                            ),
-                            IconButton(
-                              tooltip: '제거',
-                              onPressed: () => _remove(userId),
-                              icon: const Icon(Icons.remove_circle, color: Colors.redAccent),
-                            ),
-                          ],
+          ? Center(child: Text(_error!))
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                itemCount: _members.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, i) {
+                  final m = _members[i];
+                  final userId = m['userId'] as int;
+                  final nick = m['nickname']?.toString() ?? 'user$userId';
+                  final role = m['role']?.toString() ?? 'VIEWER';
+                  String roleKo;
+                  switch (role) {
+                    case 'OWNER':
+                      roleKo = '소유주';
+                      break;
+                    case 'CO_OWNER':
+                      roleKo = '공동 소유주';
+                      break;
+                    case 'EDITOR':
+                      roleKo = '수정 가능';
+                      break;
+                    default:
+                      roleKo = '보기 가능';
+                  }
+                  return ListTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.person_outline),
+                    ),
+                    title: Text(nick),
+                    subtitle: Text(roleKo),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: '권한 변경',
+                          onPressed: () => _changeRole(userId),
+                          icon: const Icon(Icons.admin_panel_settings),
                         ),
-                      );
-                    },
-                  ),
-                ),
+                        IconButton(
+                          tooltip: '제거',
+                          onPressed: () => _remove(userId),
+                          icon: const Icon(
+                            Icons.remove_circle,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
     );
   }
 }
@@ -218,6 +240,7 @@ class _RoleSheet extends StatelessWidget {
         return '보기 가능';
     }
   }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -235,5 +258,3 @@ class _RoleSheet extends StatelessWidget {
     );
   }
 }
-
-

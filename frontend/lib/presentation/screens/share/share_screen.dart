@@ -568,8 +568,10 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                         } catch (e) {
                           final s = e.toString();
                           String msg;
-                          if (s.contains('NOT_FRIEND')) {
+                          if (s.contains('NOT_FRIEND') || s.contains('친구로 등록되지 않은')) {
                             msg = '친구로 등록되지 않은 사용자 포함';
+                          } else if (s.contains('이미 모두 공유된') || s.contains('이미 공유된')) {
+                            msg = '이미 공유된 친구가 포함되어 있습니다.';
                           } else if (s.contains('ALBUM_NOT_FOUND')) {
                             msg = '앨범을 찾을 수 없습니다';
                           } else if (s.contains('FORBIDDEN')) {
@@ -835,8 +837,10 @@ Future<void> _openFriendPickerAndShare(
   } catch (e) {
     final s = e.toString();
     String msg;
-    if (s.contains('NOT_FRIEND')) {
+    if (s.contains('NOT_FRIEND') || s.contains('친구로 등록되지 않은')) {
       msg = '친구로 등록되지 않은 사용자 포함';
+    } else if (s.contains('이미 모두 공유된') || s.contains('이미 공유된')) {
+      msg = '이미 공유된 친구가 포함되어 있습니다.';
     } else if (s.contains('ALBUM_NOT_FOUND')) {
       msg = '앨범을 찾을 수 없습니다';
     } else if (s.contains('FORBIDDEN')) {
@@ -1175,26 +1179,50 @@ class _CollaborativeAlbumSectionState
             );
             if (mounted) _loadAll(); // 돌아오면 카운트/목록 리프레시
           },
-          child: Row(
-            children: [
-              const _SectionTitle(title: '공유 앨범'),
-              const SizedBox(width: 8),
-              if (!_loading && _pendingCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '$_pendingCount',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.group_add,
+                  size: 18,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '공유 앨범 초대',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
-            ],
+                const SizedBox(width: 6),
+                if (!_loading && _pendingCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$_pendingCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),

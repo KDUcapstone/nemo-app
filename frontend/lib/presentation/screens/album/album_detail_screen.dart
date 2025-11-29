@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:frontend/presentation/screens/photo/photo_viewer_screen.dart';
 import 'package:frontend/presentation/screens/album/album_members_screen.dart';
 import 'package:frontend/providers/user_provider.dart';
+import 'package:frontend/services/photo_download_service.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final int albumId;
@@ -271,45 +272,61 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     },
                   ),
                   const SizedBox(height: 8),
-                  ...List.generate(friends.length, (idx) {
-                    final f = friends[idx];
-                    final id = f['userId'] as int;
-                    final nick = f['nickname'] as String? ?? '친구$id';
-                    final avatarUrl =
-                        (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
-                    final checked = selectedIds.contains(id);
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage:
-                            avatarUrl != null && avatarUrl.isNotEmpty
-                            ? NetworkImage(avatarUrl)
-                            : null,
-                        child: (avatarUrl == null || avatarUrl.isEmpty)
-                            ? const Icon(Icons.person_outline)
-                            : null,
-                      ),
-                      title: Text(nick),
-                      trailing: Checkbox(
-                        value: checked,
-                        onChanged: (v) {
-                          if (v == true) {
-                            selectedIds.add(id);
-                          } else {
-                            selectedIds.remove(id);
-                          }
-                          (ctx as Element).markNeedsBuild();
-                        },
-                      ),
-                      onTap: () {
-                        if (checked) {
-                          selectedIds.remove(id);
-                        } else {
-                          selectedIds.add(id);
-                        }
-                        (ctx as Element).markNeedsBuild();
-                      },
-                    );
-                  }),
+                  Builder(
+                    builder: (_) {
+                      // 이미 공유된 친구 ID 집합
+                      final sharedUserIds = shareTargets
+                          .map((s) => s['userId'] as int)
+                          .toSet();
+                      // 이미 공유된 친구를 제외한 친구 목록
+                      final availableFriends = friends.where((f) {
+                        final id = f['userId'] as int;
+                        return !sharedUserIds.contains(id);
+                      }).toList();
+                      return Column(
+                        children: List.generate(availableFriends.length, (idx) {
+                          final f = availableFriends[idx];
+                          final id = f['userId'] as int;
+                          final nick = f['nickname'] as String? ?? '친구$id';
+                          final avatarUrl =
+                              (f['avatarUrl'] ?? f['profileImageUrl'])
+                                  as String?;
+                          final checked = selectedIds.contains(id);
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage:
+                                  avatarUrl != null && avatarUrl.isNotEmpty
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: (avatarUrl == null || avatarUrl.isEmpty)
+                                  ? const Icon(Icons.person_outline)
+                                  : null,
+                            ),
+                            title: Text(nick),
+                            trailing: Checkbox(
+                              value: checked,
+                              onChanged: (v) {
+                                if (v == true) {
+                                  selectedIds.add(id);
+                                } else {
+                                  selectedIds.remove(id);
+                                }
+                                (ctx as Element).markNeedsBuild();
+                              },
+                            ),
+                            onTap: () {
+                              if (checked) {
+                                selectedIds.remove(id);
+                              } else {
+                                selectedIds.add(id);
+                              }
+                              (ctx as Element).markNeedsBuild();
+                            },
+                          );
+                        }),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -381,7 +398,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   String _mapShareError(String raw) {
-    if (raw.contains('NOT_FRIEND')) return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    if (raw.contains('NOT_FRIEND') || raw.contains('친구로 등록되지 않은')) {
+      return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    }
+    if (raw.contains('이미 모두 공유된') || raw.contains('이미 공유된')) {
+      return '이미 공유된 친구가 포함되어 있습니다.';
+    }
     if (raw.contains('FORBIDDEN')) return '이 앨범을 공유할 권한이 없습니다.';
     if (raw.contains('ALBUM_NOT_FOUND')) return '앨범을 찾을 수 없습니다.';
     return '공유 중 오류가 발생했습니다.';
@@ -468,6 +490,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   if (!mounted) return;
                   albumProvider.setFavorite(widget.albumId, true);
                 }
+                // 즐겨찾기 상태 변경 후 리스트 새로고침하여 즉시 반영
+                // favoriteOnly 필터가 켜져있을 때는 필수, 꺼져있을 때도 UI 업데이트를 위해 새로고침
+                await albumProvider.resetAndLoad();
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(
@@ -563,6 +588,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                               crossAxisCount: 3,
                               mainAxisSpacing: 8,
                               crossAxisSpacing: 8,
+                              childAspectRatio: 0.9, // 세로가 조금 더 긴 직사각형 비율
                             ),
                         cacheExtent: 500,
                         itemCount: photos.length,
@@ -643,21 +669,80 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: ElevatedButton.icon(
-                onPressed: _working
-                    ? null
-                    : () async {
-                        // 선택된 사진 삭제
-                        final toRemove = selectedSet.toList();
-                        await _removeSelected(toRemove);
-                        setState(() {
-                          _selected.clear();
-                          _isSelectionMode = false;
-                          _selectedNotifier.value = <int>{};
-                        });
-                      },
-                icon: const Icon(Icons.delete_outline),
-                label: Text('선택 사진 삭제 (${selectedSet.length})'),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () async {
+                              try {
+                                final ids = selectedSet.toList();
+                                final count =
+                                    await PhotoDownloadService.downloadPhotosToGallery(
+                                      ids,
+                                    );
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 32,
+                                    ),
+                                    content: Text(
+                                      count > 0
+                                          ? '$count장의 사진을 갤러리에 저장했어요.'
+                                          : '다운로드 가능한 사진이 없습니다.',
+                                    ),
+                                  ),
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 32,
+                                    ),
+                                    content: Text('다운로드 중 오류가 발생했습니다: $e'),
+                                  ),
+                                );
+                              }
+                            },
+                      icon: const Icon(Icons.download_rounded),
+                      label: Text(
+                        '선택 다운로드 (${selectedSet.length})',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                      ),
+                      onPressed: _working
+                          ? null
+                          : () async {
+                              // 선택된 사진 삭제
+                              final toRemove = selectedSet.toList();
+                              await _removeSelected(toRemove);
+                              setState(() {
+                                _selected.clear();
+                                _isSelectionMode = false;
+                                _selectedNotifier.value = <int>{};
+                              });
+                            },
+                      icon: const Icon(Icons.delete_outline),
+                      label: Text('선택 삭제 (${selectedSet.length})'),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -671,11 +756,14 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final role = _myRole ?? 'VIEWER';
     final isOwnerLike = role == 'OWNER' || role == 'CO_OWNER';
     final isEditor = role == 'EDITOR';
-    final showShare = isOwnerLike || isEditor;
+    final showShare =
+        role == 'OWNER' || role == 'CO_OWNER'; // OWNER와 CO_OWNER만 공유 가능
     final showAdd = isOwnerLike || isEditor;
     final showEdit = isOwnerLike || isEditor;
     final showDelete = isOwnerLike;
-    final showMembers = isOwnerLike;
+    final showMembers =
+        role == 'OWNER' ||
+        role == 'CO_OWNER'; // 명시적으로 OWNER와 CO_OWNER만 멤버 조회 가능
     return Row(
       children: [
         IconButton(
@@ -709,6 +797,43 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   builder: (_) => _AlbumEditSheet(albumId: widget.albumId),
                 );
                 break;
+              case 'download_all':
+                try {
+                  final count =
+                      await PhotoDownloadService.downloadAlbumToGallery(
+                        widget.albumId,
+                      );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 32,
+                      ),
+                      content: Text(
+                        count > 0
+                            ? '$count장의 사진을 갤러리에 저장했어요.'
+                            : '다운로드 가능한 사진이 없습니다.',
+                      ),
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 32,
+                      ),
+                      content: Text('다운로드 중 오류가 발생했습니다: $e'),
+                    ),
+                  );
+                }
+                break;
               case 'members':
                 await Navigator.push(
                   context,
@@ -716,6 +841,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     builder: (_) => AlbumMembersScreen(albumId: widget.albumId),
                   ),
                 );
+                // 멤버 화면에서 돌아온 후 role 재로드 (권한 변경 반영)
+                if (mounted) {
+                  await _loadMyRole();
+                }
                 break;
               case 'delete':
                 final ok = await showDialog<bool>(
@@ -750,9 +879,21 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     );
                   } catch (e) {
                     if (!mounted) return;
+                    final errorMsg = e.toString();
+                    String message;
+                    if (errorMsg.contains('FORBIDDEN') ||
+                        errorMsg.contains('권한이 없습니다') ||
+                        errorMsg.contains('삭제할 권한') ||
+                        errorMsg.contains('공유받은 앨범')) {
+                      message = '공유받은 앨범은 삭제할 수 없습니다.';
+                    } else if (errorMsg.contains('ALBUM_NOT_FOUND')) {
+                      message = '앨범을 찾을 수 없습니다.';
+                    } else {
+                      message = '삭제 실패: $e';
+                    }
                     ScaffoldMessenger.of(
                       context,
-                    ).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
+                    ).showSnackBar(SnackBar(content: Text(message)));
                   }
                 }
                 break;
@@ -765,6 +906,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               const PopupMenuItem(value: 'add', child: Text('사진 추가')),
             if (showEdit)
               const PopupMenuItem(value: 'edit', child: Text('앨범 수정')),
+            // 전체 다운로드는 VIEWER 이상 멤버 모두 허용 (백엔드에서 권한 검증)
+            const PopupMenuItem(value: 'download_all', child: Text('전체 다운로드')),
             if (showMembers)
               const PopupMenuItem(value: 'members', child: Text('멤버 조회')),
             if (showDelete)
@@ -926,6 +1069,8 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                                   crossAxisCount: 3,
                                                   mainAxisSpacing: 8,
                                                   crossAxisSpacing: 8,
+                                                  childAspectRatio:
+                                                      0.9, // 세로가 조금 더 긴 직사각형 비율
                                                 ),
                                             itemCount: photos.length,
                                             itemBuilder: (_, i) {
@@ -988,6 +1133,7 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                               : () async {
                                   setState(() => _submitting = true);
                                   try {
+                                    // 제목/설명 수정 (대표사진 제외)
                                     await AlbumApi.updateAlbum(
                                       albumId: widget.albumId,
                                       title: _titleCtrl.text.trim().isEmpty
@@ -996,9 +1142,33 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                       description: _descCtrl.text.trim().isEmpty
                                           ? null
                                           : _descCtrl.text.trim(),
-                                      coverPhotoId: _coverId,
+                                      // coverPhotoId 제거 - 대표사진은 별도 API 사용
                                     );
+
+                                    // 대표사진 수정 (명세서에 따른 별도 API 호출)
+                                    if (_coverId != null) {
+                                      final thumbnailRes =
+                                          await AlbumApi.setThumbnail(
+                                            albumId: widget.albumId,
+                                            photoId: _coverId,
+                                          );
+
+                                      // 응답에서 thumbnailUrl 가져오기
+                                      final thumbnailUrl =
+                                          thumbnailRes['thumbnailUrl']
+                                              as String?;
+                                      if (thumbnailUrl != null) {
+                                        context
+                                            .read<AlbumProvider>()
+                                            .updateCoverUrl(
+                                              widget.albumId,
+                                              thumbnailUrl,
+                                            );
+                                      }
+                                    }
+
                                     if (!mounted) return;
+
                                     // 목록 카드 즉시 반영
                                     context.read<AlbumProvider>().updateMeta(
                                       albumId: widget.albumId,
@@ -1009,18 +1179,12 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                           ? null
                                           : _descCtrl.text.trim(),
                                     );
-                                    if (_titleCtrl.text.trim().isNotEmpty ||
-                                        _descCtrl.text.trim().isNotEmpty) {
-                                      // 간단히 닫고 상위에서 새로고침은 유지
-                                    }
-                                    if (_coverUrl != null) {
-                                      context
-                                          .read<AlbumProvider>()
-                                          .updateCoverUrl(
-                                            widget.albumId,
-                                            _coverUrl,
-                                          );
-                                    }
+
+                                    // 앨범 목록 새로고침 (다른 화면 반영)
+                                    await context
+                                        .read<AlbumProvider>()
+                                        .resetAndLoad();
+
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text('앨범 정보가 수정되었습니다.'),
@@ -1109,7 +1273,7 @@ class _PhotoGridItemState extends State<_PhotoGridItem> {
         children: [
           Image.network(
             widget.photo.imageUrl,
-            fit: BoxFit.contain,
+            fit: BoxFit.cover, // 셀을 꽉 채우도록 변경
             alignment: Alignment.center,
             cacheWidth: 200,
             cacheHeight: 200,

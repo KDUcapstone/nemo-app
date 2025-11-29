@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'photo_detail_screen.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,8 @@ import 'package:frontend/services/photo_api.dart';
 import 'photo_edit_screen.dart';
 import 'package:frontend/providers/album_provider.dart';
 import 'package:frontend/services/album_api.dart';
+import 'package:frontend/providers/user_provider.dart';
+import 'package:frontend/services/photo_download_service.dart';
 
 class PhotoViewerScreen extends StatefulWidget {
   final int photoId;
@@ -26,11 +29,81 @@ class PhotoViewerScreen extends StatefulWidget {
 
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   bool _showUI = true;
+  String? _myRole; // 앨범에서 진입한 경우 내 role 저장
 
   void _toggleUI() {
     setState(() {
       _showUI = !_showUI;
     });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 앨범에서 진입한 경우 role 확인
+    if (widget.albumId != null) {
+      _loadMyRole();
+    }
+  }
+
+  Future<void> _loadMyRole() async {
+    if (widget.albumId == null) return;
+    try {
+      final albumProvider = context.read<AlbumProvider>();
+      // 공유 앨범이 아니면 OWNER로 간주
+      if (!albumProvider.isShared(widget.albumId!)) {
+        if (mounted) {
+          setState(() {
+            _myRole = 'OWNER';
+          });
+        }
+        return;
+      }
+      // 공유 앨범인 경우 Provider에 저장된 role 확인
+      final cachedRole = albumProvider.myRoleOf(widget.albumId!);
+      if (cachedRole != null && cachedRole.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _myRole = cachedRole.toUpperCase();
+          });
+        }
+        return;
+      }
+      // Provider에 없으면 API로 조회
+      final me = context.read<UserProvider>().userId;
+      final members = await AlbumApi.getShareMembers(widget.albumId!);
+      String? role;
+      if (me != null) {
+        final mine = members.cast<Map<String, dynamic>?>().firstWhere(
+          (m) => m != null && m['userId'] == me,
+          orElse: () => null,
+        );
+        if (mine != null && mine['role'] != null) {
+          role = (mine['role'] as String).toUpperCase();
+        }
+      }
+      role ??= 'VIEWER';
+      if (mounted) {
+        setState(() {
+          _myRole = role;
+        });
+      }
+    } catch (e) {
+      // 에러 발생 시 기본값으로 VIEWER 설정
+      if (mounted) {
+        setState(() {
+          _myRole = 'VIEWER';
+        });
+      }
+    }
+  }
+
+  // 편집 가능 여부 확인
+  bool get _canEdit {
+    // 앨범에서 진입하지 않은 경우 (일반 사진 목록에서 진입) 편집 가능
+    if (widget.albumId == null) return true;
+    // 앨범에서 진입한 경우 role이 OWNER인지 확인
+    return _myRole == 'OWNER';
   }
 
   @override
@@ -120,13 +193,17 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                 children: [
                                   // 테두리용 검은색 하트 (약간 크게)
                                   Icon(
-                                    isFav ? Icons.favorite : Icons.favorite_border,
+                                    isFav
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
                                     color: Colors.black.withOpacity(0.5),
                                     size: 26,
                                   ),
                                   // 앞에 배치할 흰색 하트
                                   Icon(
-                                    isFav ? Icons.favorite : Icons.favorite_border,
+                                    isFav
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
                                     color: Colors.white,
                                     size: 24,
                                   ),
@@ -135,15 +212,20 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                               onPressed: () async {
                                 try {
                                   final api = PhotoApi();
-                                  final response = await api.toggleFavorite(widget.photoId);
+                                  final response = await api.toggleFavorite(
+                                    widget.photoId,
+                                  );
                                   if (!context.mounted) return;
                                   // API 명세서: { photoId, isFavorite, message }
-                                  final isFavorite = response['isFavorite'] as bool? ?? false;
-                                  context.read<PhotoProvider>().updateFromResponse({
-                                    'photoId': widget.photoId,
-                                    'favorite': isFavorite,
-                                    'isFavorite': isFavorite,
-                                  });
+                                  final isFavorite =
+                                      response['isFavorite'] as bool? ?? false;
+                                  context
+                                      .read<PhotoProvider>()
+                                      .updateFromResponse({
+                                        'photoId': widget.photoId,
+                                        'favorite': isFavorite,
+                                        'isFavorite': isFavorite,
+                                      });
                                   // 성공 시 토스트 메시지 제거
                                 } catch (e) {
                                   if (context.mounted) {
@@ -171,21 +253,62 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                 );
                               },
                             ),
+                            // 공유 앨범에서 소유자가 아닌 경우 편집 버튼 숨김
+                            if (_canEdit)
+                              IconButton(
+                                tooltip: '상세 편집',
+                                icon: const Icon(
+                                  Icons.edit,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PhotoEditScreen(
+                                        photoId: widget.photoId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            // 단일 사진 다운로드 버튼
                             IconButton(
-                              tooltip: '상세 편집',
-                              icon: const Icon(Icons.edit, color: Colors.white),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        PhotoEditScreen(photoId: widget.photoId),
-                                  ),
-                                );
+                              tooltip: '다운로드',
+                              icon: const Icon(
+                                Icons.download_rounded,
+                                color: Colors.white,
+                              ),
+                              onPressed: () async {
+                                try {
+                                  final success =
+                                      await PhotoDownloadService.downloadSinglePhotoToGallery(
+                                        widget.photoId,
+                                      );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        success
+                                            ? '사진을 갤러리에 저장했어요.'
+                                            : '다운로드에 실패했습니다.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('다운로드 중 오류가 발생했습니다: $e'),
+                                    ),
+                                  );
+                                }
                               },
                             ),
                             IconButton(
-                              tooltip: widget.albumId != null ? '앨범에서 제거' : '삭제',
+                              tooltip: widget.albumId != null
+                                  ? '앨범에서 제거'
+                                  : '삭제',
                               icon: const Icon(
                                 Icons.delete_outline,
                                 color: Colors.white,
@@ -195,7 +318,9 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                   context: context,
                                   builder: (_) => AlertDialog(
                                     title: Text(
-                                      widget.albumId != null ? '앨범에서 제거' : '사진 삭제',
+                                      widget.albumId != null
+                                          ? '앨범에서 제거'
+                                          : '사진 삭제',
                                     ),
                                     content: Text(
                                       widget.albumId != null
@@ -211,7 +336,9 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.pop(context, true),
-                                        child: Text(widget.albumId != null ? '제거' : '삭제'),
+                                        child: Text(
+                                          widget.albumId != null ? '제거' : '삭제',
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -228,10 +355,11 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                       if (!context.mounted) return;
                                       // 앨범 상태만 수정
                                       // ignore: use_build_context_synchronously
-                                      context.read<AlbumProvider>().removePhotos(
-                                        widget.albumId!,
-                                        [widget.photoId],
-                                      );
+                                      context
+                                          .read<AlbumProvider>()
+                                          .removePhotos(widget.albumId!, [
+                                            widget.photoId,
+                                          ]);
                                     } else {
                                       final api = PhotoApi();
                                       await api.deletePhoto(widget.photoId);
@@ -252,7 +380,9 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                     );
                                   } catch (e) {
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(content: Text('실패: $e')),
                                       );
                                     }

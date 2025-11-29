@@ -51,7 +51,7 @@ class LoginScreen extends StatelessWidget {
                         );
                       },
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 32),
                     Text(
                       '네컷 모아',
                       textAlign: TextAlign.center,
@@ -60,7 +60,7 @@ class LoginScreen extends StatelessWidget {
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     _AnimatedPrimaryButton(
                       text: '이메일로 시작하기',
                       gradientColors: const [
@@ -69,7 +69,7 @@ class LoginScreen extends StatelessWidget {
                       ],
                       onTap: () => _showEmailLoginSheet(context),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                     SocialLoginButtons(
                       onKakaoTap: () {
                         // TODO: 카카오 로그인/회원가입 통합 플로우
@@ -78,18 +78,7 @@ class LoginScreen extends StatelessWidget {
                         // TODO: 구글 로그인/회원가입 통합 플로우
                       },
                     ),
-                    const SizedBox(height: 24),
-                    // 임시: 앱 메인 쉘로 진입 (하단 네비 포함)
-                    _AnimatedPrimaryButton(
-                      text: '앱 들어가기 (임시)',
-                      gradientColors: const [Colors.orange, Colors.deepOrange],
-                      onTap: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (_) => const MainShell()),
-                        );
-                      },
-                    ),
+                    // TODO: 소셜 로그인 연동 후, 이메일/소셜 로그인 성공 시에만 메인으로 진입
                   ],
                 ),
               ),
