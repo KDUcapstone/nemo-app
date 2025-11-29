@@ -2,6 +2,7 @@
 package com.nemo.backend.global.exception;
 
 import com.nemo.backend.domain.photo.service.*;
+import com.nemo.backend.domain.storage.exception.PhotoLimitExceededException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.http.MediaType;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -116,5 +118,21 @@ public class GlobalExceptionHandler {
         log.error("[UNEXPECTED] {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).contentType(JSON_UTF8)
                 .body(body("INTERNAL_ERROR", "서버 오류가 발생했습니다."));
+    }
+
+    // ===== 저장 한도 초과 (PHOTO_LIMIT_EXCEEDED) =====
+    @ExceptionHandler(PhotoLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> photoLimit(PhotoLimitExceededException ex) {
+        Map<String, Object> base = new HashMap<>(body(
+                ErrorCode.PHOTO_LIMIT_EXCEEDED.getCode(),
+                ex.getMessage()
+        ));
+        base.put("maxPhotos", ex.getMaxPhotos());
+        base.put("usedPhotos", ex.getUsedPhotos());
+
+        return ResponseEntity
+                .status(ErrorCode.PHOTO_LIMIT_EXCEEDED.getStatus())
+                .contentType(JSON_UTF8)
+                .body(base);
     }
 }
