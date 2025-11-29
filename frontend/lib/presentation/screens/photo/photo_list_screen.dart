@@ -1143,16 +1143,18 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
           final coverPhotoUrl = a['coverPhotoUrl'] as String?;
           final photoCount = (a['photoCount'] as int?) ?? 0;
           final scale = _pressedIndex == i ? 0.96 : 1.0;
-          
+
           // AlbumProvider에서 즐겨찾기 및 공유 상태 가져오기
           final albumProvider = context.read<AlbumProvider>();
-          final isFavorited = albumProvider.isFavorited(albumId) || 
-                             (a['favorited'] as bool?) == true;
+          final isFavorited =
+              albumProvider.isFavorited(albumId) ||
+              (a['favorited'] as bool?) == true;
           // 공유 표시: 공유받은 앨범(role != OWNER) 또는 소유자가 공유한 앨범(isShared)
           final role = (a['role'] as String?)?.toUpperCase();
-          final isShared = (role != null && role != 'OWNER') || 
-                          albumProvider.isShared(albumId);
-          
+          final isShared =
+              (role != null && role != 'OWNER') ||
+              albumProvider.isShared(albumId);
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1297,7 +1299,7 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                               if (!mounted) return;
                               final errorMsg = e.toString();
                               String message;
-                              if (errorMsg.contains('FORBIDDEN') || 
+                              if (errorMsg.contains('FORBIDDEN') ||
                                   errorMsg.contains('권한이 없습니다') ||
                                   errorMsg.contains('삭제할 권한') ||
                                   errorMsg.contains('공유받은 앨범')) {
@@ -1307,9 +1309,9 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                               } else {
                                 message = '삭제 실패: $e';
                               }
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(message)),
-                              );
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text(message)));
                             }
                           }
                         }
@@ -1562,7 +1564,8 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                           final id = f['userId'] as int;
                           final nick = f['nickname'] as String? ?? '친구$id';
                           final avatarUrl =
-                              (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
+                              (f['avatarUrl'] ?? f['profileImageUrl'])
+                                  as String?;
                           final checked = selectedIds.contains(id);
                           final role = perUserRoles[id] ?? defaultRole;
                           return ListTile(
@@ -1626,7 +1629,8 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                 perUserRoles.remove(id);
                               } else {
                                 selectedIds.add(id);
-                                perUserRoles[id] = perUserRoles[id] ?? defaultRole;
+                                perUserRoles[id] =
+                                    perUserRoles[id] ?? defaultRole;
                               }
                               (ctx as Element).markNeedsBuild();
                             },
