@@ -568,8 +568,10 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                         } catch (e) {
                           final s = e.toString();
                           String msg;
-                          if (s.contains('NOT_FRIEND')) {
+                          if (s.contains('NOT_FRIEND') || s.contains('친구로 등록되지 않은')) {
                             msg = '친구로 등록되지 않은 사용자 포함';
+                          } else if (s.contains('이미 모두 공유된') || s.contains('이미 공유된')) {
+                            msg = '이미 공유된 친구가 포함되어 있습니다.';
                           } else if (s.contains('ALBUM_NOT_FOUND')) {
                             msg = '앨범을 찾을 수 없습니다';
                           } else if (s.contains('FORBIDDEN')) {
@@ -835,8 +837,10 @@ Future<void> _openFriendPickerAndShare(
   } catch (e) {
     final s = e.toString();
     String msg;
-    if (s.contains('NOT_FRIEND')) {
+    if (s.contains('NOT_FRIEND') || s.contains('친구로 등록되지 않은')) {
       msg = '친구로 등록되지 않은 사용자 포함';
+    } else if (s.contains('이미 모두 공유된') || s.contains('이미 공유된')) {
+      msg = '이미 공유된 친구가 포함되어 있습니다.';
     } else if (s.contains('ALBUM_NOT_FOUND')) {
       msg = '앨범을 찾을 수 없습니다';
     } else if (s.contains('FORBIDDEN')) {

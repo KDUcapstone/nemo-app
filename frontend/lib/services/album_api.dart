@@ -674,7 +674,20 @@ class AlbumApi {
     if (res.statusCode == 204) {
       return {'albumId': albumId, 'message': '앨범이 성공적으로 삭제되었습니다.'};
     }
-    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 403) {
+      // 백엔드 응답 메시지 파싱
+      try {
+        final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+        final message = body['message'] as String?;
+        if (message != null && message.isNotEmpty) {
+          throw Exception(message);
+        }
+      } catch (e) {
+        // 이미 Exception이면 그대로 던지고, 아니면 기본 메시지
+        if (e is Exception) rethrow;
+      }
+      throw Exception('공유받은 앨범은 삭제할 수 없습니다.');
+    }
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to delete album (${res.statusCode})');
   }
@@ -707,7 +720,20 @@ class AlbumApi {
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
-    if (res.statusCode == 400) throw Exception('NOT_FRIEND');
+    if (res.statusCode == 400) {
+      // 백엔드 응답 메시지 파싱
+      try {
+        final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+        final message = body['message'] as String?;
+        if (message != null && message.isNotEmpty) {
+          throw Exception(message);
+        }
+      } catch (e) {
+        // 이미 Exception이면 그대로 던지고, 아니면 기본 메시지
+        if (e is Exception) rethrow;
+      }
+      throw Exception('NOT_FRIEND');
+    }
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to share album (${res.statusCode})');

@@ -18,6 +18,7 @@ import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart
 import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
 import 'package:frontend/widgets/notification_badge_icon.dart';
 import 'package:frontend/services/photo_download_service.dart';
+import 'package:frontend/providers/album_provider.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({super.key});
@@ -1034,6 +1035,12 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
         // 공유 앨범 수락 직후 반영을 위해 짧은 대기
         await Future.delayed(const Duration(milliseconds: 100));
         if (!mounted) return;
+        // AlbumProvider의 공유 앨범 정보 새로고침 (소유자가 공유한 앨범 포함)
+        try {
+          await context.read<AlbumProvider>().refreshSharedAlbums();
+        } catch (_) {
+          // 무시
+        }
       }
       final res = await AlbumApi.getAlbums(
         sort: widget.sort,
@@ -1136,6 +1143,16 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
           final coverPhotoUrl = a['coverPhotoUrl'] as String?;
           final photoCount = (a['photoCount'] as int?) ?? 0;
           final scale = _pressedIndex == i ? 0.96 : 1.0;
+          
+          // AlbumProvider에서 즐겨찾기 및 공유 상태 가져오기
+          final albumProvider = context.read<AlbumProvider>();
+          final isFavorited = albumProvider.isFavorited(albumId) || 
+                             (a['favorited'] as bool?) == true;
+          // 공유 표시: 공유받은 앨범(role != OWNER) 또는 소유자가 공유한 앨범(isShared)
+          final role = (a['role'] as String?)?.toUpperCase();
+          final isShared = (role != null && role != 'OWNER') || 
+                          albumProvider.isShared(albumId);
+          
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1278,8 +1295,20 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                               );
                             } catch (e) {
                               if (!mounted) return;
+                              final errorMsg = e.toString();
+                              String message;
+                              if (errorMsg.contains('FORBIDDEN') || 
+                                  errorMsg.contains('권한이 없습니다') ||
+                                  errorMsg.contains('삭제할 권한') ||
+                                  errorMsg.contains('공유받은 앨범')) {
+                                message = '공유받은 앨범은 삭제할 수 없습니다.';
+                              } else if (errorMsg.contains('ALBUM_NOT_FOUND')) {
+                                message = '앨범을 찾을 수 없습니다.';
+                              } else {
+                                message = '삭제 실패: $e';
+                              }
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('삭제 실패: $e')),
+                                SnackBar(content: Text(message)),
                               );
                             }
                           }
@@ -1301,7 +1330,8 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                     )
                                   : const ColoredBox(color: Color(0xFFE0E0E0)),
                             ),
-                            if ((a['favorited'] as bool?) == true)
+                            // 즐겨찾기 표시 - AlbumProvider 상태 사용
+                            if (isFavorited)
                               const Positioned(
                                 right: 6,
                                 top: 6,
@@ -1311,8 +1341,8 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                                   color: Colors.white,
                                 ),
                               ),
-                            if ((a['role'] as String?) != null &&
-                                (a['role'] as String).toUpperCase() != 'OWNER')
+                            // 공유 표시 - AlbumProvider 상태 사용 (소유자가 공유한 앨범도 포함)
+                            if (isShared)
                               const Positioned(
                                 left: 6,
                                 top: 6,
@@ -1515,81 +1545,96 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
                     },
                   ),
                   const SizedBox(height: 8),
-                  ...List.generate(friends.length, (idx) {
-                    final f = friends[idx];
-                    final id = f['userId'] as int;
-                    final nick = f['nickname'] as String? ?? '친구$id';
-                    final avatarUrl =
-                        (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
-                    final checked = selectedIds.contains(id);
-                    final role = perUserRoles[id] ?? defaultRole;
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage:
-                            avatarUrl != null && avatarUrl.isNotEmpty
-                            ? NetworkImage(avatarUrl)
-                            : null,
-                        child: (avatarUrl == null || avatarUrl.isEmpty)
-                            ? const Icon(Icons.person_outline)
-                            : null,
-                      ),
-                      title: Text(nick),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          DropdownButton<String>(
-                            value: role,
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'VIEWER',
-                                child: Text('보기 가능'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'EDITOR',
-                                child: Text('수정 가능'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'CO_OWNER',
-                                child: Text('공동 소유주'),
-                              ),
-                            ],
-                            onChanged: checked
-                                ? (v) {
-                                    if (v == null) return;
-                                    perUserRoles[id] = v;
+                  Builder(
+                    builder: (_) {
+                      // 이미 공유된 친구 ID 집합
+                      final sharedUserIds = shareTargets
+                          .map((s) => s['userId'] as int)
+                          .toSet();
+                      // 이미 공유된 친구를 제외한 친구 목록
+                      final availableFriends = friends.where((f) {
+                        final id = f['userId'] as int;
+                        return !sharedUserIds.contains(id);
+                      }).toList();
+                      return Column(
+                        children: List.generate(availableFriends.length, (idx) {
+                          final f = availableFriends[idx];
+                          final id = f['userId'] as int;
+                          final nick = f['nickname'] as String? ?? '친구$id';
+                          final avatarUrl =
+                              (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
+                          final checked = selectedIds.contains(id);
+                          final role = perUserRoles[id] ?? defaultRole;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage:
+                                  avatarUrl != null && avatarUrl.isNotEmpty
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: (avatarUrl == null || avatarUrl.isEmpty)
+                                  ? const Icon(Icons.person_outline)
+                                  : null,
+                            ),
+                            title: Text(nick),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                DropdownButton<String>(
+                                  value: role,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'VIEWER',
+                                      child: Text('보기 가능'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'EDITOR',
+                                      child: Text('수정 가능'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'CO_OWNER',
+                                      child: Text('공동 소유주'),
+                                    ),
+                                  ],
+                                  onChanged: checked
+                                      ? (v) {
+                                          if (v == null) return;
+                                          perUserRoles[id] = v;
+                                          (ctx as Element).markNeedsBuild();
+                                        }
+                                      : null,
+                                ),
+                                const SizedBox(width: 8),
+                                Checkbox(
+                                  value: checked,
+                                  onChanged: (v) {
+                                    if (v == true) {
+                                      selectedIds.add(id);
+                                      perUserRoles[id] =
+                                          perUserRoles[id] ?? defaultRole;
+                                    } else {
+                                      selectedIds.remove(id);
+                                      perUserRoles.remove(id);
+                                    }
                                     (ctx as Element).markNeedsBuild();
-                                  }
-                                : null,
-                          ),
-                          const SizedBox(width: 8),
-                          Checkbox(
-                            value: checked,
-                            onChanged: (v) {
-                              if (v == true) {
-                                selectedIds.add(id);
-                                perUserRoles[id] =
-                                    perUserRoles[id] ?? defaultRole;
-                              } else {
+                                  },
+                                ),
+                              ],
+                            ),
+                            onTap: () {
+                              if (checked) {
                                 selectedIds.remove(id);
                                 perUserRoles.remove(id);
+                              } else {
+                                selectedIds.add(id);
+                                perUserRoles[id] = perUserRoles[id] ?? defaultRole;
                               }
                               (ctx as Element).markNeedsBuild();
                             },
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        if (checked) {
-                          selectedIds.remove(id);
-                          perUserRoles.remove(id);
-                        } else {
-                          selectedIds.add(id);
-                          perUserRoles[id] = perUserRoles[id] ?? defaultRole;
-                        }
-                        (ctx as Element).markNeedsBuild();
-                      },
-                    );
-                  }),
+                          );
+                        }),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -1663,7 +1708,12 @@ class _AlbumListGridState extends State<_AlbumListGrid> {
   }
 
   String _mapShareError(String raw) {
-    if (raw.contains('NOT_FRIEND')) return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    if (raw.contains('NOT_FRIEND') || raw.contains('친구로 등록되지 않은')) {
+      return '친구로 등록되지 않은 사용자가 포함되어 있습니다.';
+    }
+    if (raw.contains('이미 모두 공유된') || raw.contains('이미 공유된')) {
+      return '이미 공유된 친구가 포함되어 있습니다.';
+    }
     if (raw.contains('FORBIDDEN')) return '이 앨범을 공유할 권한이 없습니다.';
     if (raw.contains('ALBUM_NOT_FOUND')) return '앨범을 찾을 수 없습니다.';
     return '공유 중 오류가 발생했습니다.';
