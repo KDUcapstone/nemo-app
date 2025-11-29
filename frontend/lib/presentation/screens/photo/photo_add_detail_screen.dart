@@ -56,21 +56,22 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
   void initState() {
     super.initState();
 
-    // QR 임시 등록 결과가 있으면 그 값 사용, 없으면 기본값
+    // QR 임시 등록 결과가 있으면 그 값 사용, 없으면 빈 값으로 두어 지도 자동 채움 동작
     if (widget.qrImportResult != null) {
       final result = widget.qrImportResult!;
       _takenAt = result['takenAt'] != null
           ? DateTime.tryParse(result['takenAt'] as String) ?? DateTime.now()
           : widget.defaultTakenAt ?? DateTime.now();
-      _locationCtrl.text = result['location'] as String? ?? '포토부스(추정)';
-      _brandCtrl.text = result['brand'] as String? ?? '인생네컷';
+      // qrImportResult에서 온 값이 있으면 사용, 없으면 빈 문자열로 두어 지도 자동 채움 동작
+      _locationCtrl.text = result['location'] as String? ?? '';
+      _brandCtrl.text = result['brand'] as String? ?? '';
       _tags = ['QR업로드'];
     } else {
       _takenAt = widget.defaultTakenAt ?? DateTime.now();
-      // QR에서 추정 가능한 정보 기본값 설정
+      // QR 업로드인 경우 빈 값으로 두어 지도 기반 자동 채움이 동작하도록
       if (widget.qrCode != null) {
-        _locationCtrl.text = '포토부스(추정)'; // 위치 기본값은 이후 지도 기반으로 보정 가능
-        _brandCtrl.text = '인생네컷';
+        _locationCtrl.text = '';
+        _brandCtrl.text = '';
         _tags = ['QR업로드'];
       }
     }
@@ -81,11 +82,12 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
     } else {
       _selectedBrand = '직접 입력';
     }
-    // 위치 기본값이 비어 있는 경우, 현재 위치 기반 네이버 지도 데이터를 사용해 기본값 설정
-    // (필요 시 사용자가 자유롭게 수정 가능)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initDefaultLocationFromMap();
-    });
+    // 갤러리 업로드인 경우에만 화면 진입 시 자동 채움 (QR 업로드는 브랜드 선택 시 자동 채움)
+    if (widget.qrCode == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _initDefaultLocationFromMap();
+      });
+    }
     _loadFriends();
   }
 
@@ -98,10 +100,106 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
     super.dispose();
   }
 
+  /// 브랜드 선택 시, 해당 브랜드의 주변 지점 중 가장 가까운 곳을 위치로 자동 채움
+  /// - 이미 위치가 입력되어 있으면 건드리지 않음
+  /// - 권한 거부/실패 시 조용히 무시
+  Future<void> _updateLocationByBrand(String brand) async {
+    if (!mounted) return;
+    // 이미 사용자가 직접 위치를 입력해둔 경우는 덮어쓰지 않음
+    if (_locationCtrl.text.trim().isNotEmpty) return;
+
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+
+      // 현재 위치 기준으로 작은 뷰포트 생성 (약 수백 m 반경)
+      const delta = 0.01;
+      final lat = position.latitude;
+      final lng = position.longitude;
+
+      final response = await MapApi.getViewport(
+        neLat: lat + delta,
+        neLng: lng + delta,
+        swLat: lat - delta,
+        swLng: lng - delta,
+        zoom: 15,
+        cluster: true,
+        limit: 50,
+        brand: brand, // 선택한 브랜드로 필터링
+      );
+
+      if (!mounted) return;
+      final items = response['items'] as List<dynamic>? ?? const [];
+      if (items.isEmpty) return;
+
+      // 브랜드 이름이 포함된 포토부스만 필터링 (추가 안전장치)
+      final brandItems = items.where((item) {
+        if (item is! Map) return false;
+        final itemName = item['name'] as String? ?? '';
+        final itemBrand = item['brand'] as String? ?? '';
+        return itemName.contains(brand) || itemBrand == brand;
+      }).toList();
+
+      if (brandItems.isEmpty) return;
+
+      // distanceMeter가 있는 경우 가장 가까운 포토부스를 사용
+      dynamic best = brandItems.first;
+      for (final item in brandItems) {
+        if (item is Map &&
+            item['cluster'] != true &&
+            item.containsKey('distanceMeter') &&
+            best is Map &&
+            best.containsKey('distanceMeter')) {
+          if ((item['distanceMeter'] as num).toDouble() <
+              (best['distanceMeter'] as num).toDouble()) {
+            best = item;
+          }
+        }
+      }
+
+      if (best is! Map) return;
+      if (!mounted) return;
+      if (_locationCtrl.text.trim().isNotEmpty) return;
+
+      // 백엔드 응답 형식에 맞춰 brand/branch 조합 우선 사용
+      final bestBrand = best['brand'] as String?;
+      final branch = best['branch'] as String?;
+      final name = best['name'] as String?;
+      final roadAddress = best['roadAddress'] as String?;
+
+      String? locationText;
+      if (bestBrand != null && branch != null) {
+        locationText = '$bestBrand $branch'; // "인생네컷 홍대점" 형식
+      } else if (name != null && name.isNotEmpty) {
+        locationText = name; // 포토부스 이름
+      } else if (roadAddress != null && roadAddress.isNotEmpty) {
+        locationText = roadAddress; // 마지막 fallback
+      }
+
+      if (locationText != null && locationText.isNotEmpty) {
+        _locationCtrl.text = locationText;
+      }
+    } catch (_) {
+      // 위치/지도 로딩 실패 시 무시 (기본값 미설정 상태로 두기)
+    }
+  }
+
   /// 현재 위치와 네이버 지도 API(MapApi.getViewport)를 사용해
   /// 위치 기본값을 "현재 위치 근처 포토부스"로 설정
   /// - 이미 위치가 입력되어 있으면 건드리지 않음
   /// - 권한 거부/실패 시 조용히 무시
+  /// - 갤러리 업로드 시에만 사용 (QR 업로드는 브랜드 선택 시 자동 채움)
   Future<void> _initDefaultLocationFromMap() async {
     if (!mounted) return;
     // 이미 위치가 채워져 있으면 그대로 둠
@@ -159,10 +257,20 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
       if (!mounted) return;
       if (_locationCtrl.text.trim().isNotEmpty) return;
 
-      final roadAddress = best['roadAddress'] as String?;
+      // 백엔드 응답 형식에 맞춰 brand/branch 조합 우선 사용
+      final brand = best['brand'] as String?;
+      final branch = best['branch'] as String?;
       final name = best['name'] as String?;
-      final locationText =
-          (roadAddress != null && roadAddress.isNotEmpty) ? roadAddress : name;
+      final roadAddress = best['roadAddress'] as String?;
+
+      String? locationText;
+      if (brand != null && branch != null) {
+        locationText = '$brand $branch'; // "인생네컷 홍대점" 형식
+      } else if (name != null && name.isNotEmpty) {
+        locationText = name; // 포토부스 이름
+      } else if (roadAddress != null && roadAddress.isNotEmpty) {
+        locationText = roadAddress; // 마지막 fallback
+      }
 
       if (locationText != null && locationText.isNotEmpty) {
         _locationCtrl.text = locationText;
@@ -438,8 +546,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
       }
       // QR 업로드 시 브랜드는 필수.
       // 드롭다운에서 직접 입력이 선택된 경우에만 텍스트 입력을 검사.
-      if (_selectedBrand == '직접 입력' &&
-          _brandCtrl.text.trim().isEmpty) {
+      if (_selectedBrand == '직접 입력' && _brandCtrl.text.trim().isEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('포토부스 브랜드를 입력해주세요.')));
@@ -629,10 +736,10 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                 children: [
                   DropdownButtonFormField<String>(
                     value: _selectedBrand,
-                decoration: InputDecoration(
-                  labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
-                  border: const OutlineInputBorder(),
-                ),
+                    decoration: InputDecoration(
+                      labelText: widget.qrCode != null ? '브랜드 *' : '브랜드',
+                      border: const OutlineInputBorder(),
+                    ),
                     items: _brandOptions
                         .map(
                           (b) => DropdownMenuItem<String>(
@@ -641,7 +748,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                           ),
                         )
                         .toList(),
-                    onChanged: (value) {
+                    onChanged: (value) async {
                       if (value == null) return;
                       setState(() {
                         _selectedBrand = value;
@@ -651,6 +758,11 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                           _brandCtrl.clear();
                         }
                       });
+
+                      // 브랜드를 선택한 경우에만 위치 자동 채움
+                      if (value != '직접 입력') {
+                        await _updateLocationByBrand(value);
+                      }
                     },
                   ),
                   const SizedBox(height: 8),
@@ -665,11 +777,11 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                         ? (_) {
                             if (_selectedBrand == '직접 입력' &&
                                 _brandCtrl.text.trim().isEmpty) {
-                          return '포토부스 브랜드를 입력해주세요.';
-                        }
-                        return null;
-                      }
-                    : null,
+                              return '포토부스 브랜드를 입력해주세요.';
+                            }
+                            return null;
+                          }
+                        : null,
                   ),
                 ],
               ),
@@ -736,7 +848,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
               if (_selectedFriendIds.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SizedBox(
-                  height: 60,
+                  height: 70,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _friends
@@ -755,8 +867,10 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                       final nick =
                           f['nickname'] as String? ?? '친구${f['userId']}';
                       return Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           CircleAvatar(
+                            radius: 20,
                             backgroundImage:
                                 avatarUrl != null && avatarUrl.isNotEmpty
                                 ? NetworkImage(avatarUrl)
@@ -771,6 +885,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
                             child: Text(
                               nick,
                               overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                               style: const TextStyle(fontSize: 12),
                               textAlign: TextAlign.center,
                             ),
