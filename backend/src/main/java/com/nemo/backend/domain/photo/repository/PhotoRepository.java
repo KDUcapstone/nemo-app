@@ -36,4 +36,7 @@ public interface PhotoRepository extends JpaRepository<Photo, Long> {
 
     // ✅ 타임라인용: 촬영일시 기준 내림차순 전체 조회 (그대로 유지)
     List<Photo> findByUserIdAndDeletedIsFalseOrderByTakenAtDesc(Long userId);
+
+    // ✅ 유저의 전체 사진 개수 조회 (삭제되지 않은 것만)
+    int countByUserIdAndDeletedIsFalse(Long userId);
 }

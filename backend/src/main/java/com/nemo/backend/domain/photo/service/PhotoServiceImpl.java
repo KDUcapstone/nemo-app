@@ -10,6 +10,7 @@ import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.domain.album.entity.AlbumShare;
 import com.nemo.backend.domain.album.repository.AlbumShareRepository;
+import com.nemo.backend.domain.storage.service.StorageService;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
@@ -61,11 +62,12 @@ public class PhotoServiceImpl implements PhotoService {
     private final PhotoStorage storage;
     private final AlbumShareRepository albumShareRepository;
     private final String publicBaseUrl;
+    private final StorageService storageService;
 
     public PhotoServiceImpl(PhotoRepository photoRepository,
                             PhotoStorage storage,
                             AlbumShareRepository albumShareRepository,
-                            @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl) {
+                            @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl, StorageService storageService) {
         this.photoRepository = photoRepository;
         this.storage = storage;
         this.albumShareRepository = albumShareRepository;
@@ -98,6 +100,8 @@ public class PhotoServiceImpl implements PhotoService {
                 (image != null && !image.isEmpty()),
                 (image != null ? image.getOriginalFilename() : null)
         );
+
+        storageService.checkPhotoLimitOrThrow(userId);
 
         if ((qrUrlOrPayload == null || qrUrlOrPayload.isBlank()) && (image == null || image.isEmpty())) {
             throw new ApiException(ErrorCode.INVALID_ARGUMENT, "image 또는 qrUrl/qrCode 중 하나는 필수입니다.");
