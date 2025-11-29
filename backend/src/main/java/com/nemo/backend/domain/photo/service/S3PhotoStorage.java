@@ -542,4 +542,25 @@ public class S3PhotoStorage implements PhotoStorage {
             throw new StorageException("S3 삭제 실패: " + e.getMessage(), e);
         }
     }
+
+    /** S3 객체 크기 조회 (byte 단위) – presigned URL/다운로드 목록에서 용량 보여줄 때 사용 */
+    public Long getObjectSize(String key) {
+        if (key == null || key.isBlank()) return null;
+
+        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+
+        try {
+            HeadObjectRequest head = HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(normalizedKey)
+                    .build();
+            HeadObjectResponse res = s3Client.headObject(head);
+            return res.contentLength();
+        } catch (NoSuchKeyException e) {
+            // 없는 경우는 그냥 null
+            return null;
+        } catch (S3Exception | SdkClientException e) {
+            throw new StorageException("S3 객체 정보 조회 실패: " + e.getMessage(), e);
+        }
+    }
 }
