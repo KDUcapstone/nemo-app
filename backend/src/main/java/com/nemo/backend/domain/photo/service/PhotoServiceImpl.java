@@ -3,7 +3,9 @@ package com.nemo.backend.domain.photo.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nemo.backend.domain.photo.dto.PhotoDownloadUrlDto;
 import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
+import com.nemo.backend.domain.photo.dto.SelectedPhotosDownloadUrlsResponse;
 import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.global.exception.ApiException;
@@ -26,12 +28,15 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.*;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Base64;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.nemo.backend.domain.photo.service.S3PhotoStorage.StorageException;
 
@@ -269,9 +274,112 @@ public class PhotoServiceImpl implements PhotoService {
         return next;
     }
 
+    // ========================================================
+    // 7) 선택 사진 다운로드 URL 목록 조회
+    // ========================================================
+    @Override
+    @Transactional(readOnly = true)
+    public SelectedPhotosDownloadUrlsResponse getDownloadUrls(Long userId, List<Long> photoIdList) {
+        if (photoIdList == null || photoIdList.isEmpty()) {
+            throw new ApiException(ErrorCode.INVALID_ARGUMENT, "photoIdList는 비어 있을 수 없습니다.");
+        }
+
+        // 중복 제거
+        List<Long> distinctIds = photoIdList.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        List<Photo> photos = photoRepository.findAllById(distinctIds);
+
+        List<PhotoDownloadUrlDto> items = photos.stream()
+                .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                // ✅ 현재는 "내 사진 탭" 기준으로, 소유자만 다운로드 가능하게
+                .filter(p -> userId.equals(p.getUserId()))
+                .map(p -> {
+                    String downloadUrl = p.getImageUrl(); // 명세상 downloadUrl – 원본 이미지 URL
+                    String filename = buildDownloadFilename(p.getImageUrl(), p.getId());
+                    Long fileSize = resolveFileSizeFromImageUrl(p.getImageUrl());
+
+                    return PhotoDownloadUrlDto.builder()
+                            .photoId(p.getId())
+                            .downloadUrl(downloadUrl)
+                            .filename(filename)
+                            .fileSize(fileSize)
+                            .build();
+                })
+                .toList();
+
+        if (items.isEmpty()) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "다운로드 가능한 사진이 없습니다.");
+        }
+
+        return SelectedPhotosDownloadUrlsResponse.builder()
+                .photos(items)
+                .build();
+    }
+
+    /** download용 파일 이름 생성 – URL 확장자 기준, 없으면 .jpg */
+    private String buildDownloadFilename(String imageUrl, Long photoId) {
+        String ext = "jpg";
+        if (imageUrl != null) {
+            try {
+                String path = new URL(imageUrl).getPath();
+                String name = path.substring(path.lastIndexOf('/') + 1);
+                int dot = name.lastIndexOf('.');
+                if (dot > 0 && dot < name.length() - 1) {
+                    ext = name.substring(dot + 1);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return "nemo_photo_" + photoId + "." + ext;
+    }
+
+    /** imageUrl → S3 key 추출 후, S3에서 파일 크기 조회 */
+    private Long resolveFileSizeFromImageUrl(String imageUrl) {
+        String key = extractStorageKeyFromUrl(imageUrl);
+        if (key == null) return null;
+
+        if (storage instanceof S3PhotoStorage s3) {
+            try {
+                return s3.getObjectSize(key);
+            } catch (Exception e) {
+                log.warn("[PHOTO][download] 파일 크기 조회 실패 key={}, err={}", key, e.toString());
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * publicBaseUrl + "/files/{key}" 형태의 URL에서 S3 key만 추출
+     * 예: http://localhost:8080/files/albums/2025-11-27/xxx.webp
+     *  -> albums/2025-11-27/xxx.webp
+     */
+    private String extractStorageKeyFromUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+
+        String base = publicBaseUrl;
+        // publicBaseUrl 뒤에 슬래시 여러 개 있으면 제거
+        base = base.replaceAll("/+$", "");
+
+        if (!url.startsWith(base)) {
+            // 우리 서비스에서 관리하는 URL 형식이 아니면 S3 삭제/용량 조회 안 함
+            return null;
+        }
+
+        String path = url.substring(base.length()); // "/files/...."
+        if (!path.startsWith("/files/")) {
+            return null;
+        }
+
+        return path.substring("/files/".length()); // "albums/2025-11-27/xxx.webp"
+    }
+
     // ======================================================================
     // 아래부터는 QR 파싱 / HTTP 유틸 / life4cut 전용 로직
-    // 🔥 요청대로 알고리즘/로직은 그대로 두고, 사용처만 위에서 조정
+    //  (기존 로직 그대로 유지)
     // ======================================================================
 
     private AssetPair fetchAssetsFromQrPayload(String startUrl) {
@@ -294,6 +402,14 @@ public class PhotoServiceImpl implements PhotoService {
                 log.info("[QR][fetch] step={}, current={}", redirects, current);
 
                 URL url = new URL(current);
+
+                // ✅ Photogray 전용: photogray-download.aprd.io?id=... 이면 바로 sessionId 기반으로 처리
+                AssetPair photogray = tryResolvePhotograyFromId(url);
+                if (photogray != null) {
+                    log.info("[QR][photogray] resolved directly from id param: {}", url);
+                    return photogray;
+                }
+
                 HttpURLConnection conn = open(current, "GET", null, startUrl);
                 int code = conn.getResponseCode();
 
@@ -341,8 +457,7 @@ public class PhotoServiceImpl implements PhotoService {
                             if (foundImage == null) foundImage = publicUrl;
                             if (foundThumb == null)  foundThumb  = publicUrl;
                         } else if (ct.startsWith("video/")) {
-                            // 영상도 받아서 스토리지에 저장해 두지만,
-                            // 현재 명세상 API/엔티티에는 videoUrl을 노출하거나 저장하지 않는다.
+                            // ✅ 영상도 받아서 저장 (기존 로직 그대로)
                             String key = storage.storeBytes(
                                     data,
                                     filenameFromHeadersOrUrl(url, cd, ct),
@@ -350,6 +465,46 @@ public class PhotoServiceImpl implements PhotoService {
                             );
                             String publicUrl = toPublicUrl(key);
                             if (foundVideo == null) foundVideo = publicUrl;
+
+                            // ✅ Photogray 전용: 같은 폴더의 image.jpg를 추가로 시도
+                            if (foundImage == null && isPhotograyResource(url)) {
+                                try {
+                                    String stillUrl = buildPhotograyImageUrlFromVideo(url);
+                                    log.info("[QR][photogray] try still image from video: {}", stillUrl);
+
+                                    HttpURLConnection imgConn = open(stillUrl, "GET", null, startUrl);
+                                    int imgCode = imgConn.getResponseCode();
+                                    if (imgCode >= 200 && imgCode < 300) {
+                                        String imgCt = safeLower(imgConn.getContentType());
+                                        if (imgCt != null && imgCt.startsWith("image/")) {
+                                            try (InputStream imgIn = boundedStream(imgConn)) {
+                                                byte[] imgData = imgIn.readAllBytes();
+                                                ensureValidImageBytes(imgData);
+                                                String realCt = sniffContentType(imgData, imgCt);
+                                                String imgKey = storage.storeBytes(
+                                                        imgData,
+                                                        filenameFromHeadersOrUrl(new URL(stillUrl),
+                                                                imgConn.getHeaderField("Content-Disposition"),
+                                                                realCt),
+                                                        realCt
+                                                );
+                                                String imgPublicUrl = toPublicUrl(imgKey);
+                                                foundImage = imgPublicUrl;
+                                                if (foundThumb == null) {
+                                                    foundThumb = imgPublicUrl;
+                                                }
+                                                log.info("[QR][photogray] still image stored: {}", imgPublicUrl);
+                                            }
+                                        } else {
+                                            log.warn("[QR][photogray] still image content-type not image: {}", imgCt);
+                                        }
+                                    } else {
+                                        log.warn("[QR][photogray] still image HTTP {} from {}", imgCode, stillUrl);
+                                    }
+                                } catch (Exception pe) {
+                                    log.warn("[QR][photogray] still image fetch failed: {}", pe.toString());
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         throw new StorageException("파일 저장 실패", e);
@@ -388,6 +543,175 @@ public class PhotoServiceImpl implements PhotoService {
                     "원격 자산 추출 실패: " + e.getMessage(), e);
         }
     }
+
+    // ===================== Photogray 유틸 =====================
+
+    /** pg-qr-resource.aprd.io 의 video/mp4 인지 확인 */
+    private boolean isPhotograyResource(URL url) {
+        if (url == null || url.getHost() == null) return false;
+        String host = url.getHost().toLowerCase(Locale.ROOT);
+        String path = (url.getPath() == null) ? "" : url.getPath().toLowerCase(Locale.ROOT);
+        return host.contains("pg-qr-resource.aprd.io") && path.endsWith("/video.mp4");
+    }
+
+    /** https://pg-qr-resource.aprd.io/.../video.mp4 → .../image.jpg */
+    private String buildPhotograyImageUrlFromVideo(URL videoUrl) {
+        String path = videoUrl.getPath();
+        int idx = path.lastIndexOf('/');
+        String baseDir = (idx >= 0) ? path.substring(0, idx) : "";
+        String imgPath = baseDir + "/image.jpg";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(videoUrl.getProtocol())
+                .append("://")
+                .append(videoUrl.getHost());
+        if (videoUrl.getPort() != -1 && videoUrl.getPort() != videoUrl.getDefaultPort()) {
+            sb.append(":").append(videoUrl.getPort());
+        }
+        sb.append(imgPath);
+        return sb.toString();
+    }
+
+    /**
+     * photogray-download.aprd.io?id=... 형태의 URL에서
+     * id(base64) → sessionId → pg-qr-resource.aprd.io/{sessionId}/image.jpg / video.mp4 를
+     * 직접 호출해서 AssetPair를 만들어 준다.
+     */
+    private AssetPair tryResolvePhotograyFromId(URL url) {
+        if (url == null || url.getHost() == null) return null;
+
+        String host = url.getHost().toLowerCase(Locale.ROOT);
+        if (!host.contains("photogray-download.aprd.io")) {
+            return null;
+        }
+
+        String query = url.getQuery();
+        if (query == null || query.isBlank()) return null;
+
+        // 1) query에서 id 파라미터 추출
+        String encodedId = null;
+        for (String pair : query.split("&")) {
+            int idx = pair.indexOf('=');
+            if (idx <= 0) continue;
+            String key = pair.substring(0, idx);
+            String value = pair.substring(idx + 1);
+            if ("id".equals(key)) {
+                encodedId = value;
+                break;
+            }
+        }
+        if (encodedId == null || encodedId.isBlank()) return null;
+
+        try {
+            // 2) base64 디코딩 → sessionId=...&mode=...&... 문자열
+            String decoded = new String(Base64.getDecoder().decode(encodedId), StandardCharsets.UTF_8);
+            String sessionId = null;
+            for (String pair : decoded.split("&")) {
+                int idx = pair.indexOf('=');
+                if (idx <= 0) continue;
+                String key = pair.substring(0, idx);
+                String value = pair.substring(idx + 1);
+                if ("sessionId".equals(key)) {
+                    sessionId = value;
+                    break;
+                }
+            }
+
+            if (sessionId == null || sessionId.isBlank()) {
+                log.warn("[QR][photogray] sessionId not found in decoded: {}", decoded);
+                return null;
+            }
+
+            // 3) resource base URL 구성
+            String base = "https://pg-qr-resource.aprd.io/" + sessionId;
+            String imageUrl = base + "/image.jpg";
+            String videoUrl = base + "/video.mp4";
+
+            String storedImage = null;
+            String storedThumb = null;
+            String storedVideo = null;
+
+            // 3-1) image.jpg 먼저 시도 (사진)
+            try {
+                HttpURLConnection imgConn = open(imageUrl, "GET", null, url.toString());
+                int code = imgConn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    String imgCtHeader = safeLower(imgConn.getContentType());
+                    try (InputStream imgIn = boundedStream(imgConn)) {
+                        byte[] imgData = imgIn.readAllBytes();
+
+                        try {
+                            // 헤더가 octet-stream 이라도 바이트 검사해서 진짜 이미지인지 확인
+                            ensureValidImageBytes(imgData);
+                        } catch (IOException ex) {
+                            log.warn("[QR][photogray] direct image not recognized as image bytes: {}", ex.getMessage());
+                            // 이미지가 아니면 Photogray 특수 처리 포기 → 일반 로직으로 넘기기
+                            return null;
+                        }
+
+                        String realCt = sniffContentType(imgData, imgCtHeader);
+                        String imgKey = storage.storeBytes(
+                                imgData,
+                                filenameFromHeadersOrUrl(new URL(imageUrl),
+                                        imgConn.getHeaderField("Content-Disposition"),
+                                        realCt),
+                                realCt
+                        );
+                        storedImage = toPublicUrl(imgKey);
+                        storedThumb = storedImage;
+                        log.info("[QR][photogray] direct image stored: {} (ct={})", storedImage, realCt);
+                    }
+                } else {
+                    log.warn("[QR][photogray] direct image HTTP {} from {}", code, imageUrl);
+                }
+
+            } catch (Exception e) {
+                log.warn("[QR][photogray] direct image fetch failed: {}", e.toString());
+            }
+
+            // 3-2) video.mp4 는 선택적으로 저장 (지금은 DB에 안 넣지만, 나중 확장 대비)
+            try {
+                HttpURLConnection vConn = open(videoUrl, "GET", null, url.toString());
+                int vCode = vConn.getResponseCode();
+                if (vCode >= 200 && vCode < 300) {
+                    String vCt = safeLower(vConn.getContentType());
+                    if (vCt != null && vCt.startsWith("video/")) {
+                        try (InputStream vIn = boundedStream(vConn)) {
+                            byte[] vData = vIn.readAllBytes();
+                            String vKey = storage.storeBytes(
+                                    vData,
+                                    filenameFromHeadersOrUrl(new URL(videoUrl),
+                                            vConn.getHeaderField("Content-Disposition"),
+                                            vCt),
+                                    vCt
+                            );
+                            storedVideo = toPublicUrl(vKey);
+                            log.info("[QR][photogray] direct video stored: {}", storedVideo);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[QR][photogray] direct video fetch failed: {}", e.toString());
+            }
+
+            if (storedImage == null && storedVideo == null) {
+                // 둘 다 실패하면 Photogray 특수 처리 포기 → 기존 일반 로직으로 진행
+                return null;
+            }
+
+            if (storedThumb == null) storedThumb = storedImage;
+            return new AssetPair(storedImage, storedThumb, storedVideo, null);
+
+        } catch (IllegalArgumentException e) {
+            log.warn("[QR][photogray] base64 decode failed for id={}", encodedId);
+            return null;
+        } catch (Exception e) {
+            log.warn("[QR][photogray] unexpected error: {}", e.toString());
+            return null;
+        }
+    }
+
+
 
     // ===================== life4cut 전용 webQr → S3 처리 =====================
 
@@ -839,6 +1163,7 @@ public class PhotoServiceImpl implements PhotoService {
         if (s.contains("photoism")) return "포토이즘";
         if (s.contains("signature")) return "포토시그니쳐";
         if (s.contains("twin")) return "트윈포토";
+        if (s.contains("photogray") || s.contains("pgshort") || s.contains("pg-qr-resource")) return "포토그레이";
         return "기타";
     }
 
@@ -860,29 +1185,4 @@ public class PhotoServiceImpl implements PhotoService {
         }
     }
 
-    /**
-     * publicBaseUrl + "/files/{key}" 형태의 URL에서 S3 key만 추출
-     * 예: http://localhost:8080/files/albums/2025-11-27/xxx.webp
-     *  -> albums/2025-11-27/xxx.webp
-     */
-    private String extractStorageKeyFromUrl(String url) {
-        if (url == null || url.isBlank()) return null;
-
-        String base = publicBaseUrl;
-        // publicBaseUrl 뒤에 슬래시 여러 개 있으면 제거
-        base = base.replaceAll("/+$", "");
-
-        if (!url.startsWith(base)) {
-            // 우리 서비스에서 관리하는 URL 형식이 아니면 S3 삭제 안 함
-            return null;
-        }
-
-        String path = url.substring(base.length()); // "/files/...."
-        if (!path.startsWith("/files/")) {
-            return null;
-        }
-
-        String key = path.substring("/files/".length()); // "albums/2025-11-27/xxx.webp"
-        return key;
-    }
 }
