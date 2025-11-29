@@ -70,7 +70,7 @@ public class PhotoServiceImpl implements PhotoService {
                             @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl, StorageService storageService) {
         this.photoRepository = photoRepository;
         this.storage = storage;
-        this.albumShareRepository = albumShareRepository;
+        this.storageService = storageService;
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
