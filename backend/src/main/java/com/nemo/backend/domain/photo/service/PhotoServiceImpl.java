@@ -8,6 +8,8 @@ import com.nemo.backend.domain.photo.dto.PhotoResponseDto;
 import com.nemo.backend.domain.photo.dto.SelectedPhotosDownloadUrlsResponse;
 import com.nemo.backend.domain.photo.entity.Photo;
 import com.nemo.backend.domain.photo.repository.PhotoRepository;
+import com.nemo.backend.domain.album.entity.AlbumShare;
+import com.nemo.backend.domain.album.repository.AlbumShareRepository;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
@@ -57,15 +59,19 @@ public class PhotoServiceImpl implements PhotoService {
 
     private final PhotoRepository photoRepository;
     private final PhotoStorage storage;
+    private final AlbumShareRepository albumShareRepository;
     private final String publicBaseUrl;
 
     public PhotoServiceImpl(PhotoRepository photoRepository,
                             PhotoStorage storage,
+                            AlbumShareRepository albumShareRepository,
                             @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl) {
         this.photoRepository = photoRepository;
         this.storage = storage;
+        this.albumShareRepository = albumShareRepository;
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
+
 
     private String toPublicUrl(String key) {
         return String.format("%s/files/%s", publicBaseUrl, key);
@@ -216,11 +222,15 @@ public class PhotoServiceImpl implements PhotoService {
     public PhotoResponseDto getDetail(Long userId, Long photoId) {
         Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
                 .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
-        if (!photo.getUserId().equals(userId)) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED, "해당 사진에 접근할 권한이 없습니다.");
+
+        if (!hasPhotoAccess(userId, photo)) {
+            // 명세상 403 Forbidden 사용 :contentReference[oaicite:4]{index=4}
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 사진에 접근할 권한이 없습니다.");
         }
+
         return new PhotoResponseDto(photo);
     }
+
 
     // ========================================================
     // 5) 사진 상세 정보 수정 (촬영일시, 위치, 브랜드, 메모)
@@ -263,8 +273,10 @@ public class PhotoServiceImpl implements PhotoService {
     public boolean toggleFavorite(Long userId, Long photoId) {
         Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
                 .orElseThrow(() -> new ApiException(ErrorCode.INVALID_ARGUMENT, "해당 사진을 찾을 수 없습니다."));
-        if (!photo.getUserId().equals(userId)) {
-            throw new ApiException(ErrorCode.UNAUTHORIZED, "즐겨찾기 권한이 없습니다.");
+
+        if (!hasPhotoAccess(userId, photo)) {
+            // 명세상 403 Forbidden + 메시지도 스펙에 맞는 형태로 :contentReference[oaicite:5]{index=5}
+            throw new ApiException(ErrorCode.FORBIDDEN, "해당 사진에 대해 즐겨찾기 권한이 없습니다.");
         }
 
         boolean current = Boolean.TRUE.equals(photo.getFavorite());
@@ -273,6 +285,7 @@ public class PhotoServiceImpl implements PhotoService {
         photoRepository.save(photo);
         return next;
     }
+
 
     // ========================================================
     // 7) 선택 사진 다운로드 URL 목록 조회
@@ -1183,6 +1196,38 @@ public class PhotoServiceImpl implements PhotoService {
             this.videoUrl = v;
             this.takenAt = ta;
         }
+    }
+
+    /**
+     * 사진 상세/즐겨찾기 권한 체크
+     * - 1) 사진 소유자
+     * - 2) 공유 앨범(ACCEPTED) 멤버이면서, 해당 앨범에 이 사진이 포함된 경우
+     */
+    private boolean hasPhotoAccess(Long userId, Photo photo) {
+        // 1) 본인 사진
+        if (photo.getUserId() != null && photo.getUserId().equals(userId)) {
+            return true;
+        }
+
+        // 2) 공유받은 앨범 중 이 사진을 포함하는 앨범이 있는지 확인
+        List<AlbumShare> shares = albumShareRepository
+                .findByUserIdAndStatusAndActiveTrue(userId, AlbumShare.Status.ACCEPTED);
+
+        for (AlbumShare share : shares) {
+            if (share.getAlbum() == null || share.getAlbum().getPhotos() == null) {
+                continue;
+            }
+
+            boolean contains = share.getAlbum().getPhotos().stream()
+                    .filter(p -> !Boolean.TRUE.equals(p.getDeleted()))
+                    .anyMatch(p -> Objects.equals(p.getId(), photo.getId()));
+
+            if (contains) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
 }

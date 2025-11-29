@@ -133,17 +133,32 @@ public class AlbumShareService {
 
     @Transactional(readOnly = true)
     public List<AlbumShareResponse.SharedUser> getShareTargets(Long albumId, Long meId) {
-        getAlbumWithManagePermission(albumId, meId);
+        Album album = getAlbumWithManagePermission(albumId, meId);
 
-        return albumShareRepository
-                .findByAlbumIdAndActiveTrue(albumId).stream()
-                .map(share -> AlbumShareResponse.SharedUser.builder()
-                        .userId(share.getUser().getId())
-                        .nickname(share.getUser().getNickname())
-                        .role(share.getRole().name())
-                        .build())
-                .toList();
+        List<AlbumShareResponse.SharedUser> result = new ArrayList<>();
+
+        // 1) 소유자 (명세상 OWNER 는 album.user 기반) :contentReference[oaicite:1]{index=1}
+        User owner = album.getUser();
+        result.add(AlbumShareResponse.SharedUser.builder()
+                .userId(owner.getId())
+                .nickname(owner.getNickname())
+                .role("OWNER")
+                .build()
+        );
+
+        // 2) ACCEPTED 상태인 공유 멤버만 포함
+        albumShareRepository.findByAlbumIdAndStatusAndActiveTrue(albumId, Status.ACCEPTED)
+                .forEach(share -> result.add(
+                        AlbumShareResponse.SharedUser.builder()
+                                .userId(share.getUser().getId())
+                                .nickname(share.getUser().getNickname())
+                                .role(share.getRole().name())
+                                .build()
+                ));
+
+        return result;
     }
+
 
     public AlbumShare updateShareRoleByUserId(Long albumId, Long targetUserId, Long meId, Role newRole) {
         Album album = getAlbumWithManagePermission(albumId, meId);
