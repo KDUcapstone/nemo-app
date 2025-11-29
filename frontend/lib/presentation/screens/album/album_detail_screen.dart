@@ -289,7 +289,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                           final id = f['userId'] as int;
                           final nick = f['nickname'] as String? ?? '친구$id';
                           final avatarUrl =
-                              (f['avatarUrl'] ?? f['profileImageUrl']) as String?;
+                              (f['avatarUrl'] ?? f['profileImageUrl'])
+                                  as String?;
                           final checked = selectedIds.contains(id);
                           return ListTile(
                             leading: CircleAvatar(
@@ -880,7 +881,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     if (!mounted) return;
                     final errorMsg = e.toString();
                     String message;
-                    if (errorMsg.contains('FORBIDDEN') || 
+                    if (errorMsg.contains('FORBIDDEN') ||
                         errorMsg.contains('권한이 없습니다') ||
                         errorMsg.contains('삭제할 권한') ||
                         errorMsg.contains('공유받은 앨범')) {
@@ -890,9 +891,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     } else {
                       message = '삭제 실패: $e';
                     }
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(message)),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(message)));
                   }
                 }
                 break;
@@ -1068,7 +1069,8 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                                   crossAxisCount: 3,
                                                   mainAxisSpacing: 8,
                                                   crossAxisSpacing: 8,
-                                                  childAspectRatio: 0.9, // 세로가 조금 더 긴 직사각형 비율
+                                                  childAspectRatio:
+                                                      0.9, // 세로가 조금 더 긴 직사각형 비율
                                                 ),
                                             itemCount: photos.length,
                                             itemBuilder: (_, i) {
@@ -1142,26 +1144,31 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                           : _descCtrl.text.trim(),
                                       // coverPhotoId 제거 - 대표사진은 별도 API 사용
                                     );
-                                    
+
                                     // 대표사진 수정 (명세서에 따른 별도 API 호출)
                                     if (_coverId != null) {
-                                      final thumbnailRes = await AlbumApi.setThumbnail(
-                                        albumId: widget.albumId,
-                                        photoId: _coverId,
-                                      );
-                                      
+                                      final thumbnailRes =
+                                          await AlbumApi.setThumbnail(
+                                            albumId: widget.albumId,
+                                            photoId: _coverId,
+                                          );
+
                                       // 응답에서 thumbnailUrl 가져오기
-                                      final thumbnailUrl = thumbnailRes['thumbnailUrl'] as String?;
+                                      final thumbnailUrl =
+                                          thumbnailRes['thumbnailUrl']
+                                              as String?;
                                       if (thumbnailUrl != null) {
-                                        context.read<AlbumProvider>().updateCoverUrl(
-                                          widget.albumId,
-                                          thumbnailUrl,
-                                        );
+                                        context
+                                            .read<AlbumProvider>()
+                                            .updateCoverUrl(
+                                              widget.albumId,
+                                              thumbnailUrl,
+                                            );
                                       }
                                     }
-                                    
+
                                     if (!mounted) return;
-                                    
+
                                     // 목록 카드 즉시 반영
                                     context.read<AlbumProvider>().updateMeta(
                                       albumId: widget.albumId,
@@ -1172,10 +1179,12 @@ class _AlbumEditSheetState extends State<_AlbumEditSheet> {
                                           ? null
                                           : _descCtrl.text.trim(),
                                     );
-                                    
+
                                     // 앨범 목록 새로고침 (다른 화면 반영)
-                                    await context.read<AlbumProvider>().resetAndLoad();
-                                    
+                                    await context
+                                        .read<AlbumProvider>()
+                                        .resetAndLoad();
+
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text('앨범 정보가 수정되었습니다.'),
