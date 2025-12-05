@@ -1,9 +1,10 @@
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("org.jetbrains.kotlin.android")        // ✅ 이렇게 변경
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")      // ✅ Google Services 플러그인 추가
 }
+
 
 android {
     namespace = "com.example.frontend"

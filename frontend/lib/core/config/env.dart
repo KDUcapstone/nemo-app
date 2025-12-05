@@ -18,7 +18,7 @@ class Env {
 
     if (Platform.isAndroid) {
       // 안드로이드 에뮬레이터
-      return 'http://10.0.2.2:8080';
+      return 'http://localhost:8080';
 
       // 실기기 → 10.0.2.2는 안 됨, PC 로컬 접속 불가
       // adb reverse 있는지 체크는 flutter가 못함 → 대신 아래로 fallback
