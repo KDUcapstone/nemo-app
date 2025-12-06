@@ -52,6 +52,7 @@ dependencies:
   image_gallery_saver_plus: ^4.0.1
   flutter_exif_rotation: ^0.5.1
   flutter_secure_storage: ^9.2.2
+  webview_flutter: ^4.4.2
 
 dev_dependencies:
   flutter_test:

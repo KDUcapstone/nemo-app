@@ -39,6 +39,17 @@ class AccountLockedException implements Exception {
   String toString() => message;
 }
 
+/// 캡챠 필요 예외 (Turnstile 인증 필요)
+class NeedCaptchaException implements Exception {
+  final String message;
+  final int? remainingAttempts;
+
+  NeedCaptchaException({required this.message, this.remainingAttempts});
+
+  @override
+  String toString() => message;
+}
+
 class AuthService {
   // ✅ 서버 URL 설정 (health 체크 기반 원격/로컬 자동 선택)
   static String? _resolvedBaseUrl;
@@ -59,8 +70,8 @@ class AuthService {
     // 1) 원격 서버 health 체크 시도
     try {
       final uri = Uri.parse('${_remoteBaseUrl}actuator/health');
-      // 모바일 네트워크 환경에서도 여유를 두기 위해 타임아웃을 5초로 증가
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      // 모바일 네트워크 환경에서도 여유를 두기 위해 타임아웃을 7초로 증가
+      final res = await http.get(uri).timeout(const Duration(seconds: 7));
 
       if (res.statusCode >= 200 && res.statusCode < 400) {
         _resolvedBaseUrl = _remoteBaseUrl;
@@ -169,7 +180,11 @@ class AuthService {
   }
 
   /// 로그인 요청
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(
+    String email,
+    String password, {
+    String? turnstileToken,
+  }) async {
     if (AppConstants.useMockApi) {
       // 모킹 응답
       await Future.delayed(
@@ -209,9 +224,16 @@ class AuthService {
       print('🔵 [LOGIN] useMockApi: ${AppConstants.useMockApi}');
       print('🔵 [LOGIN] 요청 URL: ${baseUrl}api/users/login');
 
+      final body = <String, dynamic>{'email': email, 'password': password};
+
+      // turnstileToken이 있으면 추가
+      if (turnstileToken != null && turnstileToken.isNotEmpty) {
+        body['turnstileToken'] = turnstileToken;
+      }
+
       final response = await ApiClient.post(
         '/api/users/login',
-        body: {'email': email, 'password': password},
+        body: body,
         includeAuth: false,
       );
 
@@ -271,6 +293,7 @@ class AuthService {
         final message = data?['message'] as String?;
         final remainingAttempts = data?['remainingAttempts'] as int?;
         final needPasswordReset = data?['needPasswordReset'] as bool? ?? false;
+        final needCaptcha = data?['needCaptcha'] as bool? ?? false;
 
         // 계정 잠금 또는 비밀번호 재설정 필요
         if (error == 'ACCOUNT_LOCKED' || needPasswordReset == true) {
@@ -280,6 +303,20 @@ class AuthService {
                 : '비밀번호를 여러 번 틀려 계정이 잠겼습니다. 비밀번호를 재설정해주세요.',
             remainingAttempts: remainingAttempts,
             email: email, // 로그인 시도한 이메일 전달
+          );
+        }
+
+        // 캡챠 필요 또는 캡챠 검증 실패
+        if (error == 'NEED_CAPTCHA' ||
+            error == 'INVALID_CAPTCHA' ||
+            needCaptcha == true) {
+          throw NeedCaptchaException(
+            message: message?.isNotEmpty == true
+                ? message!
+                : error == 'INVALID_CAPTCHA'
+                ? '캡챠 인증에 실패했습니다. 다시 시도해주세요.'
+                : '비밀번호를 여러 번 틀렸습니다. 캡챠 인증을 완료한 후 다시 시도해주세요.',
+            remainingAttempts: remainingAttempts,
           );
         }
 
@@ -302,6 +339,30 @@ class AuthService {
           throw Exception(message);
         }
         throw Exception('인증에 실패했습니다. 다시 로그인해주세요.');
+      } else if (response.statusCode == 423) {
+        // 계정 잠금 (423 Locked)
+        final raw = response.body.isNotEmpty
+            ? utf8.decode(response.bodyBytes)
+            : '';
+        Map<String, dynamic>? data;
+        try {
+          data = raw.isNotEmpty
+              ? jsonDecode(raw) as Map<String, dynamic>
+              : null;
+        } catch (_) {
+          data = null;
+        }
+        final message = data?['message'] as String?;
+        final remainingAttempts = data?['remainingAttempts'] as int?;
+        final needPasswordReset = data?['needPasswordReset'] as bool? ?? false;
+
+        throw AccountLockedException(
+          message: message?.isNotEmpty == true
+              ? message!
+              : '비밀번호를 여러 번 틀려 계정이 잠겼습니다. 비밀번호를 재설정해주세요.',
+          remainingAttempts: remainingAttempts,
+          email: email,
+        );
       } else if (response.statusCode == 400) {
         final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? '잘못된 요청입니다.');
