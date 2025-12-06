@@ -56,7 +56,7 @@ class AuthService {
 
   // 원격/로컬 후보 URL
   static const String _remoteBaseUrl =
-      'https://10.0.2.2:8080/';
+      'https://port-0-nemo-docker-springboot-prod-mdy7o3aya1eb5a01.sel5.cloudtype.app/';
   static const String _localBaseUrlAndroid = 'http://localhost:8080/';
   static const String _localBaseUrlDefault = 'http://localhost:8080/';
 
