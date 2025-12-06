@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/services/auth_service.dart';
 import 'package:frontend/providers/user_provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // 환경변수 패키지
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 import '../main_shell.dart';
@@ -13,6 +14,13 @@ import 'widgets/login_background.dart';
 import 'widgets/login_logo.dart';
 import 'widgets/email_login_form.dart';
 import 'widgets/social_login_buttons.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
+
+final GoogleSignIn _googleSignIn = GoogleSignIn(
+  scopes: ['email', 'profile'],
+  serverClientId: dotenv.env['GOOGLE_CLIENT_ID'],
+);
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -71,12 +79,8 @@ class LoginScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 28),
                     SocialLoginButtons(
-                      onKakaoTap: () {
-                        // TODO: 카카오 로그인/회원가입 통합 플로우
-                      },
-                      onGoogleTap: () {
-                        // TODO: 구글 로그인/회원가입 통합 플로우
-                      },
+                      onKakaoTap: () => _handleKakaoLogin(context),
+                      onGoogleTap: () => _handleGoogleLogin(context),
                     ),
                     // TODO: 소셜 로그인 연동 후, 이메일/소셜 로그인 성공 시에만 메인으로 진입
                   ],
@@ -124,6 +128,142 @@ Future<void> _showEmailLoginSheet(BuildContext context) async {
     }
   }
 }
+
+Future<void> _handleKakaoLogin(BuildContext context) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    // 1) 카카오 SDK로 액세스 토큰 받기
+    kakao.OAuthToken token;
+    if (await kakao.isKakaoTalkInstalled()) {
+      token = await kakao.UserApi.instance.loginWithKakaoTalk();
+    } else {
+      token = await kakao.UserApi.instance.loginWithKakaoAccount();
+    }
+
+    // 2) 백엔드로 토큰 전달 → 우리 서버 로그인/회원가입
+    final authService = AuthService();
+    final result = await authService.loginWithKakao(token.accessToken);
+
+    // 3) 카카오에서 실제 사용자 프로필 조회
+    final kakaoUser = await kakao.UserApi.instance.me();
+    final kakaoAccount = kakaoUser.kakaoAccount;
+    final kakaoProfile = kakaoAccount?.profile;
+
+    final nicknameFromKakao = kakaoProfile?.nickname;
+    final profileImageFromKakao = kakaoProfile?.profileImageUrl;
+    // 필요하면 이메일도 사용 가능
+    // final emailFromKakao = kakaoAccount?.email;
+
+    // 4) UserProvider에 상태 반영
+    if (result['userId'] != null && result['accessToken'] != null) {
+      final userProvider = Provider.of<UserProvider>(
+        context,
+        listen: false,
+      );
+
+      userProvider.setUser(
+        userId: result['userId'] as int,
+        // 서버 닉네임보다 카카오 닉네임을 우선 사용
+        nickname: nicknameFromKakao ?? (result['nickname'] as String? ?? ''),
+        accessToken: result['accessToken'] as String,
+        // 서버 프로필보다 카카오 프로필을 우선 사용
+        profileImageUrl:
+        profileImageFromKakao ?? (result['profileImageUrl'] as String?),
+        context: context,
+      );
+
+      // 5) 메인 화면으로 이동
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('카카오로 로그인되었습니다.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('카카오 로그인에 실패했습니다.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('카카오 로그인 오류: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+Future<void> _handleGoogleLogin(BuildContext context) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    // ✅ 여기 수정: 기존 `GoogleSignIn().signIn()` → `_googleSignIn.signIn()`
+    final googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      return; // 사용자가 취소한 경우
+    }
+
+    final googleAuth = await googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    if (idToken == null) {
+      throw Exception('Google idToken 이 비어 있습니다.');
+    }
+
+    final authService = AuthService();
+    final result = await authService.loginWithGoogle(idToken);
+
+    // 3) UserProvider에 상태 반영
+    if (result['userId'] != null && result['accessToken'] != null) {
+      final userProvider = Provider.of<UserProvider>(
+        context,
+        listen: false,
+      );
+      userProvider.setUser(
+        userId: result['userId'] as int,
+        nickname: result['nickname'] as String? ?? '',
+        accessToken: result['accessToken'] as String,
+        profileImageUrl: result['profileImageUrl'] as String?,
+        context: context,
+      );
+
+      // 4) 메인 화면으로 이동
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Google로 로그인되었습니다.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Google 로그인에 실패했습니다.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Google 로그인 오류: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
 
 class _EmailLoginForm extends StatefulWidget {
   @override
@@ -222,7 +362,7 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
           // Exception 접두사 제거, 사용자 친화적인 메시지로 변환
           if (errorMsg.startsWith('Exception: ')) {
             message = errorMsg.substring('Exception: '.length);
-            
+
             // 실제 네트워크 오류만 "네트워크 오류"로 변환
             if (message.startsWith('네트워크 오류: ') ||
                 message.contains('서버에 연결할 수 없습니다') ||
@@ -234,9 +374,9 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
             }
             // 기술적인 오류 코드만 포함된 경우 (백엔드 메시지가 없는 경우)에만 일반 메시지로 변환
             else if ((message.contains('(40') ||
-                    message.contains('(50') ||
-                    message.contains('statusCode') ||
-                    message.contains('HttpException')) &&
+                message.contains('(50') ||
+                message.contains('statusCode') ||
+                message.contains('HttpException')) &&
                 !message.contains('이메일') &&
                 !message.contains('비밀번호') &&
                 !message.contains('올바르지') &&
@@ -477,7 +617,7 @@ class _PrimaryButton extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors:
-                gradientColors ??
+            gradientColors ??
                 [
                   AppColors.primary.withValues(alpha: 0.95),
                   AppColors.primary.withValues(alpha: 0.75),
@@ -576,5 +716,7 @@ class _PressScaleState extends State<_PressScale> {
     );
   }
 }
+
+
 
 // Removed local background and logo; using widgets/login_background.dart and widgets/login_logo.dart

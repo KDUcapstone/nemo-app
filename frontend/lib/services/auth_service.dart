@@ -137,7 +137,7 @@ class AuthService {
       }
 
       final data =
-          jsonDecode(utf8.decode(refreshRes.bodyBytes)) as Map<String, dynamic>;
+      jsonDecode(utf8.decode(refreshRes.bodyBytes)) as Map<String, dynamic>;
       final newAccess = data['accessToken'] as String?;
       final newRefresh = data['refreshToken'] as String?;
 
@@ -244,7 +244,7 @@ class AuthService {
         // API 명세서: { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
         // UTF-8로 명시적으로 디코딩하여 인코딩 문제 방지
         final data =
-            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         final access = data['accessToken'] as String;
         final refresh = data['refreshToken'] as String?;
         final user = data['user'] as Map<String, dynamic>?;
@@ -479,7 +479,7 @@ class AuthService {
           'nickname': data['nickname'] as String? ?? '',
           'profileImageUrl': data['profileImageUrl'] as String? ?? '',
           'createdAt':
-              data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+          data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
         };
       } else if (response.statusCode == 409) {
         final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
@@ -961,6 +961,77 @@ class AuthService {
       }
       throw Exception('네트워크 오류: $e');
     }
+  }
+  /// 카카오 로그인: 백엔드로 accessToken 전달
+  Future<Map<String, dynamic>> loginWithKakao(String kakaoAccessToken) async {
+    final response = await ApiClient.post(
+      '/api/auth/oauth/kakao',
+      body: {'accessToken': kakaoAccessToken},
+      includeAuth: false,
+    );
+
+    return _handleSocialResponse(response, provider: '카카오');
+  }
+  /// 구글 로그인: 백엔드로 idToken 전달
+  Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
+    final response = await ApiClient.post(
+      '/api/auth/oauth/google',
+      body: {'idToken': idToken},
+      includeAuth: false,
+    );
+
+    return _handleSocialResponse(response, provider: '구글');
+  }
+  /// 소셜 로그인 공통 응답 처리
+  Future<Map<String, dynamic>> _handleSocialResponse(
+      http.Response response, {
+        required String provider,
+      }) async {
+    if (response.statusCode == 200) {
+      final data =
+      jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+
+      final access = data['accessToken'] as String?;
+      final refresh = data['refreshToken'] as String?;
+      final user = data['user'] as Map<String, dynamic>?;
+
+      if (access == null) {
+        throw Exception('$provider 로그인 실패: accessToken 누락');
+      }
+
+      // 메모리에 저장
+      setAccessToken(access);
+      if (refresh != null) {
+        setRefreshToken(refresh);
+      }
+
+      // User 저장 로직
+      final uid = user?['userId'] as int?;
+      final nickname = user?['nickname'] as String?;
+      final profileImageUrl = user?['profileImageUrl'] as String?;
+
+      if (refresh != null && uid != null) {
+        await AuthStorage.saveAuth(
+          userId: uid,
+          nickname: nickname ?? '',
+          profileImageUrl: profileImageUrl,
+          refreshToken: refresh,
+        );
+      }
+
+      return {
+        'accessToken': access,
+        'refreshToken': refresh,
+        'userId': uid,
+        'nickname': nickname,
+        'profileImageUrl': profileImageUrl,
+        'isNewUser': data['isNewUser'] ?? false,
+      };
+    }
+
+    // 실패 처리
+    final body = response.body.isNotEmpty ? response.body : '';
+    throw Exception('$provider 로그인 실패: $body');
   }
 
   /// 소셜 로그인 (카카오/애플)
