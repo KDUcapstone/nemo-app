@@ -701,6 +701,25 @@ class AuthService {
         // API 명세서: 410 Gone - 이미 탈퇴된 사용자
         final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? '이미 탈퇴 처리된 사용자입니다.');
+      } else if (response.statusCode == 409) {
+        // 데이터베이스 제약 조건 위반 (CONSTRAINT_VIOLATION)
+        try {
+          final data = response.body.isNotEmpty
+              ? jsonDecode(response.body)
+              : {};
+          final message = data['message'] as String?;
+          final code = data['code'] as String?;
+
+          if (code == 'CONSTRAINT_VIOLATION' ||
+              (message != null && message.contains('중복 데이터'))) {
+            throw Exception('회원탈퇴할 수 없습니다. 연결된 데이터(사진, 앨범 등)가 있어 삭제할 수 없습니다.');
+          }
+
+          throw Exception(message ?? '회원탈퇴 중 충돌이 발생했습니다.');
+        } catch (e) {
+          if (e is Exception) rethrow;
+          throw Exception('회원탈퇴 중 충돌이 발생했습니다.');
+        }
       } else {
         throw Exception('회원탈퇴 실패 (${response.statusCode})');
       }

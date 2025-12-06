@@ -644,7 +644,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('회원탈퇴가 완료되었습니다. 그동안 이용해주셔서 감사했습니다.'),
+            content: Text('회원탈퇴가 완료되었습니다.\n그동안 이용해주셔서 감사합니다.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 4),
           ),
@@ -662,6 +662,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
             errorMsg.contains('INVALID_CURRENT_PASSWORD') ||
             errorMsg.contains('비밀번호')) {
           message = '비밀번호가 틀렸습니다';
+        } else if (errorMsg.contains('409') ||
+            errorMsg.contains('CONSTRAINT_VIOLATION') ||
+            errorMsg.contains('연결된 데이터') ||
+            errorMsg.contains('충돌')) {
+          message = '회원탈퇴할 수 없습니다. 연결된 데이터(사진, 앨범 등)가 있어 삭제할 수 없습니다.';
         } else if (errorMsg.contains('410') || errorMsg.contains('이미 탈퇴')) {
           message = '이미 탈퇴 처리된 사용자입니다.';
         } else {
@@ -760,17 +765,19 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               final errorMessage = snapshot.hasError
                                   ? snapshot.error.toString()
                                   : '저장 한도 정보를 불러오지 못했습니다.';
-                              final isAuthError = errorMessage.contains('인증') ||
+                              final isAuthError =
+                                  errorMessage.contains('인증') ||
                                   errorMessage.contains('토큰') ||
                                   errorMessage.contains('로그인') ||
                                   errorMessage.contains('401');
-                              
+
                               return Card(
                                 elevation: 0,
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -781,25 +788,26 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                             color: isAuthError
                                                 ? Colors.orange
                                                 : AppColors.textSecondary,
-                                      ),
-                                      const SizedBox(width: 8),
+                                          ),
+                                          const SizedBox(width: 8),
                                           Expanded(
-                                        child: Text(
+                                            child: Text(
                                               isAuthError
                                                   ? '인증이 만료되었습니다. 다시 로그인해주세요.'
                                                   : '저장 한도 정보를 불러오지 못했습니다.',
-                                          style: TextStyle(
+                                              style: TextStyle(
                                                 color: isAuthError
                                                     ? Colors.orange
                                                     : AppColors.textSecondary,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
                                         ],
                                       ),
                                       const SizedBox(height: 8),
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
                                         children: [
                                           if (isAuthError)
                                             TextButton(
@@ -807,21 +815,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                                 Navigator.pushReplacement(
                                                   context,
                                                   MaterialPageRoute(
-                                                    builder: (_) => const LoginScreen(),
+                                                    builder: (_) =>
+                                                        const LoginScreen(),
                                                   ),
                                                 );
                                               },
                                               child: const Text('로그인하기'),
                                             )
                                           else
-                                      TextButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            _quotaFuture =
-                                                StorageApi.fetchQuota();
-                                          });
-                                        },
-                                        child: const Text('다시 시도'),
+                                            TextButton(
+                                              onPressed: () {
+                                                setState(() {
+                                                  _quotaFuture =
+                                                      StorageApi.fetchQuota();
+                                                });
+                                              },
+                                              child: const Text('다시 시도'),
                                             ),
                                         ],
                                       ),
