@@ -913,6 +913,7 @@ class _FriendsEntryRow extends StatefulWidget {
 
 class _FriendsEntryRowState extends State<_FriendsEntryRow> {
   int? _friendCount;
+  int _pendingRequestCount = 0;
   bool _loading = false;
 
   @override
@@ -925,9 +926,11 @@ class _FriendsEntryRowState extends State<_FriendsEntryRow> {
     setState(() => _loading = true);
     try {
       final list = await FriendApi.getFriends();
+      final requests = await FriendApi.getPendingRequests();
       if (!mounted) return;
       setState(() {
         _friendCount = list.length;
+        _pendingRequestCount = requests.length;
         _loading = false;
       });
     } catch (_) {
@@ -945,10 +948,14 @@ class _FriendsEntryRowState extends State<_FriendsEntryRow> {
         : '친구 ${_friendCount}명';
 
     return InkWell(
-      onTap: () {
-        Navigator.of(
+      onTap: () async {
+        await Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const FriendsListScreen()));
+        // 친구 목록 화면에서 돌아올 때 갱신
+        if (mounted) {
+          _fetchCount();
+        }
       },
       child: Row(
         children: [
@@ -962,12 +969,37 @@ class _FriendsEntryRowState extends State<_FriendsEntryRow> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '친구',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
+                Row(
+                  children: [
+                    const Text(
+                      '친구',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    if (_pendingRequestCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '요청 ${_pendingRequestCount}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
                   countText,
