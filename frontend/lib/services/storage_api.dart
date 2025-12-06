@@ -52,9 +52,14 @@ class StorageApi {
       );
     }
 
+    print('💾 [StorageApi] fetchQuota 요청 시작');
+
     final http.Response res = await ApiClient.get(
       '/api/storage/quota',
     ).timeout(const Duration(seconds: 7));
+
+    print('💾 [StorageApi] 응답 상태: ${res.statusCode}');
+    print('💾 [StorageApi] 응답 본문: ${res.body}');
 
     if (res.statusCode == 200) {
       final Map<String, dynamic> map =
@@ -65,15 +70,30 @@ class StorageApi {
     if (res.statusCode == 401) {
       // API 명세서: error: "UNAUTHORIZED", message: "유효하지 않은 인증 토큰입니다."
       final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
-      throw Exception(body['message'] ?? '유효하지 않은 인증 토큰입니다.');
+      final errorCode = body['error'] as String?;
+      final errorMessage = body['message'] as String?;
+
+      print(
+        '🔴 [StorageApi] 401 에러 상세: errorCode=$errorCode, errorMessage=$errorMessage, body=$body',
+      );
+
+      throw Exception(errorMessage ?? '유효하지 않은 인증 토큰입니다. 다시 로그인해주세요.');
     }
 
     if (res.statusCode == 404) {
       // API 명세서: error: "USER_NOT_FOUND", message: "해당 사용자를 찾을 수 없습니다."
       final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
-      throw Exception(body['message'] ?? '해당 사용자를 찾을 수 없습니다.');
+      final errorCode = body['error'] as String?;
+      final errorMessage = body['message'] as String?;
+
+      print(
+        '🔴 [StorageApi] 404 에러 상세: errorCode=$errorCode, errorMessage=$errorMessage, body=$body',
+      );
+
+      throw Exception(errorMessage ?? '해당 사용자를 찾을 수 없습니다.');
     }
 
+    print('🔴 [StorageApi] 예상치 못한 상태 코드: ${res.statusCode}');
     throw Exception('저장 한도 조회 실패 (${res.statusCode})');
   }
 }

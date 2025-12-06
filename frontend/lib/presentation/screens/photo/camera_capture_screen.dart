@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_exif_rotation/flutter_exif_rotation.dart';
 
 class CameraCaptureScreen extends StatefulWidget {
   const CameraCaptureScreen({super.key});
@@ -130,7 +131,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
     final ImagePicker picker = ImagePicker();
     final XFile? file = await picker.pickImage(source: ImageSource.gallery);
     if (file != null && mounted) {
-      Navigator.pop(context, File(file.path));
+      // EXIF 회전 정보를 반영해 실제 이미지를 세로 방향으로 보정
+      final rotatedFile =
+          await FlutterExifRotation.rotateImage(path: file.path);
+      Navigator.pop(context, File(rotatedFile.path));
     }
   }
 

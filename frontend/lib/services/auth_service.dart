@@ -5,10 +5,91 @@ import 'package:http/http.dart' as http;
 
 import '../app/constants.dart';
 import 'api_client.dart';
+import 'auth_storage.dart';
+
+class AutoLoginResult {
+  final bool success;
+  final int? userId;
+  final String? nickname;
+  final String? profileImageUrl;
+  final String? accessToken;
+
+  AutoLoginResult({
+    required this.success,
+    this.userId,
+    this.nickname,
+    this.profileImageUrl,
+    this.accessToken,
+  });
+}
+
+/// 계정 잠금 예외 (비밀번호 재설정 필요)
+class AccountLockedException implements Exception {
+  final String message;
+  final int? remainingAttempts;
+  final String? email;
+
+  AccountLockedException({
+    required this.message,
+    this.remainingAttempts,
+    this.email,
+  });
+
+  @override
+  String toString() => message;
+}
+
+/// 캡챠 필요 예외 (Turnstile 인증 필요)
+class NeedCaptchaException implements Exception {
+  final String message;
+  final int? remainingAttempts;
+
+  NeedCaptchaException({required this.message, this.remainingAttempts});
+
+  @override
+  String toString() => message;
+}
 
 class AuthService {
-  // ✅ 서버 URL 설정 (로컬 or 배포 서버로 교체해야 함)
-  static const String baseUrl = 'http://10.0.2.2:8080'; // ← TODO: 실제 주소로 바꿔!
+  // ✅ 서버 URL 설정 (health 체크 기반 원격/로컬 자동 선택)
+  static String? _resolvedBaseUrl;
+
+  // 원격/로컬 후보 URL
+  static const String _remoteBaseUrl =
+      'https://port-0-nemo-docker-springboot-prod-mdy7o3aya1eb5a01.sel5.cloudtype.app/';
+  static const String _localBaseUrlAndroid = 'http://10.0.2.2:8080/';
+  static const String _localBaseUrlDefault = 'http://localhost:8080/';
+
+  // 외부에서 사용하는 baseUrl (초기화 전에는 원격 기본값 사용)
+  static String get baseUrl => _resolvedBaseUrl ?? _remoteBaseUrl;
+
+  /// 앱 시작 시 한 번 호출해서 baseUrl을 결정
+  static Future<void> initBaseUrl() async {
+    if (_resolvedBaseUrl != null) return; // 이미 결정된 경우 재실행 방지
+
+    // 1) 원격 서버 health 체크 시도
+    try {
+      final uri = Uri.parse('${_remoteBaseUrl}actuator/health');
+      // 모바일 네트워크 환경에서도 여유를 두기 위해 타임아웃을 7초로 증가
+      final res = await http.get(uri).timeout(const Duration(seconds: 7));
+
+      if (res.statusCode >= 200 && res.statusCode < 400) {
+        _resolvedBaseUrl = _remoteBaseUrl;
+        print('🌐 [AuthService] 원격 서버 사용: $_resolvedBaseUrl');
+        return;
+      }
+    } catch (e) {
+      print('🌐 [AuthService] 원격 서버 health 체크 실패: $e');
+    }
+
+    // 2) 실패 시 로컬 서버로 fallback
+    if (Platform.isAndroid) {
+      _resolvedBaseUrl = _localBaseUrlAndroid;
+    } else {
+      _resolvedBaseUrl = _localBaseUrlDefault;
+    }
+    print('🌐 [AuthService] 로컬 서버 사용: $_resolvedBaseUrl');
+  }
 
   // JWT 토큰 저장소
   static String? _accessToken;
@@ -33,13 +114,77 @@ class AuthService {
     _refreshToken = null;
   }
 
+  /// 앱 시작 시 로컬에 저장된 refreshToken을 사용해 자동 로그인 시도
+  /// - 성공 시: accessToken 갱신 + (필요하면 refreshToken 갱신)
+  /// - 실패 시: 저장값 삭제
+  static Future<AutoLoginResult> tryAutoLogin() async {
+    try {
+      final stored = await AuthStorage.loadAuth();
+      if (stored == null) {
+        return AutoLoginResult(success: false);
+      }
+
+      // 서버에 refresh 토큰 검증 + accessToken 발급 요청
+      final refreshRes = await ApiClient.post(
+        '/api/auth/refresh',
+        body: {'refreshToken': stored.refreshToken},
+        includeAuth: false,
+      );
+
+      if (refreshRes.statusCode != 200) {
+        await AuthStorage.clear();
+        return AutoLoginResult(success: false);
+      }
+
+      final data =
+          jsonDecode(utf8.decode(refreshRes.bodyBytes)) as Map<String, dynamic>;
+      final newAccess = data['accessToken'] as String?;
+      final newRefresh = data['refreshToken'] as String?;
+
+      if (newAccess == null || newAccess.isEmpty) {
+        await AuthStorage.clear();
+        return AutoLoginResult(success: false);
+      }
+
+      // 메모리에 토큰 반영
+      setAccessToken(newAccess);
+      if (newRefresh != null && newRefresh.isNotEmpty) {
+        setRefreshToken(newRefresh);
+        await AuthStorage.saveAuth(
+          userId: stored.userId,
+          nickname: stored.nickname,
+          profileImageUrl: stored.profileImageUrl,
+          refreshToken: newRefresh,
+        );
+      } else {
+        // refreshToken 변경 없으면 기존 값 유지
+        _refreshToken = stored.refreshToken;
+      }
+
+      return AutoLoginResult(
+        success: true,
+        userId: stored.userId,
+        nickname: stored.nickname,
+        profileImageUrl: stored.profileImageUrl,
+        accessToken: newAccess,
+      );
+    } catch (_) {
+      await AuthStorage.clear();
+      return AutoLoginResult(success: false);
+    }
+  }
+
   // JWT 토큰이 포함된 헤더 생성
   static Map<String, String> _getHeaders({bool includeAuth = true}) {
     return ApiClient.headers(includeAuth: includeAuth);
   }
 
   /// 로그인 요청
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(
+    String email,
+    String password, {
+    String? turnstileToken,
+  }) async {
     if (AppConstants.useMockApi) {
       // 모킹 응답
       await Future.delayed(
@@ -74,11 +219,26 @@ class AuthService {
       };
     }
     try {
+      // 디버그 로그 추가
+      print('🔵 [LOGIN] 시작 - baseUrl: $baseUrl');
+      print('🔵 [LOGIN] useMockApi: ${AppConstants.useMockApi}');
+      print('🔵 [LOGIN] 요청 URL: ${baseUrl}api/users/login');
+
+      final body = <String, dynamic>{'email': email, 'password': password};
+
+      // turnstileToken이 있으면 추가
+      if (turnstileToken != null && turnstileToken.isNotEmpty) {
+        body['turnstileToken'] = turnstileToken;
+      }
+
       final response = await ApiClient.post(
         '/api/users/login',
-        body: {'email': email, 'password': password},
+        body: body,
         includeAuth: false,
       );
+
+      print('🟢 [LOGIN] 응답 상태: ${response.statusCode}');
+      print('🟢 [LOGIN] 응답 본문: ${response.body}');
 
       if (response.statusCode == 200) {
         // API 명세서: { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
@@ -89,10 +249,22 @@ class AuthService {
         final refresh = data['refreshToken'] as String?;
         final user = data['user'] as Map<String, dynamic>?;
 
-        // Access Token과 Refresh Token 저장
+        // Access Token과 Refresh Token 저장 + 로컬 저장
         setAccessToken(access);
         if (refresh != null) {
           setRefreshToken(refresh);
+          final uid = (user?['userId'] as num?)?.toInt();
+          final nickname = user?['nickname'] as String? ?? '';
+          final profileImageUrl = user?['profileImageUrl'] as String?;
+          if (uid != null) {
+            // 실패해도 로그인 자체에는 영향 없도록 await 사용
+            await AuthStorage.saveAuth(
+              userId: uid,
+              nickname: nickname,
+              profileImageUrl: profileImageUrl,
+              refreshToken: refresh,
+            );
+          }
         }
 
         return {
@@ -105,24 +277,138 @@ class AuthService {
           'profileImageUrl': user?['profileImageUrl'],
         };
       } else if (response.statusCode == 401) {
-        // 백엔드 응답의 실제 메시지 확인
-        final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
-        final message = data['message'] as String?;
+        // 백엔드 명세: { "error": "INVALID_CREDENTIALS", "message": "...", "remainingAttempts": 3, "needCaptcha": false, "needPasswordReset": false }
+        final raw = response.body.isNotEmpty
+            ? utf8.decode(response.bodyBytes)
+            : '';
+        Map<String, dynamic>? data;
+        try {
+          data = raw.isNotEmpty
+              ? jsonDecode(raw) as Map<String, dynamic>
+              : null;
+        } catch (_) {
+          data = null;
+        }
+        final error = data?['error'] as String?;
+        final message = data?['message'] as String?;
+        final remainingAttempts = data?['remainingAttempts'] as int?;
+        final needPasswordReset = data?['needPasswordReset'] as bool? ?? false;
+        final needCaptcha = data?['needCaptcha'] as bool? ?? false;
 
-        // 백엔드가 구체적인 메시지를 제공하면 그대로 사용
+        // 계정 잠금 또는 비밀번호 재설정 필요
+        if (error == 'ACCOUNT_LOCKED' || needPasswordReset == true) {
+          throw AccountLockedException(
+            message: message?.isNotEmpty == true
+                ? message!
+                : '비밀번호를 여러 번 틀려 계정이 잠겼습니다. 비밀번호를 재설정해주세요.',
+            remainingAttempts: remainingAttempts,
+            email: email, // 로그인 시도한 이메일 전달
+          );
+        }
+
+        // 캡챠 필요 또는 캡챠 검증 실패
+        if (error == 'NEED_CAPTCHA' ||
+            error == 'INVALID_CAPTCHA' ||
+            needCaptcha == true) {
+          throw NeedCaptchaException(
+            message: message?.isNotEmpty == true
+                ? message!
+                : error == 'INVALID_CAPTCHA'
+                ? '캡챠 인증에 실패했습니다. 다시 시도해주세요.'
+                : '비밀번호를 여러 번 틀렸습니다. 캡챠 인증을 완료한 후 다시 시도해주세요.',
+            remainingAttempts: remainingAttempts,
+          );
+        }
+
+        if (error == 'INVALID_CREDENTIALS') {
+          // 잘못된 이메일/비밀번호일 때는 명세서 메시지를 정확히 노출
+          // remainingAttempts가 있으면 메시지에 포함
+          String errorMessage = message?.isNotEmpty == true
+              ? message!
+              : '이메일 또는 비밀번호가 올바르지 않습니다.';
+
+          if (remainingAttempts != null && remainingAttempts > 0) {
+            errorMessage += ' (남은 시도 횟수: $remainingAttempts)';
+          }
+
+          throw Exception(errorMessage);
+        }
+
+        // 기타 401 오류는 백엔드 메시지 우선, 없으면 일반 메시지
         if (message != null && message.isNotEmpty) {
           throw Exception(message);
         }
-        // 기본값: 비밀번호 오류로 처리 (하지만 백엔드 메시지 우선)
-        throw Exception('비밀번호가 틀렸습니다');
+        throw Exception('인증에 실패했습니다. 다시 로그인해주세요.');
+      } else if (response.statusCode == 423) {
+        // 계정 잠금 (423 Locked)
+        final raw = response.body.isNotEmpty
+            ? utf8.decode(response.bodyBytes)
+            : '';
+        Map<String, dynamic>? data;
+        try {
+          data = raw.isNotEmpty
+              ? jsonDecode(raw) as Map<String, dynamic>
+              : null;
+        } catch (_) {
+          data = null;
+        }
+        final message = data?['message'] as String?;
+        final remainingAttempts = data?['remainingAttempts'] as int?;
+        final needPasswordReset = data?['needPasswordReset'] as bool? ?? false;
+
+        throw AccountLockedException(
+          message: message?.isNotEmpty == true
+              ? message!
+              : '비밀번호를 여러 번 틀려 계정이 잠겼습니다. 비밀번호를 재설정해주세요.',
+          remainingAttempts: remainingAttempts,
+          email: email,
+        );
       } else if (response.statusCode == 400) {
         final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? '잘못된 요청입니다.');
       } else {
+        print('🔴 [LOGIN] 실패 - 상태 코드: ${response.statusCode}');
+        print('🔴 [LOGIN] 응답 본문: ${response.body}');
         throw Exception('로그인 실패 (${response.statusCode})');
       }
-    } catch (e) {
-      throw Exception('네트워크 오류: $e');
+    } catch (e, stackTrace) {
+      print('❌ [LOGIN] 에러 발생: $e');
+      print('❌ [LOGIN] 스택 트레이스: $stackTrace');
+
+      // 이미 Exception으로 throw된 경우 (401, 400 등)는 그대로 다시 throw
+      if (e is Exception) {
+        final errorStr = e.toString();
+        // 백엔드에서 보낸 구체적인 에러 메시지는 그대로 전달
+        if (errorStr.startsWith('Exception: ')) {
+          final message = errorStr.substring('Exception: '.length);
+          // 네트워크 관련 에러가 아닌 경우 (이메일/비밀번호 오류 등)는 그대로 전달
+          if (!message.contains('SocketException') &&
+              !message.contains('Failed host lookup') &&
+              !message.contains('Connection refused') &&
+              !message.contains('Network is unreachable') &&
+              !message.contains('HandshakeException') &&
+              !message.contains('Certificate') &&
+              !message.contains('TimeoutException')) {
+            throw e; // 원본 Exception 그대로 다시 throw
+          }
+        }
+      }
+
+      // 실제 네트워크 오류만 처리
+      final errorStr = e.toString();
+      if (errorStr.contains('SocketException') ||
+          errorStr.contains('Failed host lookup') ||
+          errorStr.contains('Connection refused') ||
+          errorStr.contains('Network is unreachable')) {
+        throw Exception('서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요.');
+      } else if (errorStr.contains('HandshakeException') ||
+          errorStr.contains('Certificate')) {
+        throw Exception('SSL 인증서 오류가 발생했습니다.');
+      } else if (errorStr.contains('TimeoutException')) {
+        throw Exception('요청 시간이 초과되었습니다.');
+      }
+      // 그 외의 경우는 원본 에러를 그대로 전달
+      throw e;
     }
   }
 
@@ -415,6 +701,25 @@ class AuthService {
         // API 명세서: 410 Gone - 이미 탈퇴된 사용자
         final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? '이미 탈퇴 처리된 사용자입니다.');
+      } else if (response.statusCode == 409) {
+        // 데이터베이스 제약 조건 위반 (CONSTRAINT_VIOLATION)
+        try {
+          final data = response.body.isNotEmpty
+              ? jsonDecode(response.body)
+              : {};
+          final message = data['message'] as String?;
+          final code = data['code'] as String?;
+
+          if (code == 'CONSTRAINT_VIOLATION' ||
+              (message != null && message.contains('중복 데이터'))) {
+            throw Exception('회원탈퇴할 수 없습니다. 연결된 데이터(사진, 앨범 등)가 있어 삭제할 수 없습니다.');
+          }
+
+          throw Exception(message ?? '회원탈퇴 중 충돌이 발생했습니다.');
+        } catch (e) {
+          if (e is Exception) rethrow;
+          throw Exception('회원탈퇴 중 충돌이 발생했습니다.');
+        }
       } else {
         throw Exception('회원탈퇴 실패 (${response.statusCode})');
       }

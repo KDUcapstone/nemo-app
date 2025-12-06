@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:targetApi="33" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <application
-        android:label="frontend"
+        android:label="네컷모아"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

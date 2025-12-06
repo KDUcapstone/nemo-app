@@ -8,7 +8,14 @@ import 'package:frontend/services/auth_service.dart';
 import 'package:frontend/services/api_client.dart';
 
 class AlbumApi {
-  static Uri _uri(String path) => Uri.parse('${AuthService.baseUrl}$path');
+  static Uri _uri(String path) {
+    // baseUrl 끝의 슬래시와 path 시작의 슬래시 처리
+    final base = AuthService.baseUrl.endsWith('/')
+        ? AuthService.baseUrl.substring(0, AuthService.baseUrl.length - 1)
+        : AuthService.baseUrl;
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return Uri.parse('$base$cleanPath');
+  }
 
   static Map<String, String> _headersJson() {
     final token = AuthService.accessToken;
@@ -118,22 +125,46 @@ class AlbumApi {
       };
     }
 
-    final res = await http.post(
-      _uri('/api/albums'),
-      headers: _headersJson(),
-      // API 명세서: photoIdList 필드명 사용
-      body: jsonEncode({
-        'title': title,
-        if (description != null) 'description': description,
-        if (coverPhotoId != null) 'coverPhotoId': coverPhotoId,
-        if (photoIdList != null) 'photoIdList': photoIdList,
-      }),
-    );
+    final uri = _uri('/api/albums');
+    final headers = _headersJson();
+    final body = jsonEncode({
+      'title': title,
+      if (description != null) 'description': description,
+      if (coverPhotoId != null) 'coverPhotoId': coverPhotoId,
+      if (photoIdList != null) 'photoIdList': photoIdList,
+    });
+
+    print('📁 [AlbumApi] createAlbum 요청 URL: $uri');
+    print('📁 [AlbumApi] 헤더: $headers');
+    print('📁 [AlbumApi] 요청 본문: $body');
+
+    final res = await http.post(uri, headers: headers, body: body);
+
+    print('📁 [AlbumApi] 응답 상태: ${res.statusCode}');
+    print('📁 [AlbumApi] 응답 본문: ${res.body}');
 
     if (res.statusCode == 201 || res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
-    throw Exception('Failed to create album (${res.statusCode})');
+
+    if (res.statusCode == 400) {
+      // 400 에러의 경우 상세 메시지 확인
+      final errorBody = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      final message = errorBody['message'] as String?;
+      final error = errorBody['error'] as String?;
+      print(
+        '🔴 [AlbumApi] 400 에러 상세: message=$message, error=$error, body=$errorBody',
+      );
+      throw Exception(message ?? error ?? '잘못된 요청입니다. (400)');
+    }
+
+    if (res.statusCode == 401) {
+      final errorBody = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      final message = errorBody['message'] as String?;
+      throw Exception(message ?? '로그인이 필요합니다.');
+    }
+
+    throw Exception('앨범 생성 실패 (${res.statusCode})');
   }
 
   // POST /api/albums/{albumId}/favorite
@@ -337,14 +368,37 @@ class AlbumApi {
         ],
       };
     }
-    final res = await http.get(
-      _uri('/api/albums/$albumId'),
-      headers: _headersJson(),
-    );
+    final uri = _uri('/api/albums/$albumId');
+    print('📁 [AlbumApi] getAlbum 요청 URL: $uri');
+    print('📁 [AlbumApi] 헤더: ${_headersJson()}');
+
+    final res = await http.get(uri, headers: _headersJson());
+
+    print('📁 [AlbumApi] 응답 상태: ${res.statusCode}');
+    print('📁 [AlbumApi] 응답 본문: ${res.body}');
+
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
-    throw Exception('Failed to fetch album (${res.statusCode})');
+    if (res.statusCode == 401) {
+      final errorBody = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      final message = errorBody['message'] as String?;
+      throw Exception(message ?? '인증이 필요합니다. (401)');
+    }
+    if (res.statusCode == 400) {
+      // 400 에러의 경우 상세 메시지 확인
+      final errorBody = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      final message = errorBody['message'] as String?;
+      final error = errorBody['error'] as String?;
+      print(
+        '🔴 [AlbumApi] 400 에러 상세: message=$message, error=$error, body=$errorBody',
+      );
+      throw Exception(message ?? error ?? '잘못된 요청입니다. (400)');
+    }
+    if (res.statusCode == 404) {
+      throw Exception('앨범을 찾을 수 없습니다. (404)');
+    }
+    throw Exception('앨범 조회 실패 (${res.statusCode})');
   }
 
   // GET /api/albums/share/requests -> PENDING 공유 요청 목록
@@ -405,8 +459,10 @@ class AlbumApi {
   // 대신 PUT /api/albums/{albumId}에서 coverPhotoId를 설정할 수 있습니다.
   // static Future<void> setCoverPhoto({ ... }) async { ... }
 
-  // POST /api/albums/{albumId}/thumbnail (multipart: photoId 또는 file)
-  // 백엔드 명세: multipart/form-data에서 photoId (Long) 또는 file (MultipartFile) 사용
+  // POST /api/albums/{albumId}/thumbnail
+  // 백엔드 명세:
+  // - JSON(photoId): photoId만 있을 때 또는 둘 다 없을 때 (자동 썸네일 지정)
+  // - multipart(file): 파일 업로드 시 (uploadThumbnailFile 사용)
   static Future<Map<String, dynamic>> setThumbnail({
     required int albumId,
     int? photoId,
@@ -422,19 +478,19 @@ class AlbumApi {
         'message': '앨범 썸네일이 성공적으로 설정되었습니다.',
       };
     }
-    // 백엔드 명세: multipart/form-data로 photoId 전송
+
+    // 백엔드 명세: JSON으로 전송 (8-1)
+    // photoId가 있으면 해당 사진을 썸네일로 지정
+    // photoId가 없으면 앨범 내 최신 사진 기준으로 자동 썸네일 지정
     final uri = _uri('/api/albums/$albumId/thumbnail');
-    final req = http.MultipartRequest('POST', uri);
-    final token = AuthService.accessToken;
-    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    final headers = _headersJson();
 
-    if (photoId != null) {
-      // photoId를 multipart field로 전송
-      req.fields['photoId'] = photoId.toString();
-    }
+    final body = photoId != null
+        ? jsonEncode({'photoId': photoId})
+        : jsonEncode({}); // 빈 body로 자동 썸네일 지정
 
-    final streamed = await req.send();
-    final res = await http.Response.fromStream(streamed);
+    final res = await http.post(uri, headers: headers, body: body);
+
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -674,7 +730,40 @@ class AlbumApi {
     if (res.statusCode == 204) {
       return {'albumId': albumId, 'message': '앨범이 성공적으로 삭제되었습니다.'};
     }
-    if (res.statusCode == 403) throw Exception('FORBIDDEN');
+    if (res.statusCode == 403) {
+      // 백엔드 응답 메시지 파싱
+      try {
+        final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+        final message = body['message'] as String?;
+        if (message != null && message.isNotEmpty) {
+          throw Exception(message);
+        }
+      } catch (e) {
+        // 이미 Exception이면 그대로 던지고, 아니면 기본 메시지
+        if (e is Exception) rethrow;
+      }
+      throw Exception('공유받은 앨범은 삭제할 수 없습니다.');
+    }
+    if (res.statusCode == 409) {
+      // 데이터베이스 제약 조건 위반 (CONSTRAINT_VIOLATION)
+      try {
+        final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+        final message = body['message'] as String?;
+        final code = body['code'] as String?;
+        // 백엔드에서 "중복 데이터로 처리할 수 없습니다." 메시지가 오면
+        // 더 명확한 메시지로 변경
+        if (message != null && message.isNotEmpty) {
+          if (message.contains('중복 데이터') || code == 'CONSTRAINT_VIOLATION') {
+            throw Exception('앨범을 삭제할 수 없습니다. 앨범에 연결된 데이터가 있어 삭제할 수 없습니다.');
+          }
+          throw Exception(message);
+        }
+      } catch (e) {
+        // 이미 Exception이면 그대로 던지고, 아니면 기본 메시지
+        if (e is Exception) rethrow;
+      }
+      throw Exception('앨범을 삭제할 수 없습니다. 연결된 데이터가 있습니다.');
+    }
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to delete album (${res.statusCode})');
   }
@@ -707,7 +796,20 @@ class AlbumApi {
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
-    if (res.statusCode == 400) throw Exception('NOT_FRIEND');
+    if (res.statusCode == 400) {
+      // 백엔드 응답 메시지 파싱
+      try {
+        final body = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+        final message = body['message'] as String?;
+        if (message != null && message.isNotEmpty) {
+          throw Exception(message);
+        }
+      } catch (e) {
+        // 이미 Exception이면 그대로 던지고, 아니면 기본 메시지
+        if (e is Exception) rethrow;
+      }
+      throw Exception('NOT_FRIEND');
+    }
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to share album (${res.statusCode})');
@@ -746,32 +848,6 @@ class AlbumApi {
     throw Exception('Failed to create share link (${res.statusCode})');
   }
 
-  // GET /api/albums/{albumId}/share/targets
-  static Future<List<Map<String, dynamic>>> getShareTargets(int albumId) async {
-    if (AppConstants.useMockApi) {
-      await Future.delayed(
-        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
-      );
-      // 더미: 2명 공유 중
-      return [
-        {'userId': 3, 'nickname': '네컷러버'},
-        {'userId': 5, 'nickname': '사진장인'},
-      ];
-    }
-    final res = await http.get(
-      _uri('/api/albums/$albumId/share/targets'),
-      headers: _headersJson(),
-    );
-    if (res.statusCode == 200) {
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
-      final List list = body['sharedTo'] ?? [];
-      return list.cast<Map<String, dynamic>>();
-    }
-    if (res.statusCode == 403) throw Exception('FORBIDDEN');
-    if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
-    throw Exception('Failed to fetch share targets (${res.statusCode})');
-  }
-
   // DELETE /api/albums/{albumId}/share/{userId}
   static Future<void> unshareTarget({
     required int albumId,
@@ -791,6 +867,42 @@ class AlbumApi {
     if (res.statusCode == 403) throw Exception('FORBIDDEN');
     if (res.statusCode == 404) throw Exception('ALBUM_NOT_FOUND');
     throw Exception('Failed to unshare (${res.statusCode})');
+  }
+
+  // GET /api/albums/{albumId}/download-urls
+  static Future<Map<String, dynamic>> getAlbumDownloadUrls(int albumId) async {
+    if (AppConstants.useMockApi) {
+      await Future.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return {
+        'albumId': albumId,
+        'albumTitle': '모킹 앨범',
+        'photoCount': 5,
+        'photos': List.generate(
+          5,
+          (i) => {
+            'photoId': 100 + i,
+            'sequence': i,
+            'downloadUrl': 'https://picsum.photos/id/${100 + i}/600/800',
+            'filename': 'nemo_${100 + i}.jpg',
+            'fileSize': 283749,
+          },
+        ),
+      };
+    }
+
+    final res = await ApiClient.get('/api/albums/$albumId/download-urls');
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    if (res.statusCode == 403) {
+      throw Exception('해당 앨범의 사진을 다운로드할 권한이 없습니다.');
+    }
+    if (res.statusCode == 404) {
+      throw Exception('ALBUM_NOT_FOUND');
+    }
+    throw Exception('Failed to get album download URLs (${res.statusCode})');
   }
 }
 

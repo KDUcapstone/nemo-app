@@ -35,6 +35,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Route arguments에서 이메일 받아오기
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic>) {
+        final email = args['email'] as String?;
+        if (email != null && email.isNotEmpty) {
+          _emailController.text = email;
+        }
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     super.dispose();

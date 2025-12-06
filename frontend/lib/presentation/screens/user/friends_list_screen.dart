@@ -23,7 +23,11 @@ class _FriendsListScreenState extends State<FriendsListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex.clamp(0, 2));
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 2),
+    );
     _loadFriends();
     _loadRequests();
   }
@@ -46,8 +50,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       final msg = errorStr.startsWith('Exception: ')
           ? errorStr.substring('Exception: '.length)
           : '친구 목록을 불러오지 못했습니다.';
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -64,8 +67,7 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       final msg = errorStr.startsWith('Exception: ')
           ? errorStr.substring('Exception: '.length)
           : '검색에 실패했습니다.';
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -77,7 +79,10 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       if (!mounted) return;
       setState(() {
         _requests = list
-            .where((e) => !_dismissedRequestIds.contains((e['requestId'] ?? -1) as int))
+            .where(
+              (e) =>
+                  !_dismissedRequestIds.contains((e['requestId'] ?? -1) as int),
+            )
             .toList();
       });
     } catch (_) {
@@ -92,8 +97,14 @@ class _FriendsListScreenState extends State<FriendsListScreen>
         title: const Text('친구 삭제'),
         content: Text('정말 ${nickname}님을 친구에서 삭제하시겠어요?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -107,15 +118,16 @@ class _FriendsListScreenState extends State<FriendsListScreen>
             .toList();
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('삭제: $nickname')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('삭제: $nickname')));
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString().contains('NOT_A_FRIEND')
           ? '친구 목록에 없는 사용자입니다.'
           : e.toString().contains('USER_NOT_FOUND')
-              ? '사용자를 찾을 수 없습니다.'
-              : '삭제 실패';
+          ? '사용자를 찾을 수 없습니다.'
+          : '삭제 실패';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
@@ -135,8 +147,9 @@ class _FriendsListScreenState extends State<FriendsListScreen>
           return e;
         }).toList();
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('친구 요청을 보냈습니다: $nickname')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('친구 요청을 보냈습니다: $nickname')));
     } catch (e) {
       if (!mounted) return;
       final s = e.toString();
@@ -169,7 +182,11 @@ class _FriendsListScreenState extends State<FriendsListScreen>
     }
   }
 
-  Future<void> _acceptByRequestId(int requestId, int requesterId, String nickname) async {
+  Future<void> _acceptByRequestId(
+    int requestId,
+    int requesterId,
+    String nickname,
+  ) async {
     try {
       await FriendApi.acceptRequest(requestId);
       final friend = {
@@ -184,19 +201,19 @@ class _FriendsListScreenState extends State<FriendsListScreen>
         _requests.removeWhere((e) => (e['requestId'] as int) == requestId);
         _dismissedRequestIds.add(requestId);
         // 내 친구 목록에 추가(중복 방지)
-        final already =
-            _friends.any((e) => (e['userId'] as int) == requesterId);
+        final already = _friends.any(
+          (e) => (e['userId'] as int) == requesterId,
+        );
         if (!already) {
-          _friends = [
-            ..._friends,
-            friend,
-          ];
+          _friends = [..._friends, friend];
         }
         // 검색 결과에 반영
         _results = _results
-            .map((e) => (e['userId'] as int) == requesterId
-                ? {...e, 'isFriend': true}
-                : e)
+            .map(
+              (e) => (e['userId'] as int) == requesterId
+                  ? {...e, 'isFriend': true}
+                  : e,
+            )
             .toList();
       });
       // 백엔드 연동 시 실제 상태 동기화를 위해 새로고침하되,
@@ -204,8 +221,9 @@ class _FriendsListScreenState extends State<FriendsListScreen>
       await _loadFriends();
       await _loadRequests();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('요청 수락: $nickname')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('요청 수락: $nickname')));
     } catch (e) {
       if (!mounted) return;
       final s = e.toString();
@@ -235,7 +253,10 @@ class _FriendsListScreenState extends State<FriendsListScreen>
         title: Text(nick),
         content: email == null ? const SizedBox.shrink() : Text(email),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('닫기')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
         ],
       ),
     );
@@ -248,10 +269,28 @@ class _FriendsListScreenState extends State<FriendsListScreen>
         title: const Text('친구'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '내 친구'),
-            Tab(text: '검색'),
-            Tab(text: '요청'),
+          tabs: [
+            const Tab(text: '내 친구'),
+            const Tab(text: '검색'),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('요청'),
+                  if (_requests.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -290,15 +329,17 @@ class _FriendsListScreenState extends State<FriendsListScreen>
           final avatar = (f['profileImageUrl'] ?? '') as String?;
           return ListTile(
             leading: CircleAvatar(
-              backgroundImage:
-                  (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
+              backgroundImage: (avatar != null && avatar.isNotEmpty)
+                  ? NetworkImage(avatar)
+                  : null,
               child: (avatar == null || avatar.isEmpty)
                   ? const Icon(Icons.person_outline)
                   : null,
             ),
             title: Text(nick),
-            subtitle:
-                email == null ? null : Text(email, style: const TextStyle(fontSize: 12)),
+            subtitle: email == null
+                ? null
+                : Text(email, style: const TextStyle(fontSize: 12)),
             onTap: () => _viewProfile(f),
             trailing: IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -331,58 +372,62 @@ class _FriendsListScreenState extends State<FriendsListScreen>
           child: _loading && _results.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : _results.isEmpty
-                  ? const Center(child: Text('검색 결과가 없습니다.'))
-                  : ListView.separated(
-                      itemCount: _results.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final u = _results[i];
-                        final id = u['userId'] as int;
-                        final nick = (u['nickname'] ?? '') as String;
-                        final email = (u['email'] ?? '') as String?;
-                        final avatar = (u['profileImageUrl'] ?? '') as String?;
-                        final isFriend = (u['isFriend'] as bool?) == true;
-                        final isRequestPending = (u['isRequestPending'] as bool?) == true || 
-                            _pendingRequestUserIds.contains(id);
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage: (avatar != null && avatar.isNotEmpty)
-                                ? NetworkImage(avatar)
-                                : null,
-                            child: (avatar == null || avatar.isEmpty)
-                                ? const Icon(Icons.person_outline)
-                                : null,
-                          ),
-                          title: Text(nick),
-                          subtitle: email == null
-                              ? null
-                              : Text(email, style: const TextStyle(fontSize: 12)),
-                          onTap: () => _viewProfile(u),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (isFriend) ...[
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed: () => _delete(id, nick),
-                                  tooltip: '친구 삭제',
-                                ),
-                              ] else if (isRequestPending) ...[
-                                TextButton(
-                                  onPressed: null,
-                                  child: const Text('요청중', style: TextStyle(color: Colors.grey)),
-                                ),
-                              ] else ...[
-                                TextButton(
-                                  onPressed: () => _add(id, nick),
-                                  child: const Text('친구 요청'),
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+              ? const Center(child: Text('검색 결과가 없습니다.'))
+              : ListView.separated(
+                  itemCount: _results.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final u = _results[i];
+                    final id = u['userId'] as int;
+                    final nick = (u['nickname'] ?? '') as String;
+                    final email = (u['email'] ?? '') as String?;
+                    final avatar = (u['profileImageUrl'] ?? '') as String?;
+                    final isFriend = (u['isFriend'] as bool?) == true;
+                    final isRequestPending =
+                        (u['isRequestPending'] as bool?) == true ||
+                        _pendingRequestUserIds.contains(id);
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: (avatar != null && avatar.isNotEmpty)
+                            ? NetworkImage(avatar)
+                            : null,
+                        child: (avatar == null || avatar.isEmpty)
+                            ? const Icon(Icons.person_outline)
+                            : null,
+                      ),
+                      title: Text(nick),
+                      subtitle: email == null
+                          ? null
+                          : Text(email, style: const TextStyle(fontSize: 12)),
+                      onTap: () => _viewProfile(u),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isFriend) ...[
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _delete(id, nick),
+                              tooltip: '친구 삭제',
+                            ),
+                          ] else if (isRequestPending) ...[
+                            TextButton(
+                              onPressed: null,
+                              child: const Text(
+                                '요청중',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ] else ...[
+                            TextButton(
+                              onPressed: () => _add(id, nick),
+                              child: const Text('친구 요청'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -407,13 +452,16 @@ class _FriendsListScreenState extends State<FriendsListScreen>
           return ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person_outline)),
             title: Text(nick),
-            subtitle:
-                email == null ? null : Text(email, style: const TextStyle(fontSize: 12)),
+            subtitle: email == null
+                ? null
+                : Text(email, style: const TextStyle(fontSize: 12)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextButton(
-                  onPressed: requestId <= 0 ? null : () => _acceptByRequestId(requestId, id, nick),
+                  onPressed: requestId <= 0
+                      ? null
+                      : () => _acceptByRequestId(requestId, id, nick),
                   child: const Text('수락'),
                 ),
                 const SizedBox(width: 8),
@@ -425,7 +473,9 @@ class _FriendsListScreenState extends State<FriendsListScreen>
                             await FriendApi.rejectRequest(requestId);
                             if (!mounted) return;
                             setState(() {
-                              _requests.removeWhere((e) => (e['requestId'] as int) == requestId);
+                              _requests.removeWhere(
+                                (e) => (e['requestId'] as int) == requestId,
+                              );
                               _dismissedRequestIds.add(requestId);
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -447,7 +497,9 @@ class _FriendsListScreenState extends State<FriendsListScreen>
                                 msg = '요청 거절에 실패했습니다.';
                               }
                             }
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(SnackBar(content: Text(msg)));
                           }
                         },
                   child: const Text('거절', style: TextStyle(color: Colors.red)),
@@ -460,5 +512,3 @@ class _FriendsListScreenState extends State<FriendsListScreen>
     );
   }
 }
-
-

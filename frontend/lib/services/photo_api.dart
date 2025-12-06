@@ -4,7 +4,14 @@ import 'package:frontend/app/constants.dart';
 import 'auth_service.dart';
 
 class PhotoApi {
-  static Uri _u(String p) => Uri.parse('${AuthService.baseUrl}$p');
+  static Uri _u(String p) {
+    // baseUrl 끝의 슬래시와 path 시작의 슬래시 처리
+    final base = AuthService.baseUrl.endsWith('/')
+        ? AuthService.baseUrl.substring(0, AuthService.baseUrl.length - 1)
+        : AuthService.baseUrl;
+    final cleanPath = p.startsWith('/') ? p : '/$p';
+    return Uri.parse('$base$cleanPath');
+  }
 
   // GET /api/photos - 사용자 사진 목록 조회
   // API 명세서: favorite, tag, sort, page, size 쿼리 파라미터 지원
@@ -36,10 +43,23 @@ class PhotoApi {
     if (page != null) qp['page'] = page.toString();
     if (size != null) qp['size'] = size.toString();
 
+    // baseUrl 끝의 슬래시 처리
+    final base = AuthService.baseUrl.endsWith('/')
+        ? AuthService.baseUrl.substring(0, AuthService.baseUrl.length - 1)
+        : AuthService.baseUrl;
     final uri = Uri.parse(
-      '${AuthService.baseUrl}/api/photos',
+      '$base/api/photos',
     ).replace(queryParameters: qp.isEmpty ? null : qp);
+
+    print('📸 [PhotoApi] getPhotos 요청 URL: $uri');
+    print('📸 [PhotoApi] 쿼리 파라미터: $qp');
+    print('📸 [PhotoApi] 헤더: ${_h()}');
+
     final r = await http.get(uri, headers: _h());
+
+    print('📸 [PhotoApi] 응답 상태: ${r.statusCode}');
+    print('📸 [PhotoApi] 응답 본문: ${r.body}');
+
     if (r.statusCode == 200) {
       final body = jsonDecode(r.body);
       // API 명세서: { content: [], page: {} } 구조
@@ -61,7 +81,19 @@ class PhotoApi {
       throw Exception('응답 형식 오류: content 배열 없음');
     }
     if (r.statusCode == 401) {
-      throw Exception('인증이 필요합니다. (401)');
+      final errorBody = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      final message = errorBody['message'] as String?;
+      throw Exception(message ?? '인증이 필요합니다. (401)');
+    }
+    if (r.statusCode == 400) {
+      // 400 에러의 경우 상세 메시지 확인
+      final errorBody = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      final message = errorBody['message'] as String?;
+      final error = errorBody['error'] as String?;
+      print(
+        '🔴 [PhotoApi] 400 에러 상세: message=$message, error=$error, body=$errorBody',
+      );
+      throw Exception(message ?? error ?? '잘못된 요청입니다. (400)');
     }
     throw Exception('목록 조회 실패 (${r.statusCode})');
   }

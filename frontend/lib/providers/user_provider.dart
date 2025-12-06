@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../services/auth_storage.dart';
 import 'photo_provider.dart';
 import 'album_provider.dart';
 
@@ -42,8 +43,9 @@ class UserProvider extends ChangeNotifier {
     profileImageUrl = null;
     accessToken = null;
 
-    // AuthService에서도 토큰 제거
+    // AuthService에서도 토큰 제거 + 로컬 저장 삭제
     AuthService.clearAccessToken();
+    AuthStorage.clear();
 
     notifyListeners();
 
@@ -70,6 +72,8 @@ class UserProvider extends ChangeNotifier {
       photoProvider.fetchListIfNeeded();
       final albumProvider = Provider.of<AlbumProvider>(context, listen: false);
       albumProvider.resetAndLoad();
+      // 로그인 시 공유 앨범 권한 정보도 새로고침
+      albumProvider.refreshSharedAlbums();
     } catch (e) {
       // Provider가 없을 수 있으므로 무시
     }

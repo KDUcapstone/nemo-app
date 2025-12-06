@@ -26,4 +26,7 @@ out/
 *.tmp
 *.DS_Store
 
-chore: add .gitignore for Flutter and Spring
+# 실수로 생성된 명령어 출력 파일들
+tatus*
+how*
+hell*

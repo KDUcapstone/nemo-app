@@ -4,7 +4,14 @@ import 'package:frontend/app/constants.dart';
 import 'package:frontend/services/auth_service.dart';
 
 class FriendApi {
-  static Uri _uri(String path) => Uri.parse('${AuthService.baseUrl}$path');
+  static Uri _uri(String path) {
+    // baseUrl 끝의 슬래시와 path 시작의 슬래시 처리
+    final base = AuthService.baseUrl.endsWith('/')
+        ? AuthService.baseUrl.substring(0, AuthService.baseUrl.length - 1)
+        : AuthService.baseUrl;
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return Uri.parse('$base$cleanPath');
+  }
 
   static Map<String, String> _headers() {
     final token = AuthService.accessToken;
@@ -316,13 +323,33 @@ class FriendApi {
         },
       ];
     }
-    final res = await http.get(_uri('/api/friends'), headers: _headers());
+    final uri = _uri('/api/friends');
+    print('👥 [FriendApi] getFriends 요청 URL: $uri');
+    print('👥 [FriendApi] 헤더: ${_headers()}');
+
+    final res = await http.get(uri, headers: _headers());
+
+    print('👥 [FriendApi] 응답 상태: ${res.statusCode}');
+    print('👥 [FriendApi] 응답 본문: ${res.body}');
+
     if (res.statusCode == 200) {
       final decoded = jsonDecode(res.body);
       if (decoded is List) return decoded.cast<Map<String, dynamic>>();
       return const <Map<String, dynamic>>[];
     }
-    if (res.statusCode == 401) throw Exception('UNAUTHORIZED');
+    if (res.statusCode == 401) {
+      throw Exception('UNAUTHORIZED');
+    }
+    if (res.statusCode == 400) {
+      // 400 에러의 경우 상세 메시지 확인
+      final errorBody = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+      final message = errorBody['message'] as String?;
+      final error = errorBody['error'] as String?;
+      print(
+        '🔴 [FriendApi] 400 에러 상세: message=$message, error=$error, body=$errorBody',
+      );
+      throw Exception(message ?? error ?? '잘못된 요청입니다. (400)');
+    }
     throw Exception('Failed to fetch friends (${res.statusCode})');
   }
 

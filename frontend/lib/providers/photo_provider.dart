@@ -91,6 +91,15 @@ class PhotoProvider extends ChangeNotifier {
     final idx = _items.indexWhere((e) => e.photoId == id);
     final mockIdx = _allMockItems.indexWhere((e) => e.photoId == id);
     if (idx == -1) return;
+
+    // favorite 필드 업데이트: favorite 또는 isFavorite 중 하나라도 있으면 사용
+    bool? newFavorite;
+    if (res.containsKey('favorite')) {
+      newFavorite = res['favorite'] == true;
+    } else if (res.containsKey('isFavorite')) {
+      newFavorite = res['isFavorite'] == true;
+    }
+
     _items[idx] = PhotoItem(
       photoId: id,
       imageUrl: (res['imageUrl'] as String?) ?? _items[idx].imageUrl,
@@ -99,9 +108,7 @@ class PhotoProvider extends ChangeNotifier {
       brand: (res['brand'] as String?) ?? _items[idx].brand,
       tagList: (res['tagList'] as List?)?.cast<String>() ?? _items[idx].tagList,
       memo: res['memo'] as String? ?? _items[idx].memo,
-      favorite: res.containsKey('favorite')
-          ? (res['favorite'] == true)
-          : _items[idx].favorite,
+      favorite: newFavorite ?? _items[idx].favorite,
     );
     if (AppConstants.useMockApi && mockIdx != -1) {
       _allMockItems[mockIdx] = _items[idx];
@@ -316,6 +323,11 @@ class PhotoProvider extends ChangeNotifier {
           }
         }
       }
+    } catch (e) {
+      // 에러 발생 시 로그 출력하고 빈 목록으로 처리하여 앱이 크래시되지 않도록 함
+      debugPrint('❌ [PhotoProvider] loadNextPage 에러: $e');
+      _hasMore = false; // 더 이상 로드하지 않음
+      // 에러가 발생해도 빈 목록으로 표시하여 사용자가 앱을 계속 사용할 수 있도록 함
     } finally {
       _isLoading = false;
       notifyListeners();

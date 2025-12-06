@@ -16,109 +16,191 @@ class _SelectAlbumPhotosScreenState extends State<SelectAlbumPhotosScreen> {
   String? _brand;
   String _sort = 'takenAt,desc';
 
+  // PhotoProvider의 원래 필터 상태 저장
+  bool? _originalFavoriteOnly;
+  String? _originalBrandFilter;
+  String? _originalTagFilter;
+  String? _originalSort;
+  bool _filtersRestored = false;
+
+  // PhotoProvider 참조 저장 (dispose에서 context 사용 방지)
+  PhotoProvider? _photoProvider;
+  bool _initialized = false; // 초기화 플래그 (깜빡임 방지)
+
+  @override
+  void initState() {
+    super.initState();
+    // initState에서는 context를 사용할 수 없으므로 didChangeDependencies로 이동
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // PhotoProvider 참조 저장 및 초기화 (한 번만 실행)
+    if (!_initialized) {
+      _initialized = true;
+      _photoProvider = context.read<PhotoProvider>();
+      // PhotoProvider의 현재 필터 상태 저장
+      _originalFavoriteOnly = _photoProvider!.favoriteOnly;
+      _originalBrandFilter = _photoProvider!.brandFilter;
+      _originalTagFilter = _photoProvider!.tagFilter;
+      _originalSort = _photoProvider!.sort;
+
+      // 현재 필터 상태 확인 - 이미 원하는 상태면 resetAndLoad 호출하지 않음
+      final needsReset =
+          _photoProvider!.favoriteOnly != false ||
+          _photoProvider!.tagFilter != null ||
+          _photoProvider!.brandFilter != null ||
+          _photoProvider!.sort != 'takenAt,desc';
+
+      // 필터를 초기화하고 모든 사진 로드 (필요한 경우에만)
+      if (needsReset) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+          await _photoProvider!.resetAndLoad(
+            favorite: false,
+            tag: null,
+            brand: null,
+            sort: 'takenAt,desc',
+          );
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    // 원래 필터 상태 복원 (다음 프레임에서 실행하여 위젯 트리 잠금 방지)
+    if (!_filtersRestored &&
+        _originalFavoriteOnly != null &&
+        _photoProvider != null) {
+      // dispose()에서 notifyListeners()가 호출되지 않도록 다음 프레임에서 실행
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_photoProvider != null) {
+          _photoProvider!.resetAndLoad(
+            favorite: _originalFavoriteOnly,
+            tag: _originalTagFilter,
+            brand: _originalBrandFilter,
+            sort: _originalSort,
+          );
+        }
+      });
+      _filtersRestored = true;
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final all = context.watch<PhotoProvider>().items;
-    final filtered =
-        all.where((p) {
-          if (_onlyFavorite && !p.favorite) return false;
-          if (_brand != null && _brand!.isNotEmpty && p.brand != _brand)
-            return false;
-          return true;
-        }).toList()..sort((a, b) {
-          switch (_sort) {
-            case 'takenAt,asc':
-              return a.takenAt.compareTo(b.takenAt);
-            case 'brand,asc':
-              return a.brand.compareTo(b.brand);
-            case 'brand,desc':
-              return b.brand.compareTo(a.brand);
-            case 'takenAt,desc':
-            default:
-              return b.takenAt.compareTo(a.takenAt);
-          }
-        });
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('사진 선택'),
-        actions: [
-          IconButton(
-            tooltip: '필터/정렬',
-            icon: const Icon(Icons.tune),
-            onPressed: () async {
-              await showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => _FilterSortSheet(
-                  onlyFavorite: _onlyFavorite,
-                  brand: _brand,
-                  sort: _sort,
-                  onChanged: (fav, brand, sort) {
-                    setState(() {
-                      _onlyFavorite = fav;
-                      _brand = brand?.isEmpty == true ? null : brand;
-                      _sort = sort;
-                    });
-                  },
+    // Selector를 사용하여 items만 선택적으로 watch (깜빡임 방지)
+    return Selector<PhotoProvider, List<PhotoItem>>(
+      selector: (_, provider) => provider.items,
+      builder: (context, all, _) {
+        final filtered =
+            all.where((p) {
+              if (_onlyFavorite && !p.favorite) return false;
+              if (_brand != null && _brand!.isNotEmpty && p.brand != _brand)
+                return false;
+              return true;
+            }).toList()..sort((a, b) {
+              switch (_sort) {
+                case 'takenAt,asc':
+                  return a.takenAt.compareTo(b.takenAt);
+                case 'brand,asc':
+                  return a.brand.compareTo(b.brand);
+                case 'brand,desc':
+                  return b.brand.compareTo(a.brand);
+                case 'takenAt,desc':
+                default:
+                  return b.takenAt.compareTo(a.takenAt);
+              }
+            });
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('사진 선택'),
+            actions: [
+              IconButton(
+                tooltip: '필터/정렬',
+                icon: const Icon(Icons.tune),
+                onPressed: () async {
+                  await showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (_) => _FilterSortSheet(
+                      onlyFavorite: _onlyFavorite,
+                      brand: _brand,
+                      sort: _sort,
+                      onChanged: (fav, brand, sort) {
+                        setState(() {
+                          _onlyFavorite = fav;
+                          _brand = brand?.isEmpty == true ? null : brand;
+                          _sort = sort;
+                        });
+                      },
+                    ),
+                  );
+                },
+              ),
+              TextButton(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () => Navigator.pop(context, _selected.toList()),
+                child: const Text('완료'),
+              ),
+            ],
+          ),
+          body: GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: filtered.length,
+            itemBuilder: (_, i) {
+              final p = filtered[i];
+              final selected = _selected.contains(p.photoId);
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (selected) {
+                      _selected.remove(p.photoId);
+                    } else {
+                      _selected.add(p.photoId);
+                    }
+                  });
+                },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _Thumb(
+                      imageUrl: p.imageUrl,
+                      isFile:
+                          p.imageUrl.isNotEmpty &&
+                          !p.imageUrl.startsWith('http'),
+                    ),
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: CircleAvatar(
+                        radius: 12,
+                        backgroundColor: selected
+                            ? Colors.blue
+                            : Colors.black45,
+                        child: Icon(
+                          selected ? Icons.check : Icons.radio_button_unchecked,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
           ),
-          TextButton(
-            onPressed: _selected.isEmpty
-                ? null
-                : () => Navigator.pop(context, _selected.toList()),
-            child: const Text('완료'),
-          ),
-        ],
-      ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-        ),
-        itemCount: filtered.length,
-        itemBuilder: (_, i) {
-          final p = filtered[i];
-          final selected = _selected.contains(p.photoId);
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                if (selected) {
-                  _selected.remove(p.photoId);
-                } else {
-                  _selected.add(p.photoId);
-                }
-              });
-            },
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _Thumb(
-                  imageUrl: p.imageUrl,
-                  isFile:
-                      p.imageUrl.isNotEmpty && !p.imageUrl.startsWith('http'),
-                ),
-                Positioned(
-                  right: 6,
-                  top: 6,
-                  child: CircleAvatar(
-                    radius: 12,
-                    backgroundColor: selected ? Colors.blue : Colors.black45,
-                    child: Icon(
-                      selected ? Icons.check : Icons.radio_button_unchecked,
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+        );
+      },
     );
   }
 }
@@ -184,7 +266,6 @@ class _FilterSortSheetState extends State<_FilterSortSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final brands = <String?>['', '인생네컷', '포토그레이', '포토이즘'];
     return SafeArea(
       child: SingleChildScrollView(
         padding: EdgeInsets.only(

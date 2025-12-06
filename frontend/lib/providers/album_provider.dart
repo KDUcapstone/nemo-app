@@ -97,8 +97,23 @@ class AlbumProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addFromResponse(Map<String, dynamic> res) {
-    final albumId = res['albumId'] as int;
+  void setShared(int albumId, bool shared) {
+    if (shared) {
+      _sharedAlbumIds.add(albumId);
+    } else {
+      _sharedAlbumIds.remove(albumId);
+    }
+    notifyListeners();
+  }
+
+  void addFromResponse(Map<String, dynamic> res, {bool silent = false}) {
+    // albumId 안전하게 파싱 (Long → int 변환 처리)
+    final albumIdValue = res['albumId'];
+    if (albumIdValue == null) {
+      debugPrint('⚠️ [AlbumProvider] addFromResponse: albumId가 null입니다.');
+      return;
+    }
+    final albumId = (albumIdValue as num).toInt();
 
     // photoIdList 파싱 (Long → int 변환 처리)
     List<int> photoIdList = [];
@@ -154,7 +169,9 @@ class AlbumProvider extends ChangeNotifier {
         createdAt: (res['createdAt'] as String?) ?? '',
         photoIdList: photoIdList,
       );
+      if (!silent) {
       notifyListeners();
+      }
       return;
     }
     // 새 앨범인 경우에만 추가
@@ -168,7 +185,12 @@ class AlbumProvider extends ChangeNotifier {
       photoIdList: photoIdList,
     );
     _albums.insert(0, item);
+
+    // silent 모드면 notifyListeners를 호출하지 않음
+    // (화면 전환 애니메이션 중 충돌 방지)
+    if (!silent) {
     notifyListeners();
+    }
   }
 
   AlbumItem? byId(int albumId) {
@@ -287,6 +309,15 @@ class AlbumProvider extends ChangeNotifier {
         createdAt: (res['createdAt'] as String?) ?? '',
         photoIdList: photoIdList,
       );
+      // 상세 응답의 shared 플래그를 기반으로 공유 상태 갱신
+      final sharedFlag = res['shared'] as bool?;
+      if (sharedFlag != null) {
+        if (sharedFlag) {
+          _sharedAlbumIds.add(albumId);
+        } else {
+          _sharedAlbumIds.remove(albumId);
+        }
+      }
       if (idx == -1) {
         _albums.add(item);
       } else {
@@ -341,6 +372,12 @@ class AlbumProvider extends ChangeNotifier {
           final albumId = map['albumId'] as int;
           // 이미 존재하는 앨범은 건너뛰기
           if (existingIds.contains(albumId)) continue;
+
+          // favoriteOnly 필터가 켜져있을 때, 로컬 즐겨찾기 상태도 확인
+          if (_favoriteOnly && !_favoritedAlbumIds.contains(albumId)) {
+            continue; // 즐겨찾기하지 않은 앨범은 제외
+          }
+
           _albums.add(
             AlbumItem(
               albumId: albumId,
@@ -352,6 +389,26 @@ class AlbumProvider extends ChangeNotifier {
               photoIdList: const [],
             ),
           );
+          // 백엔드 응답에 favorited 필드가 있으면 _favoritedAlbumIds 업데이트
+          if (map.containsKey('favorited')) {
+            final favorited = map['favorited'] as bool? ?? false;
+            if (favorited) {
+              _favoritedAlbumIds.add(albumId);
+            } else {
+              _favoritedAlbumIds.remove(albumId);
+            }
+          }
+
+          // 공유 상태 확인: 실제로 공유된 앨범인지 확인
+          // 백엔드에서 내려주는 shared 플래그를 신뢰하여 공유 여부를 판단
+          if (map.containsKey('shared')) {
+            final shared = map['shared'] as bool? ?? false;
+            if (shared) {
+              _sharedAlbumIds.add(albumId);
+            } else {
+              _sharedAlbumIds.remove(albumId);
+            }
+          }
         }
         if (content.length < _size) {
           _hasMore = false;

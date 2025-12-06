@@ -4,7 +4,14 @@ import 'package:frontend/app/constants.dart';
 import 'auth_service.dart';
 
 class TimelineApi {
-  static Uri _u(String p) => Uri.parse('${AuthService.baseUrl}$p');
+  static Uri _u(String p) {
+    // baseUrl 끝의 슬래시와 path 시작의 슬래시 처리
+    final base = AuthService.baseUrl.endsWith('/')
+        ? AuthService.baseUrl.substring(0, AuthService.baseUrl.length - 1)
+        : AuthService.baseUrl;
+    final cleanPath = p.startsWith('/') ? p : '/$p';
+    return Uri.parse('$base$cleanPath');
+  }
 
   /// 타임라인 조회 (날짜별 사진 목록)
   /// year, month는 선택적 파라미터
@@ -99,10 +106,16 @@ class TimelineApi {
     if (year != null) qp['year'] = year.toString();
     if (month != null) qp['month'] = month.toString();
 
-    final uri = _u(
-      '/api/timeline',
-    ).replace(queryParameters: qp.isEmpty ? null : qp);
+    final uri = _u('/api/timeline').replace(queryParameters: qp.isEmpty ? null : qp);
+
+    print('📅 [TimelineApi] getTimeline 요청 URL: $uri');
+    print('📅 [TimelineApi] 쿼리 파라미터: $qp');
+    print('📅 [TimelineApi] 헤더: ${_h()}');
+
     final r = await http.get(uri, headers: _h());
+
+    print('📅 [TimelineApi] 응답 상태: ${r.statusCode}');
+    print('📅 [TimelineApi] 응답 본문: ${r.body}');
 
     if (r.statusCode == 200) {
       final body = jsonDecode(r.body);
@@ -110,6 +123,14 @@ class TimelineApi {
         return body.cast<Map<String, dynamic>>();
       }
       throw Exception('응답 형식 오류: 배열이 아님');
+    }
+    if (r.statusCode == 400) {
+      // 400 에러의 경우 상세 메시지 확인
+      final errorBody = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      final message = errorBody['message'] as String?;
+      final error = errorBody['error'] as String?;
+      print('🔴 [TimelineApi] 400 에러 상세: message=$message, error=$error, body=$errorBody');
+      throw Exception(message ?? error ?? '잘못된 요청입니다. (400)');
     }
     if (r.statusCode == 401) {
       // API 명세서: error: "UNAUTHORIZED", message: "로그인이 필요합니다."
@@ -187,7 +208,15 @@ class TimelineApi {
     final uri = _u('/api/timeline/timelapse').replace(
       queryParameters: {'year': year.toString(), 'month': month.toString()},
     );
+
+    print('📅 [TimelineApi] getTimelapse 요청 URL: $uri');
+    print('📅 [TimelineApi] 쿼리 파라미터: year=$year, month=$month');
+    print('📅 [TimelineApi] 헤더: ${_h()}');
+
     final r = await http.get(uri, headers: _h());
+
+    print('📅 [TimelineApi] 응답 상태: ${r.statusCode}');
+    print('📅 [TimelineApi] 응답 본문: ${r.body}');
 
     if (r.statusCode == 200) {
       final body = jsonDecode(r.body);
@@ -197,9 +226,12 @@ class TimelineApi {
       throw Exception('응답 형식 오류: 배열이 아님');
     }
     if (r.statusCode == 400) {
-      // API 명세서: error: "INVALID_QUERY", message: "year와 month 파라미터는 필수입니다."
-      final body = r.body.isNotEmpty ? jsonDecode(r.body) : {};
-      throw Exception(body['message'] ?? 'year와 month 파라미터는 필수입니다.');
+      // 400 에러의 경우 상세 메시지 확인
+      final errorBody = r.body.isNotEmpty ? jsonDecode(r.body) : {};
+      final message = errorBody['message'] as String?;
+      final error = errorBody['error'] as String?;
+      print('🔴 [TimelineApi] 400 에러 상세: message=$message, error=$error, body=$errorBody');
+      throw Exception(message ?? error ?? 'year와 month 파라미터는 필수입니다.');
     }
     if (r.statusCode == 401) {
       // API 명세서: error: "UNAUTHORIZED", message: "로그인이 필요합니다."

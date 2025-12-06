@@ -127,10 +127,25 @@ class _TimelineScreenState extends State<TimelineScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      print('🔴 [TimelineScreen] 타임라인 로드 실패: $e');
+      String errorMessage = '타임라인을 불러올 수 없습니다.';
+      if (e.toString().contains('400')) {
+        errorMessage = '잘못된 요청입니다.';
+      } else if (e.toString().contains('401')) {
+        errorMessage = '로그인이 필요합니다.';
+      } else if (e.toString().contains('네트워크') || e.toString().contains('Network')) {
+        errorMessage = '네트워크 오류가 발생했습니다.';
+      }
       setState(() {
-        _error = e.toString();
+        _error = errorMessage;
         _isLoading = false;
       });
+      // 토스트 메시지 표시
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     }
   }
 
@@ -236,7 +251,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 }
 
-class _CalendarTimelineView extends StatelessWidget {
+class _CalendarTimelineView extends StatefulWidget {
   final DateTime joinedDate; // 가입 월
   final Map<String, Map<String, dynamic>> timelineDataByDate;
   final Map<String, List<Map<String, dynamic>>> timelapseDataByMonth;
@@ -252,10 +267,24 @@ class _CalendarTimelineView extends StatelessWidget {
   });
 
   @override
+  State<_CalendarTimelineView> createState() => _CalendarTimelineViewState();
+}
+
+class _CalendarTimelineViewState extends State<_CalendarTimelineView> {
+  final ScrollController _scrollController = ScrollController();
+  bool _hasScrolledToBottom = false;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final currentMonth = DateTime(now.year, now.month, 1);
-    final startMonth = DateTime(joinedDate.year, joinedDate.month, 1);
+    final startMonth = DateTime(widget.joinedDate.year, widget.joinedDate.month, 1);
 
     // 시작 월부터 현재 월까지 모든 월 생성
     // timelapseDataByMonth의 키를 확인하여 실제 로드된 월 범위 확인
@@ -263,7 +292,7 @@ class _CalendarTimelineView extends StatelessWidget {
     int maxMonth = currentMonth.month;
 
     // timelapseDataByMonth에서 가장 늦은 월 찾기
-    for (final key in timelapseDataByMonth.keys) {
+    for (final key in widget.timelapseDataByMonth.keys) {
       final parts = key.split('-');
       if (parts.length == 2) {
         final year = int.tryParse(parts[0]);
@@ -291,10 +320,21 @@ class _CalendarTimelineView extends StatelessWidget {
       }
     }
 
-    // 최신순으로 정렬 (현재 월이 먼저)
-    months.sort((a, b) => b.compareTo(a));
+    // 오래된 순으로 정렬 (현재 월이 아래에)
+    months.sort((a, b) => a.compareTo(b));
+
+    // 초기 스크롤 위치를 맨 아래(현재 월)로 설정
+    if (!_hasScrolledToBottom && months.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients && !_hasScrolledToBottom) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          _hasScrolledToBottom = true;
+        }
+      });
+    }
 
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 16),
       itemCount: months.length,
       itemBuilder: (context, index) {
@@ -302,11 +342,11 @@ class _CalendarTimelineView extends StatelessWidget {
         return _MonthCalendarWidget(
           year: month.year,
           month: month.month,
-          timelineDataByDate: timelineDataByDate,
+          timelineDataByDate: widget.timelineDataByDate,
           timelapseData:
-              timelapseDataByMonth['${month.year}-${month.month.toString().padLeft(2, '0')}'],
-          onDateTap: onDateTap,
-          onVisible: () => onMonthVisible(month.year, month.month),
+              widget.timelapseDataByMonth['${month.year}-${month.month.toString().padLeft(2, '0')}'],
+          onDateTap: widget.onDateTap,
+          onVisible: () => widget.onMonthVisible(month.year, month.month),
         );
       },
     );

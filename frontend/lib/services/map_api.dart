@@ -45,7 +45,9 @@ class MapApi {
       throw Exception('map init 실패: ${res.statusCode}');
     }
     if (res.statusCode == 401) {
-      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
+      final body = res.body.isNotEmpty
+          ? jsonDecode(utf8.decode(res.bodyBytes))
+          : {};
       throw Exception(body['message'] ?? '유효한 액세스 토큰이 필요합니다.');
     }
     throw Exception('map init 실패: ${res.statusCode}');
@@ -64,7 +66,9 @@ class MapApi {
           'latitude': 37.5567,
           'longitude': 126.9234,
           'imageUrl': 'https://picsum.photos/seed/photo101/800/1066',
-          'takenAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+          'takenAt': DateTime.now()
+              .subtract(const Duration(days: 1))
+              .toIso8601String(),
           'brand': '인생네컷',
           'location': '홍대 포토그레이',
         },
@@ -73,7 +77,9 @@ class MapApi {
           'latitude': 37.5389,
           'longitude': 127.0732,
           'imageUrl': 'https://picsum.photos/seed/photo104/800/1066',
-          'takenAt': DateTime.now().subtract(const Duration(days: 6)).toIso8601String(),
+          'takenAt': DateTime.now()
+              .subtract(const Duration(days: 6))
+              .toIso8601String(),
           'brand': '포토시그널',
           'location': '건대입구역 포토시그널',
         },
@@ -88,7 +94,9 @@ class MapApi {
       return const <Map<String, dynamic>>[];
     }
     if (res.statusCode == 401) {
-      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
+      final body = res.body.isNotEmpty
+          ? jsonDecode(utf8.decode(res.bodyBytes))
+          : {};
       throw Exception(body['message'] ?? '로그인이 필요합니다.');
     }
     throw Exception('지도용 사진 위치 조회 실패 (${res.statusCode})');
@@ -114,13 +122,17 @@ class MapApi {
           {
             'photoId': 101,
             'imageUrl': 'https://picsum.photos/seed/photo101/800/1066',
-            'takenAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+            'takenAt': DateTime.now()
+                .subtract(const Duration(days: 1))
+                .toIso8601String(),
             'brand': '인생네컷',
           },
           {
             'photoId': 102,
             'imageUrl': 'https://picsum.photos/seed/photo102/800/1066',
-            'takenAt': DateTime.now().subtract(const Duration(days: 1, hours: 1)).toIso8601String(),
+            'takenAt': DateTime.now()
+                .subtract(const Duration(days: 1, hours: 1))
+                .toIso8601String(),
             'brand': '인생네컷',
           },
         ],
@@ -134,11 +146,11 @@ class MapApi {
       query['latitude'] = latitude.toString();
       query['longitude'] = longitude.toString();
     }
-    
+
     if (query.isEmpty) {
       throw Exception('장소 이름 또는 좌표 정보가 필요합니다.');
     }
-    
+
     final res = await ApiClient.get(
       '/api/map/photos/detail',
       queryParameters: query,
@@ -147,7 +159,9 @@ class MapApi {
       return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     }
     if (res.statusCode == 400) {
-      final body = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : {};
+      final body = res.body.isNotEmpty
+          ? jsonDecode(utf8.decode(res.bodyBytes))
+          : {};
       final error = body['error'] as String?;
       if (error == 'LOCATION_REQUIRED') {
         throw Exception(body['message'] ?? '장소 이름 또는 좌표 정보가 필요합니다.');
@@ -182,7 +196,7 @@ class MapApi {
       // 🔍 로그: mock 모드에서의 뷰포트 정보
       print(
         '🧭 [MapApi-mock] viewport ne=($neLat, $neLng), '
-            'sw=($swLat, $swLng), center=($centerLat, $centerLng), zoom=$zoom',
+        'sw=($swLat, $swLng), center=($centerLat, $centerLng), zoom=$zoom',
       );
 
       return {
@@ -256,8 +270,8 @@ class MapApi {
     final centerLng = (neLng + swLng) / 2;
     print(
       '🧭 [MapApi] viewport ne=($neLat, $neLng), '
-          'sw=($swLat, $swLng), center=($centerLat, $centerLng), '
-          'zoom=$zoom, brand=$brand, limit=$limit, cluster=$cluster',
+      'sw=($swLat, $swLng), center=($centerLat, $centerLng), '
+      'zoom=$zoom, brand=$brand, limit=$limit, cluster=$cluster',
     );
     print('🌐 [MapApi] GET /api/map/photobooths/viewport query=$query');
 
@@ -276,7 +290,7 @@ class MapApi {
     }
 
     final decoded =
-    jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
 
     // 🔍 로그: 응답 items 개수
     final items = decoded['items'] as List<dynamic>? ?? const [];
@@ -300,7 +314,9 @@ class MapApi {
         Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
       );
 
-      print('🧭 [MapApi-mock] delta sinceTs=$sinceTs, knownIds=${knownIds.length}개');
+      print(
+        '🧭 [MapApi-mock] delta sinceTs=$sinceTs, knownIds=${knownIds.length}개',
+      );
 
       return {
         'added': [
@@ -350,8 +366,8 @@ class MapApi {
     // 🔍 로그: delta 요청 바디
     print(
       '🔁 [MapApi] POST /api/map/photobooths/viewport/delta '
-          'body={ne=($neLat,$neLng), sw=($swLat,$swLng), sinceTs=$sinceTs, '
-          'knownIds=${knownIds.length}, brand=$brand, cluster=$cluster}',
+      'body={ne=($neLat,$neLng), sw=($swLat,$swLng), sinceTs=$sinceTs, '
+      'knownIds=${knownIds.length}, brand=$brand, cluster=$cluster}',
     );
 
     final res = await ApiClient.post(
@@ -359,7 +375,9 @@ class MapApi {
       body: body,
     );
 
-    print('📡 [MapApi] /api/map/photobooths/viewport/delta status=${res.statusCode}');
+    print(
+      '📡 [MapApi] /api/map/photobooths/viewport/delta status=${res.statusCode}',
+    );
 
     if (res.statusCode != 200) {
       final bodyText = utf8.decode(res.bodyBytes);
@@ -368,7 +386,7 @@ class MapApi {
     }
 
     final decoded =
-    jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
 
     // 🔍 로그: delta 응답 요약
     final added = decoded['added'] as List<dynamic>? ?? const [];
@@ -376,9 +394,91 @@ class MapApi {
     final removedIds = decoded['removedIds'] as List<dynamic>? ?? const [];
     print(
       '📍 [MapApi] delta 응답: added=${added.length}, '
-          'updated=${updated.length}, removed=${removedIds.length}',
+      'updated=${updated.length}, removed=${removedIds.length}',
     );
 
     return decoded;
+  }
+
+  // GET /api/map/photobooths/search - 포토부스 자동완성 검색
+  static Future<List<Map<String, dynamic>>> searchPhotobooths({
+    required String keyword,
+    double? lat,
+    double? lng,
+    int? limit,
+  }) async {
+    if (AppConstants.useMockApi) {
+      await Future<void>.delayed(
+        Duration(milliseconds: AppConstants.simulatedNetworkDelayMs),
+      );
+      return [
+        {
+          'placeId': 'n123abc',
+          'name': '인생네컷 수유점',
+          'brand': '인생네컷',
+          'latitude': 37.63812,
+          'longitude': 127.02631,
+          'address': '서울 강북구 수유동 123-4',
+          'roadAddress': '서울 강북구 도봉로 10길 12',
+          'distanceMeter': lat != null && lng != null ? 120 : null,
+        },
+        {
+          'placeId': 'n456def',
+          'name': '포토그레이 명동점',
+          'brand': '포토그레이',
+          'latitude': 37.56312,
+          'longitude': 126.98231,
+          'address': '서울 중구 명동1가 11-1',
+          'roadAddress': '서울 중구 명동길 22',
+          'distanceMeter': lat != null && lng != null ? 430 : null,
+        },
+      ];
+    }
+
+    final query = <String, String>{
+      'keyword': keyword,
+      if (lat != null) 'lat': lat.toString(),
+      if (lng != null) 'lng': lng.toString(),
+      if (limit != null) 'limit': limit.toString(),
+    };
+
+    print('🔍 [MapApi] GET /api/map/photobooths/search query=$query');
+
+    final res = await ApiClient.get(
+      '/api/map/photobooths/search',
+      queryParameters: query,
+    );
+
+    print('📡 [MapApi] /api/map/photobooths/search status=${res.statusCode}');
+
+    if (res.statusCode != 200) {
+      final bodyText = utf8.decode(res.bodyBytes);
+      print('⚠️ [MapApi] search 실패 body=$bodyText');
+      if (res.statusCode == 400) {
+        final body = jsonDecode(bodyText) as Map<String, dynamic>?;
+        throw Exception(body?['message'] ?? '잘못된 요청입니다.');
+      }
+      throw Exception('검색 실패: ${res.statusCode}');
+    }
+
+    // 응답 본문 확인을 위한 디버깅 로그 추가
+    final bodyText = utf8.decode(res.bodyBytes);
+    print('📦 [MapApi] search 응답 본문: $bodyText');
+    print('📦 [MapApi] search 응답 본문 길이: ${bodyText.length}');
+
+    final decoded = jsonDecode(bodyText);
+    print('📦 [MapApi] search 파싱된 타입: ${decoded.runtimeType}');
+
+    if (decoded is List) {
+      final results = decoded.cast<Map<String, dynamic>>();
+      print('📍 [MapApi] search 응답 ${results.length}개 결과');
+      if (results.isNotEmpty) {
+        print('📍 [MapApi] 첫 번째 결과: ${results.first}');
+      }
+      return results;
+    }
+
+    print('⚠️ [MapApi] search 응답이 List가 아님: $decoded');
+    return const <Map<String, dynamic>>[];
   }
 }

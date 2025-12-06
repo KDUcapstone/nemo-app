@@ -5,7 +5,20 @@ import '../app/constants.dart';
 import 'auth_service.dart';
 
 class PhotoUploadApi {
-  static Uri _endpoint(String path) => Uri.parse('${AuthService.baseUrl}$path');
+  static Uri _endpoint(String path) {
+    // baseUrl 끝의 슬래시와 path 시작의 슬래시 처리
+    final base = AuthService.baseUrl.endsWith('/')
+        ? AuthService.baseUrl.substring(0, AuthService.baseUrl.length - 1)
+        : AuthService.baseUrl;
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    final fullUrl = '$base$cleanPath';
+    
+    print('📤 [PhotoUploadApi] baseUrl: ${AuthService.baseUrl}');
+    print('📤 [PhotoUploadApi] path: $path');
+    print('📤 [PhotoUploadApi] 최종 URL: $fullUrl');
+    
+    return Uri.parse(fullUrl);
+  }
 
   /// POST /api/photos - 파일 직접 업로드 (레거시, 명세서에는 없음)
   /// 명세서 기준으로는 POST /api/photos/gallery를 사용해야 함
@@ -346,8 +359,17 @@ class PhotoUploadApi {
       request.fields['memo'] = memo;
     }
 
+    print('📤 [PhotoUploadApi] uploadPhotoFromGallery 요청');
+    print('📤 [PhotoUploadApi] 헤더: ${request.headers}');
+    print('📤 [PhotoUploadApi] 필드: ${request.fields}');
+    print('📤 [PhotoUploadApi] 파일: ${imageFile.path}');
+
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
+    
+    print('📤 [PhotoUploadApi] 응답 상태: ${response.statusCode}');
+    print('📤 [PhotoUploadApi] 응답 본문: ${response.body}');
+
     if (response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
@@ -355,6 +377,8 @@ class PhotoUploadApi {
       final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
       final errorCode = body['error'] as String?;
       final errorMessage = body['message'] as String?;
+      
+      print('🔴 [PhotoUploadApi] 400 에러 상세: errorCode=$errorCode, errorMessage=$errorMessage, body=$body');
 
       if (errorCode == 'IMAGE_REQUIRED') {
         throw Exception(errorMessage ?? '사진 파일은 필수입니다.');

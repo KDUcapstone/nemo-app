@@ -48,6 +48,11 @@ dependencies:
   permission_handler: ^11.0.0
   url_launcher: ^6.3.0
   pdfx: ^2.9.2
+  path_provider: ^2.1.1
+  image_gallery_saver_plus: ^4.0.1
+  flutter_exif_rotation: ^0.5.1
+  flutter_secure_storage: ^9.2.2
+  webview_flutter: ^4.4.2
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +64,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -74,6 +81,7 @@ flutter:
     - lib/presentation/screens/login/assets/google_icon.png
     - assets/markers/
     - assets/markers/privacy_policy.pdf
+    - assets/app_icon.png
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
@@ -104,3 +112,20 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# 앱 아이콘 설정
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/app_icon.png"  # 아이콘 이미지 경로 (1024x1024 권장)
+  # adaptive_icon_background: "#FFFFFF"  # Android 적응형 아이콘 배경색 (선택사항)
+  # adaptive_icon_foreground: "assets/app_icon_foreground.png"  # Android 적응형 아이콘 전경 (선택사항)
+
+# 스플래시 스크린 설정
+flutter_native_splash:
+  color: "#FFFFFF"  # 배경색 (원하는 색상으로 변경 가능)
+  image: "assets/app_icon.png"  # 스플래시 스크린에 표시할 이미지 (앱 아이콘과 동일하게 사용)
+  android: true
+  ios: true
+  # android_12: true  # Android 12+ 적응형 스플래시 스크린 (선택사항)
+  # fullscreen: true  # 전체 화면 모드 (선택사항)

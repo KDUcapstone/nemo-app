@@ -446,39 +446,81 @@ class _MapContentState extends State<_MapContent> {
           ),
         );
       } catch (e) {
-        marker.setIcon(
-          await NOverlayImage.fromWidget(
-            context: context,
-            widget: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Container(
+        // 기본 마커 아이콘: 앱 로고 사용
+        try {
+          final ByteData logoData = await rootBundle.load('assets/app_icon.png');
+          final Uint8List logoBytes = logoData.buffer.asUint8List();
+
+          final ui.Codec logoCodec = await ui.instantiateImageCodec(logoBytes);
+          final ui.FrameInfo logoFrameInfo = await logoCodec.getNextFrame();
+          final ui.Image logoImage = logoFrameInfo.image;
+
+          marker.setIcon(
+            await NOverlayImage.fromWidget(
+              context: context,
+              widget: Container(
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: _getBrandColor(brand),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.camera_alt,
                   color: Colors.white,
-                  size: 16,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: RawImage(
+                    image: logoImage,
+                    fit: BoxFit.cover,
+                    width: 30,
+                    height: 30,
+                  ),
                 ),
               ),
+              size: const Size(36, 36),
             ),
-            size: const Size(36, 36),
-          ),
-        );
+          );
+        } catch (logoError) {
+          // 앱 로고 로드 실패 시 카메라 아이콘 사용 (폴백)
+          marker.setIcon(
+            await NOverlayImage.fromWidget(
+              context: context,
+              widget: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _getBrandColor(brand),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ),
+              size: const Size(36, 36),
+            ),
+          );
+        }
       }
 
       marker.setOnTapListener((overlay) {
