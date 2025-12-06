@@ -3,8 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/services/auth_service.dart'
-    show AuthService, AccountLockedException;
+    show AuthService, AccountLockedException, NeedCaptchaException;
 import 'package:frontend/providers/user_provider.dart';
+import 'package:frontend/widgets/turnstile_widget.dart';
 import '../forgot_password_screen.dart';
 import '../signup_screen.dart';
 
@@ -21,6 +22,9 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorText;
+  bool _showTurnstile = false;
+  String? _turnstileToken;
+  final String _turnstileSiteKey = '0x4AAAAAACE5QzyrSjxwHD9Q';
 
   @override
   void dispose() {
@@ -64,6 +68,7 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
         final result = await authService.login(
           _emailController.text,
           _passwordController.text,
+          turnstileToken: _turnstileToken,
         );
 
         // API 명세서: 로그인 성공 시 { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
@@ -122,6 +127,17 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                 ),
               ),
             );
+          });
+          return;
+        }
+
+        // NeedCaptchaException 처리
+        if (e is NeedCaptchaException) {
+          setState(() {
+            _isLoading = false;
+            _errorText = e.message;
+            _showTurnstile = true;
+            _turnstileToken = null; // 이전 토큰 무효화
           });
           return;
         }
@@ -298,6 +314,26 @@ class _EmailLoginFormState extends State<EmailLoginForm> {
                         _errorText!,
                         style: const TextStyle(color: Colors.red, fontSize: 12),
                       ),
+                    ),
+                  ],
+                  if (_showTurnstile) ...[
+                    const SizedBox(height: 16),
+                    TurnstileWidget(
+                      siteKey: _turnstileSiteKey,
+                      onSuccess: (token) {
+                        setState(() {
+                          _turnstileToken = token;
+                          _errorText = null;
+                        });
+                        // 토큰 받으면 자동으로 다시 로그인 시도
+                        _handleLogin();
+                      },
+                      onError: (error) {
+                        setState(() {
+                          _errorText = error ?? '캡챠 인증에 실패했습니다.';
+                          _turnstileToken = null;
+                        });
+                      },
                     ),
                   ],
                   const SizedBox(height: 16),

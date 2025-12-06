@@ -461,12 +461,24 @@ class MapApi {
       throw Exception('검색 실패: ${res.statusCode}');
     }
 
-    final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+    // 응답 본문 확인을 위한 디버깅 로그 추가
+    final bodyText = utf8.decode(res.bodyBytes);
+    print('📦 [MapApi] search 응답 본문: $bodyText');
+    print('📦 [MapApi] search 응답 본문 길이: ${bodyText.length}');
+
+    final decoded = jsonDecode(bodyText);
+    print('📦 [MapApi] search 파싱된 타입: ${decoded.runtimeType}');
+
     if (decoded is List) {
       final results = decoded.cast<Map<String, dynamic>>();
       print('📍 [MapApi] search 응답 ${results.length}개 결과');
+      if (results.isNotEmpty) {
+        print('📍 [MapApi] 첫 번째 결과: ${results.first}');
+      }
       return results;
     }
+
+    print('⚠️ [MapApi] search 응답이 List가 아님: $decoded');
     return const <Map<String, dynamic>>[];
   }
 }

@@ -58,8 +58,8 @@ class AuthService {
 
   // 원격/로컬 후보 URL
   static const String _remoteBaseUrl =
-      '';
-  static const String _localBaseUrlAndroid = 'http://192.168.219.106:8080/';
+      'https://port-0-nemo-docker-springboot-prod-mdy7o3aya1eb5a01.sel5.cloudtype.app/';
+  static const String _localBaseUrlAndroid = 'http://localhost:8080/';
   static const String _localBaseUrlDefault = 'http://localhost:8080/';
 
   // 외부에서 사용하는 baseUrl (초기화 전에는 원격 기본값 사용)
@@ -989,7 +989,6 @@ class AuthService {
 
     return _handleSocialResponse(response, provider: '구글');
   }
-
   /// 소셜 로그인 공통 응답 처리
   Future<Map<String, dynamic>> _handleSocialResponse(
       http.Response response, {
@@ -1023,6 +1022,7 @@ class AuthService {
         setRefreshToken(refresh);
       }
 
+      // User 저장 로직
       final uid = user?['userId'] as int?;
       final nickname = user?['nickname'] as String?;
       final profileImageUrl = user?['profileImageUrl'] as String?;
@@ -1048,10 +1048,10 @@ class AuthService {
       };
     }
 
+    // 실패 처리
     final body = response.body.isNotEmpty ? response.body : '';
     throw Exception('$provider 로그인 실패: $body');
   }
-
 
   /// 소셜 로그인 (카카오/애플)
   /// API 명세서: POST /api/auth/login

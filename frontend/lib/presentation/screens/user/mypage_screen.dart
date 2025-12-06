@@ -400,6 +400,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             textTheme: GoogleFonts.notoSansTextTheme(
               Theme.of(context).textTheme,
             ),
+            // Use default dialogTheme; apply font via textTheme above
           ),
           child: AlertDialog(
             title: const Text(
@@ -421,6 +422,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                   ),
                   const SizedBox(height: 12),
                   _buildWarningItem('• 개인 정보 (이메일, 닉네임, 프로필 이미지)'),
+                  _buildWarningItem('• 모든 리캡 카드와 앨범'),
                   _buildWarningItem('• 업로드된 사진들'),
                   _buildWarningItem('• 친구 목록 및 관계'),
                   _buildWarningItem('• 앱 사용 기록'),
@@ -571,6 +573,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             textTheme: GoogleFonts.notoSansTextTheme(
               Theme.of(context).textTheme,
             ),
+            // Use default dialogTheme
           ),
           child: AlertDialog(
             title: const Text(
@@ -670,6 +673,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         } else if (errorMsg.contains('410') || errorMsg.contains('이미 탈퇴')) {
           message = '이미 탈퇴 처리된 사용자입니다.';
         } else {
+          // Exception: 접두사 제거
           if (errorMsg.startsWith('Exception: ')) {
             message = errorMsg.substring('Exception: '.length);
           } else {

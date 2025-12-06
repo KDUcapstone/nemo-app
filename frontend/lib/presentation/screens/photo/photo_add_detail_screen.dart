@@ -1102,8 +1102,10 @@ class _LocationSearchSheetState extends State<_LocationSearchSheet> {
       setState(() {
         _results = items;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (!mounted) return;
+      print('❌ [LocationSearch] 검색 에러: $e');
+      print('❌ [LocationSearch] 스택 트레이스: $stackTrace');
       setState(() {
         _error = e.toString();
       });

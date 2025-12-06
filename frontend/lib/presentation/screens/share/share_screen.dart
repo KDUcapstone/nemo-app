@@ -7,7 +7,6 @@ import 'package:frontend/providers/album_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 import 'package:frontend/presentation/screens/album/album_detail_screen.dart';
-import 'package:frontend/presentation/screens/share/year_recap_screen.dart';
 import 'package:frontend/presentation/screens/share/timeline_screen.dart';
 import 'package:frontend/presentation/screens/notification/notification_bottom_sheet.dart';
 import 'package:frontend/presentation/screens/share/share_requests_screen.dart';
@@ -117,7 +116,7 @@ class _ShareAndInviteRow extends StatelessWidget {
           child: _OpenSheetTile(
             title: '앨범 공유',
             icon: Icons.share_outlined,
-            subtitle: '링크/초대/권한 설정',
+            subtitle: '링크/초대',
             onTap: () => _showShareAlbumSheet(context),
           ),
         ),
@@ -231,7 +230,9 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('친구 목록을 불러오지 못했습니다: ${e.toString().replaceAll('Exception: ', '')}'),
+            content: Text(
+              '친구 목록을 불러오지 못했습니다: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -508,7 +509,7 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
           const Padding(
             padding: EdgeInsets.all(12),
             child: Text(
-              '친구가 없습니다.',
+              '추억을 공유할 친구를 추가해보세요.',
               style: TextStyle(color: AppColors.textSecondary),
             ),
           )
@@ -581,9 +582,11 @@ class _FriendsListSectionState extends State<_FriendsListSection> {
                         } catch (e) {
                           final s = e.toString();
                           String msg;
-                          if (s.contains('NOT_FRIEND') || s.contains('친구로 등록되지 않은')) {
+                          if (s.contains('NOT_FRIEND') ||
+                              s.contains('친구로 등록되지 않은')) {
                             msg = '친구로 등록되지 않은 사용자 포함';
-                          } else if (s.contains('이미 모두 공유된') || s.contains('이미 공유된')) {
+                          } else if (s.contains('이미 모두 공유된') ||
+                              s.contains('이미 공유된')) {
                             msg = '이미 공유된 친구가 포함되어 있습니다.';
                           } else if (s.contains('ALBUM_NOT_FOUND')) {
                             msg = '앨범을 찾을 수 없습니다';
@@ -1201,18 +1204,11 @@ class _CollaborativeAlbumSectionState
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.group_add,
-                  size: 18,
-                  color: Colors.redAccent,
-                ),
+                const Icon(Icons.group_add, size: 18, color: Colors.redAccent),
                 const SizedBox(width: 6),
                 const Text(
                   '공유 앨범 초대',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                 ),
                 const SizedBox(width: 6),
                 if (!_loading && _pendingCount > 0)
@@ -1360,19 +1356,7 @@ class _RecapTimelineSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle(title: '타임라인 / 연말 리캡 >'),
-        const SizedBox(height: 10),
-        _NavTile(
-          title: '연말 리캡',
-          subtitle: '올해의 추억 하이라이트',
-          icon: Icons.auto_awesome_outlined,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const YearRecapScreen()),
-            );
-          },
-        ),
+        const _SectionTitle(title: '타임라인 >'),
         const SizedBox(height: 10),
         _NavTile(
           title: '타임라인',
