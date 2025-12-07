@@ -340,9 +340,7 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
         brand: brand,
         onLocationSelected: (name, road, itemBrand) {
           setState(() {
-            _locationCtrl.text = road.isNotEmpty
-                ? '$name $road'.trim()
-                : (name.isNotEmpty ? name : road);
+            _locationCtrl.text = name.isNotEmpty ? name : road;
             // 브랜드가 비어 있고 응답에 brand가 있으면 채우기
             if (_brandCtrl.text.trim().isEmpty && itemBrand.isNotEmpty) {
               _brandCtrl.text = itemBrand;
