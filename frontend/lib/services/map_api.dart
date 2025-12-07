@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:frontend/app/constants.dart';
 import 'package:frontend/services/api_client.dart';
 
@@ -433,18 +434,22 @@ class MapApi {
       ];
     }
 
-    final query = <String, String>{
+    // QueryString을 올바르게 구성
+    final queryParams = <String, String>{
       'keyword': keyword,
       if (lat != null) 'lat': lat.toString(),
       if (lng != null) 'lng': lng.toString(),
       if (limit != null) 'limit': limit.toString(),
     };
 
-    print('🔍 [MapApi] GET /api/map/photobooths/search query=$query');
+    print('🔍 [MapApi] GET /api/map/photobooths/search query=$queryParams');
 
-    final res = await ApiClient.get(
-      '/api/map/photobooths/search',
-      queryParameters: query,
+    // Uri를 직접 구성하여 QueryString 추가
+    final url = ApiClient.uri('/api/map/photobooths/search', queryParams);
+    
+    final res = await http.get(
+      url,
+      headers: ApiClient.headers(includeAuth: false), // 검색은 공개 API
     );
 
     print('📡 [MapApi] /api/map/photobooths/search status=${res.statusCode}');
