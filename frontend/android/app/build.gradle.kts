@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")        // ✅ 이렇게 변경
@@ -5,6 +8,14 @@ plugins {
     id("com.google.gms.google-services")      // ✅ Google Services 플러그인 추가
 }
 
+val keystoreProperties: Properties = Properties()
+val keystorePropertiesFile: File = rootProject.file("keystore.properties")
+
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { input ->
+        keystoreProperties.load(input)
+    }
+}
 
 android {
     namespace = "com.example.frontend"
@@ -32,11 +43,33 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("nemoDebug") {
+            val storeFilePath: String =
+                (keystoreProperties["storeFile"] as String?) ?: "app/keystore/nemo-debug.jks"
+            val storePasswordProp: String? = keystoreProperties["storePassword"] as String?
+            val keyAliasProp: String = (keystoreProperties["keyAlias"] as String?) ?: "nemo-debug"
+            val keyPasswordProp: String? = keystoreProperties["keyPassword"] as String?
+
+            storeFile = file(storeFilePath)
+            storePassword = storePasswordProp
+            keyAlias = keyAliasProp
+            keyPassword = keyPasswordProp
+        }
+    }
+
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("nemoDebug")
+            isMinifyEnabled = false
+            // shrinkResources 기본 false
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("nemoDebug")
+            // shrinkResources 쓰고 싶으면:
+            isMinifyEnabled = true
+            isShrinkResources = true
         }
     }
 }

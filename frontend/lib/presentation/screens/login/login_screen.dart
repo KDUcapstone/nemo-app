@@ -17,10 +17,13 @@ import 'widgets/social_login_buttons.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 
-final GoogleSignIn _googleSignIn = GoogleSignIn(
-  scopes: ['email', 'profile'],
-  serverClientId: dotenv.env['GOOGLE_CLIENT_ID'],
-);
+GoogleSignIn _buildGoogleSignIn() {
+  // serverClientId 필요 없음 (idToken만 사용할 거라서)
+  return GoogleSignIn(
+    scopes: ['email', 'profile'],
+  );
+}
+
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -233,7 +236,8 @@ Future<void> _handleGoogleLogin(BuildContext context) async {
   try {
     // 1) Google 계정 선택
     print('🟡 [UI] _googleSignIn.signIn() 호출');
-    final googleUser = await _googleSignIn.signIn();
+    final googleSignIn = _buildGoogleSignIn();
+    final googleUser = await googleSignIn.signIn();
     if (googleUser == null) {
       print('🟡 [UI] 사용자가 Google 로그인 취소함 (googleUser == null)');
       return; // 사용자가 취소한 경우
