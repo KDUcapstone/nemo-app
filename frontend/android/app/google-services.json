@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "348419410592",
+    "project_id": "nemo-674c2",
+    "storage_bucket": "nemo-674c2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:348419410592:android:1504970bbbe756b50797c5",
+        "android_client_info": {
+          "package_name": "com.example.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVQoaVs8SFsuCanPzu11zPtVGnEPy-dQo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
