@@ -8,34 +8,20 @@
 spring:
   datasource:
     driver-class-name: org.mariadb.jdbc.Driver
-    # ⛓️ CloudType DB 접속 주소 (도메인 탭에서 확인)
+    # 🛰️ 내부 통신용 주소 (포트 고정: 3306)
     url: jdbc:mariadb://svc.sel5.cloudtype.app:30303/nemo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
-    username: ${DB_USER}      # DB 사용자명
-    password: ${DB_PASSWORD}   # DB 비밀번호
+    username: ${DB_USER}         # 환경변수로 관리 (CloudType 시크릿)
+    password: ${DB_PASSWORD}
 
   jpa:
-    database-platform: org.hibernate.dialect.MariaDBDialect
     hibernate:
       ddl-auto: validate         # 운영 환경은 validate (DB 변경 금지)
     show-sql: false
     properties:
       hibernate.format_sql: true
 
-
 app:
-  jwt:
-    # 최소 32바이트 이상. 예시는 Base64 32바이트(24 raw bytes)보다 더 긴 랜덤 문자열 권장.
-    secret: "nemo-dev-secret-please-change-this-very-long-32bytes-min!"
-    issuer: "nemo-backend"
-    access-ttl-ms: 900000   # 15분 (밀리초)
-
   s3:
-    bucket: nemo-s3-prod
-    region: ap-northeast-2
-    endpoint: ""                    # AWS니까 endpoint 없음
-    accessKey: ${AWS_ACCESS_KEY}
-    secretKey: ${AWS_SECRET_KEY}
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}
     pathStyle: false
-    createBucketIfMissing: false
-
-  public-base-url: https://port-0-nemo-docker-springboot-prod-mdy7o3aya1eb5a01.sel5.cloudtype.app
