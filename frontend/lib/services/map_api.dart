@@ -446,10 +446,10 @@ class MapApi {
 
     // Uri를 직접 구성하여 QueryString 추가
     final url = ApiClient.uri('/api/map/photobooths/search', queryParams);
-    
+
     final res = await http.get(
       url,
-      headers: ApiClient.headers(includeAuth: false), // 검색은 공개 API
+      headers: ApiClient.headers(includeAuth: true), // 인증 필요
     );
 
     print('📡 [MapApi] /api/map/photobooths/search status=${res.statusCode}');
