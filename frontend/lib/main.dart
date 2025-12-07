@@ -14,6 +14,8 @@ import 'providers/user_provider.dart';
 import 'providers/provider.dart';
 import 'package:provider/provider.dart';
 import 'widgets/auth_guard.dart';
+import 'utils/temp_photo_storage.dart';
+import 'services/photo_api.dart';
 
 void main() async {
   // 플러그인 초기화를 보장 (camera 등)
@@ -123,6 +125,10 @@ class _RootGateState extends State<_RootGate> {
         profileImageUrl: result.profileImageUrl,
         context: context,
       );
+
+      // ✅ 앱 시작 시 임시저장된 사진 정리
+      await _cleanupTempPhotos();
+
       setState(() {
         _initialized = true;
         _loggedIn = true;
@@ -132,6 +138,40 @@ class _RootGateState extends State<_RootGate> {
         _initialized = true;
         _loggedIn = false;
       });
+    }
+  }
+
+  /// 앱 시작 시 이전에 임시저장된 사진들을 정리
+  Future<void> _cleanupTempPhotos() async {
+    try {
+      final tempPhotoIds = await TempPhotoStorage.getAllTempPhotoIds();
+      if (tempPhotoIds.isEmpty) {
+        return;
+      }
+
+      print('🧹 [Main] 임시저장된 사진 ${tempPhotoIds.length}개 정리 시작');
+
+      final photoApi = PhotoApi();
+      int deletedCount = 0;
+
+      // 각 임시저장 사진 삭제 시도
+      for (final photoId in tempPhotoIds) {
+        try {
+          await photoApi.deletePhoto(photoId);
+          deletedCount++;
+          print('🗑️ [Main] 임시저장 사진 삭제 완료: photoId=$photoId');
+        } catch (e) {
+          // 삭제 실패 (이미 삭제되었거나 권한 없음 등)
+          print('⚠️ [Main] 임시저장 사진 삭제 실패: photoId=$photoId, error=$e');
+        }
+      }
+
+      // 로컬 스토리지에서 모든 임시저장 photoId 제거
+      await TempPhotoStorage.clearAllTempPhotoIds();
+
+      print('✅ [Main] 임시저장 사진 정리 완료: ${deletedCount}/${tempPhotoIds.length}개 삭제');
+    } catch (e) {
+      print('⚠️ [Main] 임시저장 사진 정리 중 오류: $e');
     }
   }
 

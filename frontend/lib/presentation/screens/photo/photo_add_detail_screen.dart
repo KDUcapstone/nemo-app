@@ -8,6 +8,7 @@ import 'package:frontend/services/friend_api.dart';
 import 'package:frontend/providers/photo_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:frontend/services/map_api.dart';
+import 'package:frontend/utils/temp_photo_storage.dart';
 
 class PhotoAddDetailScreen extends StatefulWidget {
   final File? imageFile; // 갤러리 업로드인 경우
@@ -706,6 +707,14 @@ class _PhotoAddDetailScreenState extends State<PhotoAddDetailScreen> {
 
       // 상태 반영
       context.read<PhotoProvider>().addFromResponse(result);
+
+      // ✅ QR 임시 등록된 경우, 추가 완료 시 로컬 스토리지에서 제거
+      if (widget.qrImportResult != null) {
+        final photoId = widget.qrImportResult!['photoId'] as int?;
+        if (photoId != null) {
+          await TempPhotoStorage.removeTempPhotoId(photoId);
+        }
+      }
 
       // 성공 알림 후 뒤로가기
       ScaffoldMessenger.of(

@@ -4,6 +4,7 @@ import 'package:frontend/presentation/screens/photo/photo_add_detail_screen.dart
 import 'package:frontend/services/photo_api.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/photo_provider.dart';
+import 'package:frontend/utils/temp_photo_storage.dart';
 
 /// QR 코드를 스캔한 후 임시 등록 API 호출하고 상세정보 입력 화면으로 이동
 /// 명세서: POST /api/photos/qr-import - QR 코드로 이미지 가져오기 + 미리보기용 imageUrl 반환
@@ -38,6 +39,11 @@ Future<void> handleQrImport(BuildContext context, String qrCode) async {
 
     final tempPhotoId = result['photoId'] as int?;
 
+    // 임시저장된 photoId를 로컬 스토리지에 저장 (앱 종료 후에도 추적 가능)
+    if (tempPhotoId != null) {
+      await TempPhotoStorage.addTempPhotoId(tempPhotoId);
+    }
+
     // 상세정보 입력 화면으로 이동 (photoId, imageUrl 등 포함)
     final success = await Navigator.push<bool>(
       context,
@@ -58,10 +64,17 @@ Future<void> handleQrImport(BuildContext context, String qrCode) async {
 
     // 상세정보 입력에서 실제로 "추가"를 완료한 경우(true 반환)만 사진을 유지
     // 그 외(null/false/뒤로가기)는 임시 등록된 사진을 정리
-    if (success != true && tempPhotoId != null) {
+    if (success == true && tempPhotoId != null) {
+      // 추가 완료 시 로컬 스토리지에서 제거
+      await TempPhotoStorage.removeTempPhotoId(tempPhotoId);
+    } else if (success != true && tempPhotoId != null) {
+      // 추가 실패/취소 시 사진 삭제 및 로컬 스토리지에서 제거
       try {
         final photoApi = PhotoApi();
         await photoApi.deletePhoto(tempPhotoId);
+
+        // 로컬 스토리지에서도 제거
+        await TempPhotoStorage.removeTempPhotoId(tempPhotoId);
 
         // 이미 목록이 로드된 경우 PhotoProvider에서도 제거
         try {
@@ -71,6 +84,8 @@ Future<void> handleQrImport(BuildContext context, String qrCode) async {
         }
       } catch (_) {
         // 삭제 실패 시에는 사용자에게 별도 노출 없이 무시
+        // 하지만 로컬 스토리지는 정리 (다음 앱 시작 시 삭제 시도)
+        await TempPhotoStorage.removeTempPhotoId(tempPhotoId);
       }
     }
   } catch (e) {
