@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -24,31 +25,9 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
   @override
   void initState() {
     super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.transparent)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (String url) {
-            setState(() => _isLoading = false);
-          },
-        ),
-      )
-      ..addJavaScriptChannel(
-        'TurnstileChannel',
-        onMessageReceived: (JavaScriptMessage message) {
-          final data = message.message;
-          if (data.startsWith('SUCCESS:')) {
-            final token = data.substring(8);
-            widget.onSuccess(token);
-          } else if (data.startsWith('ERROR:')) {
-            final error = data.substring(6);
-            widget.onError(error);
-          }
-        },
-      )
-      ..loadRequest(
-        Uri.dataFromString('''
+
+    final htmlContent =
+        '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -104,7 +83,37 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
   </script>
 </body>
 </html>
-          ''', mimeType: 'text/html'),
+    ''';
+
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.transparent)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (String url) {
+            setState(() => _isLoading = false);
+          },
+        ),
+      )
+      ..addJavaScriptChannel(
+        'TurnstileChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          final data = message.message;
+          if (data.startsWith('SUCCESS:')) {
+            final token = data.substring(8);
+            widget.onSuccess(token);
+          } else if (data.startsWith('ERROR:')) {
+            final error = data.substring(6);
+            widget.onError(error);
+          }
+        },
+      )
+      ..loadRequest(
+        Uri.dataFromString(
+          htmlContent,
+          mimeType: 'text/html; charset=utf-8',
+          encoding: Encoding.getByName('utf-8')!,
+        ),
       );
   }
 
