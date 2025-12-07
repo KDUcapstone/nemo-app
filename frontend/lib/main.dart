@@ -23,7 +23,10 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   // 👉 네이티브 앱 키로 Kakao SDK 초기화
-  KakaoSdk.init(nativeAppKey: dotenv.env['KAKAO_NATIVE_APP_KEY']!,);
+  KakaoSdk.init(
+    nativeAppKey: dotenv.env['KAKAO_NATIVE_APP_KEY'],
+    loggingEnabled: true,
+  );
 
   // 👉 이 줄 추가해서 실제 키해시를 로그로 출력
   final keyHash = await KakaoSdk.origin;
