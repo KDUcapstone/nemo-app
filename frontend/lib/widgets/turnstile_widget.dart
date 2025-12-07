@@ -85,6 +85,10 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
 </html>
     ''';
 
+    // base64로 인코딩하여 data URI 생성
+    final base64Content = base64Encode(utf8.encode(htmlContent));
+    final dataUri = 'data:text/html;charset=utf-8;base64,$base64Content';
+
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
@@ -108,13 +112,7 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
           }
         },
       )
-      ..loadRequest(
-        Uri.dataFromString(
-          htmlContent,
-          mimeType: 'text/html; charset=utf-8',
-          encoding: Encoding.getByName('utf-8')!,
-        ),
-      );
+      ..loadRequest(Uri.parse(dataUri));
   }
 
   @override

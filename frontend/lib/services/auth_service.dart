@@ -86,6 +86,10 @@ class AuthService {
       final res = await http.get(uri).timeout(const Duration(seconds: 7));
 
       print('🔍 [AuthService] 헬스체크 응답 수신: statusCode=${res.statusCode}');
+      print(
+        '🔍 [AuthService] 응답 본문 (처음 200자): ${res.body.length > 200 ? res.body.substring(0, 200) : res.body}',
+      );
+      print('🔍 [AuthService] 응답 헤더: ${res.headers}');
 
       if (res.statusCode >= 200 && res.statusCode < 400) {
         _resolvedBaseUrl = _remoteBaseUrl;
