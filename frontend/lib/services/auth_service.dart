@@ -272,7 +272,7 @@ class AuthService {
         final access = data['accessToken'] as String;
         final refresh = data['refreshToken'] as String?;
         final user = data['user'] as Map<String, dynamic>?;
-        final provider = user?['provider'] as String? ?? 'local';   // ★ 추가
+        final provider = user?['provider'] as String? ?? 'local'; // ★ 추가
 
         // Access Token과 Refresh Token 저장 + 로컬 저장
         setAccessToken(access);
@@ -989,89 +989,6 @@ class AuthService {
       throw Exception('네트워크 오류: $e');
     }
   }
-  /// 카카오 로그인: 백엔드로 accessToken 전달
-  Future<Map<String, dynamic>> loginWithKakao(String kakaoAccessToken) async {
-    final response = await ApiClient.post(
-      '/api/auth/oauth/kakao',
-      body: {'accessToken': kakaoAccessToken},
-      includeAuth: false,
-    );
-
-    return _handleSocialResponse(response, provider: '카카오');
-  }
-  /// 구글 로그인: 백엔드로 idToken 전달
-  Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
-    final response = await ApiClient.post(
-      '/api/auth/oauth/google',
-      body: {'idToken': idToken},
-      includeAuth: false,
-    );
-
-    return _handleSocialResponse(response, provider: '구글');
-  }
-
-  /// 소셜 로그인 공통 응답 처리
-  Future<Map<String, dynamic>> _handleSocialResponse(
-      http.Response response, {
-        required String provider,
-      }) async {
-    if (response.statusCode == 200) {
-      final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-
-      final access = data['accessToken'] as String?;
-      final refresh = data['refreshToken'] as String?;
-      final user = data['user'] as Map<String, dynamic>?;
-
-      final backendProvider = user?['provider'] as String?
-          ?? (provider == '카카오'
-              ? 'kakao'
-              : provider == '구글'
-              ? 'google'
-              : 'social');
-
-      if (access == null) {
-        throw Exception('$provider 로그인 실패: accessToken 누락');
-      }
-
-      // 👇 newUser / isNewUser 둘 다 대응
-      final isNewUser = (data['isNewUser'] ??
-          data['newUser'] ??
-          false) as bool;
-
-      setAccessToken(access);
-      if (refresh != null) {
-        setRefreshToken(refresh);
-      }
-
-      final uid = user?['userId'] as int?;
-      final nickname = user?['nickname'] as String?;
-      final profileImageUrl = user?['profileImageUrl'] as String?;
-
-      if (refresh != null && uid != null) {
-        await AuthStorage.saveAuth(
-          userId: uid,
-          nickname: nickname ?? '',
-          profileImageUrl: profileImageUrl,
-          refreshToken: refresh,
-          provider: backendProvider,
-        );
-      }
-
-      return {
-        'accessToken': access,
-        'refreshToken': refresh,
-        'userId': uid,
-        'nickname': nickname,
-        'profileImageUrl': profileImageUrl,
-        'isNewUser': isNewUser,   // ✅ 이제 진짜 값 들어감
-        'provider': backendProvider,
-      };
-    }
-
-    final body = response.body.isNotEmpty ? response.body : '';
-    throw Exception('$provider 로그인 실패: $body');
-  }
-
 
   /// 카카오 로그인: 백엔드로 accessToken 전달
   Future<Map<String, dynamic>> loginWithKakao(String kakaoAccessToken) async {
