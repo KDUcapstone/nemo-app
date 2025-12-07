@@ -1,6 +1,7 @@
-import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:frontend/services/auth_service.dart';
 
 class TurnstileWidget extends StatefulWidget {
   final String siteKey;
@@ -26,68 +27,28 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
   void initState() {
     super.initState();
 
-    final htmlContent =
-        '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      background: transparent;
-    }
-    #turnstile-widget {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-  </style>
-</head>
-<body>
-  <div id="turnstile-widget"></div>
-  <script>
-    function initTurnstile() {
-      if (window.turnstile) {
-        window.turnstile.render('#turnstile-widget', {
-          sitekey: '${widget.siteKey}',
-          callback: function(token) {
-            TurnstileChannel.postMessage('SUCCESS:' + token);
-          },
-          'error-callback': function() {
-            TurnstileChannel.postMessage('ERROR:Turnstile verification failed');
-          },
-          'expired-callback': function() {
-            TurnstileChannel.postMessage('ERROR:Turnstile token expired');
-          }
-        });
-      } else {
-        // 스크립트가 아직 로드되지 않음, 잠시 후 재시도
-        setTimeout(initTurnstile, 100);
-      }
-    }
-    
-    // DOM이 준비되면 시도
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initTurnstile);
-    } else {
-      // 이미 로드됨
-      initTurnstile();
-    }
-  </script>
-</body>
-</html>
-    ''';
+    // 백엔드 URL 구성
+    String turnstileUrl;
+    final baseUrl = AuthService.baseUrl;
 
-    // base64로 인코딩하여 data URI 생성
-    final base64Content = base64Encode(utf8.encode(htmlContent));
-    final dataUri = 'data:text/html;charset=utf-8;base64,$base64Content';
+    // Android 에뮬레이터의 경우 localhost를 10.0.2.2로 변환
+    if (Platform.isAndroid && baseUrl.contains('localhost')) {
+      turnstileUrl = baseUrl.replaceAll('localhost', '10.0.2.2');
+    } else {
+      turnstileUrl = baseUrl;
+    }
+
+    // baseUrl 끝의 슬래시 처리
+    if (!turnstileUrl.endsWith('/')) {
+      turnstileUrl = '$turnstileUrl/';
+    }
+
+    // Turnstile 엔드포인트 URL 구성 (siteKey를 쿼리 파라미터로 전달)
+    final uri = Uri.parse(
+      '${turnstileUrl}api/auth/turnstile',
+    ).replace(queryParameters: {'sitekey': widget.siteKey});
+
+    print('🔍 [TurnstileWidget] Turnstile URL: $uri');
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -96,6 +57,10 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
         NavigationDelegate(
           onPageFinished: (String url) {
             setState(() => _isLoading = false);
+          },
+          onWebResourceError: (WebResourceError error) {
+            print('🔴 [TurnstileWidget] WebView 오류: ${error.description}');
+            widget.onError('캡챠를 불러오는 중 오류가 발생했습니다: ${error.description}');
           },
         ),
       )
@@ -112,7 +77,7 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
           }
         },
       )
-      ..loadRequest(Uri.parse(dataUri));
+      ..loadRequest(uri);
   }
 
   @override
