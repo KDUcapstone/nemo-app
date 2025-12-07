@@ -1182,16 +1182,11 @@ class _LocationSearchSheetState extends State<_LocationSearchSheet> {
                     final item = _results[i];
                     final name = item['name'] as String? ?? '';
                     final road = item['roadAddress'] as String? ?? '';
-                    final address = item['address'] as String? ?? '';
                     final itemBrand = item['brand'] as String? ?? '';
                     final distanceMeter = item['distanceMeter'] as int?;
                     return ListTile(
                       leading: const Icon(Icons.photo_camera_back),
-                      title: Text(
-                        name.isNotEmpty
-                            ? name
-                            : (road.isNotEmpty ? road : address),
-                      ),
+                      title: Text(name.isNotEmpty ? name : road),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1207,11 +1202,7 @@ class _LocationSearchSheetState extends State<_LocationSearchSheet> {
                         ],
                       ),
                       onTap: () {
-                        widget.onLocationSelected(
-                          name,
-                          road.isNotEmpty ? road : address,
-                          itemBrand,
-                        );
+                        widget.onLocationSelected(name, road, itemBrand);
                         Navigator.pop(context);
                       },
                     );

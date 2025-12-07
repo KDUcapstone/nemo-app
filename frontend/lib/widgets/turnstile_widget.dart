@@ -48,8 +48,7 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
         },
       )
       ..loadRequest(
-        Uri.dataFromString(
-          '''
+        Uri.dataFromString('''
 <!DOCTYPE html>
 <html>
 <head>
@@ -75,24 +74,37 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
 <body>
   <div id="turnstile-widget"></div>
   <script>
-    window.turnstile.render('#turnstile-widget', {
-      sitekey: '${widget.siteKey}',
-      callback: function(token) {
-        TurnstileChannel.postMessage('SUCCESS:' + token);
-      },
-      'error-callback': function() {
-        TurnstileChannel.postMessage('ERROR:Turnstile verification failed');
-      },
-      'expired-callback': function() {
-        TurnstileChannel.postMessage('ERROR:Turnstile token expired');
+    function initTurnstile() {
+      if (window.turnstile) {
+        window.turnstile.render('#turnstile-widget', {
+          sitekey: '${widget.siteKey}',
+          callback: function(token) {
+            TurnstileChannel.postMessage('SUCCESS:' + token);
+          },
+          'error-callback': function() {
+            TurnstileChannel.postMessage('ERROR:Turnstile verification failed');
+          },
+          'expired-callback': function() {
+            TurnstileChannel.postMessage('ERROR:Turnstile token expired');
+          }
+        });
+      } else {
+        // 스크립트가 아직 로드되지 않음, 잠시 후 재시도
+        setTimeout(initTurnstile, 100);
       }
-    });
+    }
+    
+    // DOM이 준비되면 시도
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initTurnstile);
+    } else {
+      // 이미 로드됨
+      initTurnstile();
+    }
   </script>
 </body>
 </html>
-          ''',
-          mimeType: 'text/html',
-        ),
+          ''', mimeType: 'text/html'),
       );
   }
 
@@ -111,4 +123,3 @@ class _TurnstileWidgetState extends State<TurnstileWidget> {
     );
   }
 }
-
