@@ -13,6 +13,7 @@ class AutoLoginResult {
   final String? nickname;
   final String? profileImageUrl;
   final String? accessToken;
+  final String? provider;           // ★ 추가
 
   AutoLoginResult({
     required this.success,
@@ -20,6 +21,7 @@ class AutoLoginResult {
     this.nickname,
     this.profileImageUrl,
     this.accessToken,
+    this.provider,                  // ★ 추가
   });
 }
 
@@ -57,7 +59,7 @@ class AuthService {
   // 원격/로컬 후보 URL
   static const String _remoteBaseUrl =
       'https://port-0-nemo-docker-springboot-prod-mdy7o3aya1eb5a01.sel5.cloudtype.app/';
-  static const String _localBaseUrlAndroid = 'http://10.0.2.2:8080/';
+  static const String _localBaseUrlAndroid = 'http://localhost:8080/';
   static const String _localBaseUrlDefault = 'http://localhost:8080/';
 
   // 외부에서 사용하는 baseUrl (초기화 전에는 원격 기본값 사용)
@@ -137,7 +139,7 @@ class AuthService {
       }
 
       final data =
-          jsonDecode(utf8.decode(refreshRes.bodyBytes)) as Map<String, dynamic>;
+      jsonDecode(utf8.decode(refreshRes.bodyBytes)) as Map<String, dynamic>;
       final newAccess = data['accessToken'] as String?;
       final newRefresh = data['refreshToken'] as String?;
 
@@ -155,6 +157,7 @@ class AuthService {
           nickname: stored.nickname,
           profileImageUrl: stored.profileImageUrl,
           refreshToken: newRefresh,
+          provider: stored.provider,           // ★ 추가
         );
       } else {
         // refreshToken 변경 없으면 기존 값 유지
@@ -167,6 +170,7 @@ class AuthService {
         nickname: stored.nickname,
         profileImageUrl: stored.profileImageUrl,
         accessToken: newAccess,
+        provider: stored.provider,   // ★ 여기 추가
       );
     } catch (_) {
       await AuthStorage.clear();
@@ -181,10 +185,10 @@ class AuthService {
 
   /// 로그인 요청
   Future<Map<String, dynamic>> login(
-    String email,
-    String password, {
-    String? turnstileToken,
-  }) async {
+      String email,
+      String password, {
+        String? turnstileToken,
+      }) async {
     if (AppConstants.useMockApi) {
       // 모킹 응답
       await Future.delayed(
@@ -244,10 +248,11 @@ class AuthService {
         // API 명세서: { accessToken, refreshToken, expiresIn, user: { userId, nickname, profileImageUrl } }
         // UTF-8로 명시적으로 디코딩하여 인코딩 문제 방지
         final data =
-            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         final access = data['accessToken'] as String;
         final refresh = data['refreshToken'] as String?;
         final user = data['user'] as Map<String, dynamic>?;
+        final provider = user?['provider'] as String? ?? 'local';   // ★ 추가
 
         // Access Token과 Refresh Token 저장 + 로컬 저장
         setAccessToken(access);
@@ -263,6 +268,7 @@ class AuthService {
               nickname: nickname,
               profileImageUrl: profileImageUrl,
               refreshToken: refresh,
+              provider: provider,           // ★ 추가
             );
           }
         }
@@ -275,6 +281,7 @@ class AuthService {
           'userId': (user?['userId'] as num?)?.toInt(),
           'nickname': user?['nickname'] as String? ?? '',
           'profileImageUrl': user?['profileImageUrl'],
+          'provider': provider,   // ★ 추가
         };
       } else if (response.statusCode == 401) {
         // 백엔드 명세: { "error": "INVALID_CREDENTIALS", "message": "...", "remainingAttempts": 3, "needCaptcha": false, "needPasswordReset": false }
@@ -479,7 +486,7 @@ class AuthService {
           'nickname': data['nickname'] as String? ?? '',
           'profileImageUrl': data['profileImageUrl'] as String? ?? '',
           'createdAt':
-              data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+          data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
         };
       } else if (response.statusCode == 409) {
         final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
@@ -962,6 +969,89 @@ class AuthService {
       throw Exception('네트워크 오류: $e');
     }
   }
+  /// 카카오 로그인: 백엔드로 accessToken 전달
+  Future<Map<String, dynamic>> loginWithKakao(String kakaoAccessToken) async {
+    final response = await ApiClient.post(
+      '/api/auth/oauth/kakao',
+      body: {'accessToken': kakaoAccessToken},
+      includeAuth: false,
+    );
+
+    return _handleSocialResponse(response, provider: '카카오');
+  }
+  /// 구글 로그인: 백엔드로 idToken 전달
+  Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
+    final response = await ApiClient.post(
+      '/api/auth/oauth/google',
+      body: {'idToken': idToken},
+      includeAuth: false,
+    );
+
+    return _handleSocialResponse(response, provider: '구글');
+  }
+
+  /// 소셜 로그인 공통 응답 처리
+  Future<Map<String, dynamic>> _handleSocialResponse(
+      http.Response response, {
+        required String provider,
+      }) async {
+    if (response.statusCode == 200) {
+      final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+
+      final access = data['accessToken'] as String?;
+      final refresh = data['refreshToken'] as String?;
+      final user = data['user'] as Map<String, dynamic>?;
+
+      final backendProvider = user?['provider'] as String?
+          ?? (provider == '카카오'
+              ? 'kakao'
+              : provider == '구글'
+              ? 'google'
+              : 'social');
+
+      if (access == null) {
+        throw Exception('$provider 로그인 실패: accessToken 누락');
+      }
+
+      // 👇 newUser / isNewUser 둘 다 대응
+      final isNewUser = (data['isNewUser'] ??
+          data['newUser'] ??
+          false) as bool;
+
+      setAccessToken(access);
+      if (refresh != null) {
+        setRefreshToken(refresh);
+      }
+
+      final uid = user?['userId'] as int?;
+      final nickname = user?['nickname'] as String?;
+      final profileImageUrl = user?['profileImageUrl'] as String?;
+
+      if (refresh != null && uid != null) {
+        await AuthStorage.saveAuth(
+          userId: uid,
+          nickname: nickname ?? '',
+          profileImageUrl: profileImageUrl,
+          refreshToken: refresh,
+          provider: backendProvider,
+        );
+      }
+
+      return {
+        'accessToken': access,
+        'refreshToken': refresh,
+        'userId': uid,
+        'nickname': nickname,
+        'profileImageUrl': profileImageUrl,
+        'isNewUser': isNewUser,   // ✅ 이제 진짜 값 들어감
+        'provider': backendProvider,
+      };
+    }
+
+    final body = response.body.isNotEmpty ? response.body : '';
+    throw Exception('$provider 로그인 실패: $body');
+  }
+
 
   /// 소셜 로그인 (카카오/애플)
   /// API 명세서: POST /api/auth/login

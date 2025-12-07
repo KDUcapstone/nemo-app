@@ -30,12 +30,100 @@ public class AlbumShareService {
     private final FriendRepository friendRepository;
     private final UserRepository userRepository;
 
+    /**
+     * 앨범 내에서의 실질적인 역할
+     * - OWNER  : album.user (AlbumShare row 없음)
+     * - CO_OWNER / EDITOR / VIEWER : AlbumShare.Role 기반
+     */
+    private enum EffectiveRole {
+        OWNER,
+        CO_OWNER,
+        EDITOR,
+        VIEWER
+    }
+
+    /**
+     * 현재 사용자의 EffectiveRole 계산
+     * - 앨범 소유자이면 OWNER
+     * - 그렇지 않으면 ACCEPTED && active=true 인 AlbumShare 를 조회
+     *   없으면 FORBIDDEN
+     */
+    private EffectiveRole resolveEffectiveRole(Album album, Long userId) {
+        if (album.getUser() != null && album.getUser().getId().equals(userId)) {
+            return EffectiveRole.OWNER;
+        }
+
+        AlbumShare myShare = albumShareRepository
+                .findByAlbumIdAndUserIdAndStatusAndActiveTrue(album.getId(), userId, Status.ACCEPTED)
+                .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN, "해당 앨범의 공유 멤버가 아닙니다."));
+
+        return switch (myShare.getRole()) {
+            case CO_OWNER -> EffectiveRole.CO_OWNER;
+            case EDITOR -> EffectiveRole.EDITOR;
+            case VIEWER -> EffectiveRole.VIEWER;
+        };
+    }
+
+    /**
+     * 특정 공유 레코드의 EffectiveRole 계산
+     * (원칙적으로 OWNER 는 AlbumShare 에 저장되지 않지만 방어적으로 한 번 더 체크)
+     */
+    private EffectiveRole resolveEffectiveRoleForShare(Album album, AlbumShare share) {
+        if (album.getUser() != null && album.getUser().getId().equals(share.getUser().getId())) {
+            return EffectiveRole.OWNER;
+        }
+        return switch (share.getRole()) {
+            case CO_OWNER -> EffectiveRole.CO_OWNER;
+            case EDITOR -> EffectiveRole.EDITOR;
+            case VIEWER -> EffectiveRole.VIEWER;
+        };
+    }
+
+    /**
+     * 권한 변경 가능 여부
+     * - OWNER  : CO_OWNER ~ VIEWER 모두 변경 가능
+     * - CO_OWNER : EDITOR ~ VIEWER 변경 가능
+     * - EDITOR / VIEWER : 변경 불가
+     */
+    private boolean canChangeMemberRole(EffectiveRole actor, EffectiveRole target) {
+        return switch (actor) {
+            case OWNER -> target == EffectiveRole.CO_OWNER
+                    || target == EffectiveRole.EDITOR
+                    || target == EffectiveRole.VIEWER;
+            case CO_OWNER -> target == EffectiveRole.EDITOR
+                    || target == EffectiveRole.VIEWER;
+            default -> false;
+        };
+    }
+
+    /**
+     * 강퇴 가능 여부
+     * - OWNER  : CO_OWNER ~ VIEWER 모두 강퇴 가능
+     * - CO_OWNER : EDITOR ~ VIEWER 강퇴 가능
+     * - EDITOR / VIEWER : 강퇴 불가
+     */
+    private boolean canKickMember(EffectiveRole actor, EffectiveRole target) {
+        return switch (actor) {
+            case OWNER -> target == EffectiveRole.CO_OWNER
+                    || target == EffectiveRole.EDITOR
+                    || target == EffectiveRole.VIEWER;
+            case CO_OWNER -> target == EffectiveRole.EDITOR
+                    || target == EffectiveRole.VIEWER;
+            default -> false;
+        };
+    }
+
     @Transactional(readOnly = true)
     public Album getAlbum(Long albumId) {
         return albumRepository.findById(albumId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
     }
 
+    /**
+     * "관리 권한"이 필요한 작업용 (공유 요청 보내기, 공유 링크 생성 등)
+     * - OWNER
+     * - CO_OWNER
+     */
     private Album getAlbumWithManagePermission(Long albumId, Long meId) {
         Album album = getAlbum(albumId);
 
@@ -131,22 +219,52 @@ public class AlbumShareService {
                 .build();
     }
 
+    /**
+     * 공유 멤버 목록 조회
+     * - OWNER
+     * - 공유 멤버(ACCEPTED && active=true) → role 이 OWNER / CO_OWNER / EDITOR / VIEWER 여도 모두 조회 가능
+     */
     @Transactional(readOnly = true)
     public List<AlbumShareResponse.SharedUser> getShareTargets(Long albumId, Long meId) {
-        getAlbumWithManagePermission(albumId, meId);
+        Album album = getAlbum(albumId);
 
-        return albumShareRepository
-                .findByAlbumIdAndActiveTrue(albumId).stream()
-                .map(share -> AlbumShareResponse.SharedUser.builder()
-                        .userId(share.getUser().getId())
-                        .nickname(share.getUser().getNickname())
-                        .role(share.getRole().name())
-                        .build())
-                .toList();
+        // 🔐 멤버 조회 권한 체크 (예외 발생 시 403)
+        resolveEffectiveRole(album, meId);
+
+        List<AlbumShareResponse.SharedUser> result = new ArrayList<>();
+
+        // 1) 소유자
+        User owner = album.getUser();
+        result.add(AlbumShareResponse.SharedUser.builder()
+                .userId(owner.getId())
+                .nickname(owner.getNickname())
+                .profileImageUrl(owner.getProfileImageUrl())   // 🔹 추가
+                .role("OWNER")
+                .build()
+        );
+
+        // 2) ACCEPTED 상태인 공유 멤버
+        albumShareRepository.findByAlbumIdAndStatusAndActiveTrue(albumId, Status.ACCEPTED)
+                .forEach(share -> result.add(
+                        AlbumShareResponse.SharedUser.builder()
+                                .userId(share.getUser().getId())
+                                .nickname(share.getUser().getNickname())
+                                .profileImageUrl(share.getUser().getProfileImageUrl())  // 🔹 추가
+                                .role(share.getRole().name())
+                                .build()
+                ));
+
+        return result;
     }
 
+    /**
+     * 공유 멤버 권한 변경
+     * - OWNER  : CO_OWNER ~ VIEWER 모두 변경 가능
+     * - CO_OWNER : EDITOR ~ VIEWER 권한 변경 가능
+     * - EDITOR / VIEWER : 변경 불가
+     */
     public AlbumShare updateShareRoleByUserId(Long albumId, Long targetUserId, Long meId, Role newRole) {
-        Album album = getAlbumWithManagePermission(albumId, meId);
+        Album album = getAlbum(albumId);
 
         AlbumShare share = albumShareRepository
                 .findByAlbumIdAndUserIdAndActiveTrue(albumId, targetUserId)
@@ -159,10 +277,30 @@ public class AlbumShareService {
             throw new ApiException(ErrorCode.INVALID_REQUEST, "활성화된 공유가 아닙니다.");
         }
 
+        EffectiveRole actorRole = resolveEffectiveRole(album, meId);
+        EffectiveRole targetRole = resolveEffectiveRoleForShare(album, share);
+
+        // 🔒 CO_OWNER 는 다른 사용자를 CO_OWNER 로 승격시킬 수 없다
+        if (actorRole == EffectiveRole.CO_OWNER && newRole == Role.CO_OWNER) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "CO_OWNER 는 다른 사용자를 CO_OWNER 로 변경할 수 없습니다.");
+        }
+
+        if (!canChangeMemberRole(actorRole, targetRole)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "공유 멤버 권한을 변경할 수 없습니다.");
+        }
+
         share.setRole(newRole);
         return share;
     }
 
+
+    /**
+     * 공유 해제 / 강퇴
+     * - 본인(target == meId) : 누구나 언제든지 나가기 가능
+     * - OWNER  : CO_OWNER ~ VIEWER 강퇴 가능
+     * - CO_OWNER : EDITOR ~ VIEWER 강퇴 가능
+     * - EDITOR / VIEWER : 강퇴 불가
+     */
     public Long unshare(Long albumId, Long targetUserId, Long meId) {
         Album album = getAlbum(albumId);
 
@@ -170,23 +308,25 @@ public class AlbumShareService {
                 .findByAlbumIdAndUserIdAndActiveTrue(albumId, targetUserId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "SHARE_NOT_FOUND"));
 
-        if (targetUserId.equals(meId)) {
+        if (!Boolean.TRUE.equals(share.getActive())) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "이미 비활성화된 공유입니다.");
+        }
+
+        boolean selfUnshare = targetUserId.equals(meId);
+
+        if (selfUnshare) {
+            // ✅ 본인은 언제든지 나갈 수 있음
             if (!share.getUser().getId().equals(meId)) {
                 throw new ApiException(ErrorCode.FORBIDDEN, "본인 공유가 아닙니다.");
             }
         } else {
-            if (!album.getUser().getId().equals(meId)) {
-                AlbumShare myShare = albumShareRepository
-                        .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, meId, Status.ACCEPTED)
-                        .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN, "앨범 공유 관리 권한이 없습니다."));
-                if (myShare.getRole() != Role.CO_OWNER) {
-                    throw new ApiException(ErrorCode.FORBIDDEN, "앨범 공유 관리 권한이 없습니다.");
-                }
-            }
-        }
+            // ✅ 타인 강퇴
+            EffectiveRole actorRole = resolveEffectiveRole(album, meId);
+            EffectiveRole targetRole = resolveEffectiveRoleForShare(album, share);
 
-        if (!Boolean.TRUE.equals(share.getActive())) {
-            throw new ApiException(ErrorCode.INVALID_REQUEST, "이미 비활성화된 공유입니다.");
+            if (!canKickMember(actorRole, targetRole)) {
+                throw new ApiException(ErrorCode.FORBIDDEN, "해당 사용자를 앨범에서 제거할 권한이 없습니다.");
+            }
         }
 
         Long removedUserId = share.getUser().getId();

@@ -30,6 +30,7 @@ public class AlbumShareResponse {
     public static class SharedUser {
         private Long userId;
         private String nickname;
+        private String profileImageUrl;   // 🔹 추가
         private String role; // OWNER / CO_OWNER / EDITOR / VIEWER
     }
 }

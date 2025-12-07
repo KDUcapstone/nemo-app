@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/app/theme/app_colors.dart';
 import 'package:frontend/services/auth_service.dart';
 import 'package:frontend/providers/user_provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // 환경변수 패키지
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 import '../main_shell.dart';
@@ -13,6 +14,13 @@ import 'widgets/login_background.dart';
 import 'widgets/login_logo.dart';
 import 'widgets/email_login_form.dart';
 import 'widgets/social_login_buttons.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
+
+final GoogleSignIn _googleSignIn = GoogleSignIn(
+  scopes: ['email', 'profile'],
+  serverClientId: dotenv.env['GOOGLE_CLIENT_ID'],
+);
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -71,12 +79,8 @@ class LoginScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 28),
                     SocialLoginButtons(
-                      onKakaoTap: () {
-                        // TODO: 카카오 로그인/회원가입 통합 플로우
-                      },
-                      onGoogleTap: () {
-                        // TODO: 구글 로그인/회원가입 통합 플로우
-                      },
+                      onKakaoTap: () => _handleKakaoLogin(context),
+                      onGoogleTap: () => _handleGoogleLogin(context),
                     ),
                     // TODO: 소셜 로그인 연동 후, 이메일/소셜 로그인 성공 시에만 메인으로 진입
                   ],
@@ -122,6 +126,204 @@ Future<void> _showEmailLoginSheet(BuildContext context) async {
         MaterialPageRoute(builder: (_) => const MainShell()),
       );
     }
+  }
+}
+
+Future<void> _handleKakaoLogin(BuildContext context) async {
+  final messenger = ScaffoldMessenger.of(context);
+  print('🟡 [UI] 카카오 로그인 버튼 탭');
+
+  try {
+    // 1) 카카오 SDK로 액세스 토큰 받기
+    kakao.OAuthToken token;
+
+    final installed = await kakao.isKakaoTalkInstalled();
+    print('🟡 [UI] isKakaoTalkInstalled=$installed');
+
+    if (installed) {
+      print('🟡 [UI] KakaoTalk 설치됨 → loginWithKakaoTalk 호출');
+      token = await kakao.UserApi.instance.loginWithKakaoTalk();
+    } else {
+      print('🟡 [UI] KakaoTalk 미설치 → loginWithKakaoAccount 호출');
+      token = await kakao.UserApi.instance.loginWithKakaoAccount();
+    }
+
+    // 토큰 내용 일부만 로그 (전체 찍으면 너무 김)
+    final access = token.accessToken;
+    print(
+      '🟢 [UI] Kakao OAuthToken 수신: '
+      'len=${access.length}, prefix=${access.substring(0, 12)}...',
+    );
+
+    // 2) 백엔드로 토큰 전달 → 우리 서버 로그인/회원가입
+    final authService = AuthService();
+    print('🟡 [UI] AuthService.loginWithKakao 호출 시작');
+    final result = await authService.loginWithKakao(access);
+    print('🟢 [UI] AuthService.loginWithKakao 응답: $result');
+
+    // 3) 카카오에서 실제 사용자 프로필 조회
+    print('🟡 [UI] Kakao UserApi.instance.me() 호출');
+    final kakaoUser = await kakao.UserApi.instance.me();
+    final kakaoAccount = kakaoUser.kakaoAccount;
+    final kakaoProfile = kakaoAccount?.profile;
+
+    final nicknameFromKakao = kakaoProfile?.nickname;
+    final profileImageFromKakao = kakaoProfile?.profileImageUrl;
+
+    print(
+      '🟢 [UI] Kakao 프로필: '
+      'nickname=$nicknameFromKakao, profileImage=$profileImageFromKakao',
+    );
+
+    // 4) UserProvider에 상태 반영
+    if (result['userId'] != null && result['accessToken'] != null) {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+      print('💾 [UI] UserProvider.setUser 호출');
+      userProvider.setUser(
+        userId: result['userId'] as int,
+        // 서버 닉네임보다 카카오 닉네임을 우선 사용
+        nickname: nicknameFromKakao ?? (result['nickname'] as String? ?? ''),
+        accessToken: result['accessToken'] as String,
+        // 서버 프로필보다 카카오 프로필을 우선 사용
+        profileImageUrl:
+            profileImageFromKakao ?? (result['profileImageUrl'] as String?),
+        provider: result['provider'], // 👈 provider도 찍힘
+        context: context,
+      );
+      print('💾 [UI] UserProvider.setUser 완료');
+
+      // 5) 메인 화면으로 이동
+      print('🟡 [UI] MainShell로 네비게이션');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('카카오로 로그인되었습니다.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      print('🔴 [UI] 로그인 결과에 userId 또는 accessToken 없음: $result');
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('카카오 로그인에 실패했습니다.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } catch (e, st) {
+    print('🔴 [UI] _handleKakaoLogin 예외: $e');
+    print(st);
+    messenger.showSnackBar(
+      SnackBar(content: Text('카카오 로그인 오류: $e'), backgroundColor: Colors.red),
+    );
+  }
+}
+
+Future<void> _handleGoogleLogin(BuildContext context) async {
+  final messenger = ScaffoldMessenger.of(context);
+  print('🟡 [UI] Google 로그인 버튼 탭');
+
+  // 🔍 디버그: GOOGLE_CLIENT_ID 확인
+  final clientId = dotenv.env['GOOGLE_CLIENT_ID'];
+  if (clientId == null || clientId.isEmpty) {
+    print('🔴 [DEBUG] GOOGLE_CLIENT_ID가 NULL 또는 빈 값입니다!');
+  } else {
+    print(
+      '🔍 [DEBUG] GOOGLE_CLIENT_ID: ${clientId.length > 30 ? clientId.substring(0, 30) + "..." : clientId}',
+    );
+    print('🔍 [DEBUG] GOOGLE_CLIENT_ID 길이: ${clientId.length}');
+    // Web Client ID 형식 확인 (.apps.googleusercontent.com 포함 여부)
+    if (!clientId.contains('.apps.googleusercontent.com')) {
+      print(
+        '⚠️ [DEBUG] 경고: Web Client ID 형식이 아닐 수 있습니다! (.apps.googleusercontent.com 포함 여부 확인)',
+      );
+    } else {
+      print('✅ [DEBUG] GOOGLE_CLIENT_ID 형식 확인: Web Client ID로 보입니다.');
+    }
+  }
+
+  try {
+    // 1) Google 계정 선택
+    print('🟡 [UI] _googleSignIn.signIn() 호출');
+    final googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      print('🟡 [UI] 사용자가 Google 로그인 취소함 (googleUser == null)');
+      return; // 사용자가 취소한 경우
+    }
+
+    print(
+      '🟢 [UI] Google 계정 선택 완료: '
+      'id=${googleUser.id}, email=${googleUser.email}, displayName=${googleUser.displayName}',
+    );
+
+    // 2) Google 인증 정보에서 idToken 가져오기
+    print('🟡 [UI] googleUser.authentication 호출');
+    final googleAuth = await googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    if (idToken == null) {
+      print('🔴 [UI] googleAuth.idToken == null');
+      throw Exception('Google idToken 이 비어 있습니다.');
+    }
+
+    print(
+      '🟢 [UI] Google idToken 획득: '
+      'len=${idToken.length}, prefix=${idToken.substring(0, 12)}...',
+    );
+
+    // 3) 우리 백엔드로 Google idToken 보내서 로그인/회원가입
+    final authService = AuthService();
+    print('🟡 [UI] AuthService.loginWithGoogle 호출 시작');
+    final result = await authService.loginWithGoogle(idToken);
+    print('🟢 [UI] AuthService.loginWithGoogle 응답: $result');
+
+    // 4) UserProvider에 상태 반영
+    if (result['userId'] != null && result['accessToken'] != null) {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+      print('💾 [UI] UserProvider.setUser 호출 (Google)');
+      userProvider.setUser(
+        userId: result['userId'] as int,
+        nickname: result['nickname'] as String? ?? '',
+        accessToken: result['accessToken'] as String,
+        profileImageUrl: result['profileImageUrl'] as String?,
+        provider: result['provider'], // 👈 여기서 provider도 넘겨줌
+        context: context,
+      );
+      print('💾 [UI] UserProvider.setUser 완료 (Google)');
+
+      // 5) 메인 화면으로 이동
+      print('🟡 [UI] MainShell로 네비게이션 (Google)');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Google로 로그인되었습니다.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      print('🔴 [UI] Google 로그인 결과에 userId 또는 accessToken 없음: $result');
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Google 로그인에 실패했습니다.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } catch (e, st) {
+    print('🔴 [UI] _handleGoogleLogin 예외: $e');
+    print(st);
+    messenger.showSnackBar(
+      SnackBar(content: Text('Google 로그인 오류: $e'), backgroundColor: Colors.red),
+    );
   }
 }
 
@@ -222,7 +424,7 @@ class _EmailLoginFormState extends State<_EmailLoginForm> {
           // Exception 접두사 제거, 사용자 친화적인 메시지로 변환
           if (errorMsg.startsWith('Exception: ')) {
             message = errorMsg.substring('Exception: '.length);
-            
+
             // 실제 네트워크 오류만 "네트워크 오류"로 변환
             if (message.startsWith('네트워크 오류: ') ||
                 message.contains('서버에 연결할 수 없습니다') ||
@@ -576,5 +778,7 @@ class _PressScaleState extends State<_PressScale> {
     );
   }
 }
+
+
 
 // Removed local background and logo; using widgets/login_background.dart and widgets/login_logo.dart

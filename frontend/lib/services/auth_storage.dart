@@ -8,6 +8,7 @@ class AuthStorage {
   static const _keyNickname = 'auth_nickname';
   static const _keyProfileImageUrl = 'auth_profile_image_url';
   static const _keyRefreshToken = 'auth_refresh_token';
+  static const _keyProvider = 'auth_provider';     // ★ 추가
 
   /// 로그인 성공 시 호출: 리프레시 토큰 + 유저 정보 저장
   static Future<void> saveAuth({
@@ -15,11 +16,13 @@ class AuthStorage {
     required String nickname,
     String? profileImageUrl,
     required String refreshToken,
+    required String? provider,                     // ★ 추가
   }) async {
     await _storage.write(key: _keyUserId, value: userId.toString());
     await _storage.write(key: _keyNickname, value: nickname);
     await _storage.write(key: _keyProfileImageUrl, value: profileImageUrl);
     await _storage.write(key: _keyRefreshToken, value: refreshToken);
+    await _storage.write(key: _keyProvider, value: provider ?? 'local'); // ★ 추가
   }
 
   /// 저장된 refreshToken과 유저 기본 정보 로드
@@ -31,7 +34,8 @@ class AuthStorage {
     final userIdStr = await _storage.read(key: _keyUserId);
     final nickname = await _storage.read(key: _keyNickname) ?? '';
     final profileImageUrl =
-        await _storage.read(key: _keyProfileImageUrl);
+    await _storage.read(key: _keyProfileImageUrl);
+    final provider = await _storage.read(key: _keyProvider);     // ★ 추가
 
     final userId = int.tryParse(userIdStr ?? '');
     if (userId == null) return null;
@@ -41,6 +45,7 @@ class AuthStorage {
       nickname: nickname,
       profileImageUrl: profileImageUrl,
       refreshToken: token,
+      provider: provider,                                     // ★ 추가
     );
   }
 
@@ -51,6 +56,7 @@ class AuthStorage {
       _storage.delete(key: _keyNickname),
       _storage.delete(key: _keyProfileImageUrl),
       _storage.delete(key: _keyRefreshToken),
+      _storage.delete(key: _keyProvider),          // ★ 추가
     ]);
   }
 }
@@ -60,12 +66,14 @@ class StoredAuth {
   final String nickname;
   final String? profileImageUrl;
   final String refreshToken;
+  final String? provider;   // local/kakao/google
 
   StoredAuth({
     required this.userId,
     required this.nickname,
     required this.profileImageUrl,
     required this.refreshToken,
+    required this.provider,
   });
 }
 

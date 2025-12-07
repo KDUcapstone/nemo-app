@@ -39,4 +39,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
             "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<User> searchByNicknameOrEmail(String keyword);
     boolean existsByEmail(String email);
+
+    // SNS 로그인용: provider + socialId 로 사용자 조회
+    Optional<User> findByProviderAndSocialId(String provider, String socialId);
 }

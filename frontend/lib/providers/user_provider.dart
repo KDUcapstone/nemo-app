@@ -10,6 +10,7 @@ class UserProvider extends ChangeNotifier {
   String? nickname;
   String? profileImageUrl;
   String? accessToken;
+  String? provider;          // 👈 추가 (local / kakao / google 등)
 
   bool get isLoggedIn => accessToken != null;
 
@@ -18,12 +19,14 @@ class UserProvider extends ChangeNotifier {
     required String nickname,
     required String accessToken,
     String? profileImageUrl,
+    String? provider,        // 👈 파라미터 추가
     BuildContext? context,
   }) {
     this.userId = userId;
     this.nickname = nickname;
     this.profileImageUrl = profileImageUrl;
     this.accessToken = accessToken;
+    this.provider = provider ?? 'local';   // 👈 기본값 local
 
     // AuthService에도 토큰 저장
     AuthService.setAccessToken(accessToken);
@@ -42,6 +45,7 @@ class UserProvider extends ChangeNotifier {
     nickname = null;
     profileImageUrl = null;
     accessToken = null;
+    provider = null;           // 👈 같이 초기화
 
     // AuthService에서도 토큰 제거 + 로컬 저장 삭제
     AuthService.clearAccessToken();

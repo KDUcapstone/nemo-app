@@ -42,6 +42,8 @@ public class SecurityConfig {
 
                                 "/api/users/signup",
                                 "/api/users/login",
+                                "/api/auth/logout",
+                                "/api/auth/oauth/**",
 
                                 // 이메일 인증
                                 "/api/auth/email/**",

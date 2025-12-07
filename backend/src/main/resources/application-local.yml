@@ -21,7 +21,7 @@ spring:
       hibernate.format_sql: true
 
 app:
-  public-base-url: http://10.0.2.2:8080
+  public-base-url: http://localhost:8080
 
   jwt:
     # 최소 32바이트 이상. 예시는 Base64 32바이트(24 raw bytes)보다 더 긴 랜덤 문자열 권장.
@@ -31,10 +31,10 @@ app:
 
 
   s3:
-    bucket: nemo-dev-photos
+    bucket: nemo-s3-prod
     region: ap-northeast-2
-    endpoint: http://localhost:4566
-    accessKey: test
-    secretKey: test
-    pathStyle: true
-    createBucketIfMissing: true
+    endpoint: ""                    # AWS니까 endpoint 없음
+    accessKey: ${AWS_ACCESS_KEY}
+    secretKey: ${AWS_SECRET_KEY}
+    pathStyle: false
+    createBucketIfMissing: false

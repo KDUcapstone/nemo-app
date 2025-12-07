@@ -3,15 +3,10 @@ package com.nemo.backend.domain.album.service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import com.nemo.backend.domain.photo.repository.PhotoRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import com.nemo.backend.domain.album.dto.*;
 import com.nemo.backend.domain.album.entity.Album;
@@ -22,13 +17,19 @@ import com.nemo.backend.domain.album.repository.AlbumFavoriteRepository;
 import com.nemo.backend.domain.album.repository.AlbumRepository;
 import com.nemo.backend.domain.album.repository.AlbumShareRepository;
 import com.nemo.backend.domain.photo.entity.Photo;
+import com.nemo.backend.domain.photo.repository.PhotoRepository;
 import com.nemo.backend.domain.photo.service.PhotoStorage;
+import com.nemo.backend.domain.photo.service.S3PhotoStorage;
 import com.nemo.backend.domain.user.entity.User;
 import com.nemo.backend.global.exception.ApiException;
 import com.nemo.backend.global.exception.ErrorCode;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional(readOnly = true)
@@ -65,10 +66,19 @@ public class AlbumService {
     // ownership: ALL / OWNED / SHARED
     public List<AlbumSummaryResponse> getAlbums(Long userId, AlbumOwnershipFilter ownership) {
 
+        // 1) 내가 소유한 앨범들
         List<AlbumSummaryResponse> owned = albumRepository.findByUserId(userId).stream()
                 .map(album -> {
                     autoSetThumbnailIfMissing(album);
-                    int photoCount = (album.getPhotos() == null) ? 0 : album.getPhotos().size();
+                    int photoCount = (album.getPhotos() == null)
+                            ? 0
+                            : (int) album.getPhotos().stream()
+                            .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                            .count();
+                    // ✅ 이 앨범이 현재 다른 사용자와 공유 중인지 (ACCEPTED && active=true)
+                    boolean sharedFlag = albumShareRepository
+                            .existsByAlbumIdAndStatusAndActiveTrue(album.getId(), Status.ACCEPTED);
+
                     return AlbumSummaryResponse.builder()
                             .albumId(album.getId())
                             .title(album.getName())
@@ -76,16 +86,22 @@ public class AlbumService {
                             .photoCount(photoCount)
                             .createdAt(album.getCreatedAt())
                             .role("OWNER")
+                            .shared(sharedFlag)
                             .build();
                 })
-                .collect(Collectors.toList()); // 변할 수 있는 리스트
+                .collect(Collectors.toList());
 
+        // 2) 내가 공유받은 앨범들
         List<AlbumSummaryResponse> shared = albumShareRepository
                 .findByUserIdAndStatusAndActiveTrue(userId, Status.ACCEPTED).stream()
                 .map(share -> {
                     Album album = share.getAlbum();
                     autoSetThumbnailIfMissing(album);
-                    int photoCount = (album.getPhotos() == null) ? 0 : album.getPhotos().size();
+                    int photoCount = (album.getPhotos() == null)
+                            ? 0
+                            : (int) album.getPhotos().stream()
+                            .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                            .count();
                     return AlbumSummaryResponse.builder()
                             .albumId(album.getId())
                             .title(album.getName())
@@ -93,13 +109,15 @@ public class AlbumService {
                             .photoCount(photoCount)
                             .createdAt(album.getCreatedAt())
                             .role(share.getRole().name())
+                            // 공유받은 앨범 목록이므로 항상 true
+                            .shared(true)
                             .build();
                 })
                 .collect(Collectors.toList());
 
+
         List<AlbumSummaryResponse> result;
 
-        // 🔥 switch 값은 enum
         switch (ownership) {
             case OWNED -> result = owned;
             case SHARED -> result = shared;
@@ -115,14 +133,10 @@ public class AlbumService {
         return result;
     }
 
-
     // favoriteOnly까지 포함
     public List<AlbumSummaryResponse> getAlbums(Long userId, String ownership, boolean favoriteOnly) {
 
-        // ❗ String → Enum 변환
         AlbumOwnershipFilter filter = AlbumOwnershipFilter.from(ownership);
-
-        // 🚀 enum으로 getAlbums 호출
         List<AlbumSummaryResponse> base = getAlbums(userId, filter);
 
         if (!favoriteOnly) {
@@ -138,8 +152,6 @@ public class AlbumService {
                 .toList();
     }
 
-
-
     // 2) 앨범 상세 조회
     public AlbumDetailResponse getAlbum(Long userId, Long albumId) {
         Album album = albumRepository.findById(albumId)
@@ -152,7 +164,7 @@ public class AlbumService {
             AlbumShare share = albumShareRepository
                     .findByAlbumIdAndUserIdAndStatusAndActiveTrue(albumId, userId, Status.ACCEPTED)
                     .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에 접근할 권한이 없습니다."));
-            role = share.getRole().name(); // VIEWER / EDITOR / CO_OWNER
+            role = share.getRole().name();
         }
 
         autoSetThumbnailIfMissing(album);
@@ -178,13 +190,53 @@ public class AlbumService {
         // 초기 사진 지정
         if (req.getPhotoIdList() != null && !req.getPhotoIdList().isEmpty()) {
             List<Photo> photos = photoRepository.findAllById(req.getPhotoIdList());
-            for (Photo p : photos) {
-                p.setAlbum(saved);
+            List<Photo> alivePhotos = photos.stream()
+                    .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                    .toList();
+
+            if (saved.getPhotos() == null) {
+                saved.setPhotos(new ArrayList<>());
             }
-            photoRepository.saveAll(photos);
-            saved.setPhotos(photos);
+            saved.getPhotos().addAll(alivePhotos);
+
+            // 생성 시 사용자가 지정한 썸네일이 있으면 우선 적용 (photoIdList 안에 있는 경우)
+            if (req.getCoverPhotoId() != null) {
+                alivePhotos.stream()
+                        .filter(p -> req.getCoverPhotoId().equals(p.getId()))
+                        .findFirst()
+                        .ifPresent(p -> {
+                            String thumb = (p.getThumbnailUrl() != null && !p.getThumbnailUrl().isBlank())
+                                    ? p.getThumbnailUrl()
+                                    : p.getImageUrl();
+                            saved.setCoverPhotoUrl(thumb);
+                        });
+            }
         }
 
+        // photoIdList 가 비어 있어도 coverPhotoId 가 들어온 경우 한 번 더 커버 처리
+        if (req.getCoverPhotoId() != null &&
+                (saved.getCoverPhotoUrl() == null || saved.getCoverPhotoUrl().isBlank())) {
+
+            photoRepository.findByIdAndDeletedIsFalse(req.getCoverPhotoId())
+                    .ifPresent(p -> {
+                        String thumb = (p.getThumbnailUrl() != null && !p.getThumbnailUrl().isBlank())
+                                ? p.getThumbnailUrl()
+                                : p.getImageUrl();
+                        saved.setCoverPhotoUrl(thumb);
+
+                        // 앨범에 아직 없는 사진이면 같이 추가
+                        if (saved.getPhotos() == null) {
+                            saved.setPhotos(new ArrayList<>());
+                        }
+                        boolean exists = saved.getPhotos().stream()
+                                .anyMatch(existing -> existing.getId().equals(p.getId()));
+                        if (!exists) {
+                            saved.getPhotos().add(p);
+                        }
+                    });
+        }
+
+        // 최종적으로 커버가 비어 있으면 자동 썸네일
         autoSetThumbnailIfMissing(saved);
 
         return toDetail(saved, "OWNER");
@@ -201,15 +253,25 @@ public class AlbumService {
         }
 
         List<Photo> photos = photoRepository.findAllById(photoIdList);
+
+        if (album.getPhotos() == null) {
+            album.setPhotos(new ArrayList<>());
+        }
+
         int count = 0;
         for (Photo p : photos) {
-            if (p.getAlbum() == null || !albumId.equals(p.getAlbum().getId())) {
-                p.setAlbum(album);
+            if (Boolean.TRUE.equals(p.getDeleted())) {
+                continue;
+            }
+            boolean alreadyExists = album.getPhotos().stream()
+                    .anyMatch(existing -> existing.getId().equals(p.getId()));
+            if (!alreadyExists) {
+                album.getPhotos().add(p);
                 count++;
             }
         }
-        photoRepository.saveAll(photos);
 
+        // 썸네일이 비어 있으면 자동 지정
         autoSetThumbnailIfMissing(album);
         return count;
     }
@@ -223,37 +285,91 @@ public class AlbumService {
             throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범에서 사진을 삭제할 권한이 없습니다.");
         }
 
-        List<Photo> photos = photoRepository.findAllById(photoIdList);
-        int count = 0;
-        for (Photo p : photos) {
-            if (p.getAlbum() != null && albumId.equals(p.getAlbum().getId())) {
-                p.setAlbum(null);
-                count++;
-            }
-        }
-        photoRepository.saveAll(photos);
-
         if (album.getPhotos() == null || album.getPhotos().isEmpty()) {
+            return 0;
+        }
+
+        Set<Long> targetIds = new HashSet<>(photoIdList);
+
+        // 현재 썸네일이 삭제 대상인지 체크
+        String currentCover = album.getCoverPhotoUrl();
+        boolean coverWillBeRemoved = false;
+        if (currentCover != null && !currentCover.isBlank()) {
+            coverWillBeRemoved = album.getPhotos().stream()
+                    .filter(p -> targetIds.contains(p.getId()))
+                    .anyMatch(p -> {
+                        String candidate = (p.getThumbnailUrl() != null && !p.getThumbnailUrl().isBlank())
+                                ? p.getThumbnailUrl()
+                                : p.getImageUrl();
+                        return currentCover.equals(candidate);
+                    });
+        }
+
+        int beforeSize = album.getPhotos().size();
+        album.getPhotos().removeIf(p -> targetIds.contains(p.getId()));
+        int count = beforeSize - album.getPhotos().size();
+
+        // 남은 사진 기반 썸네일 처리
+        if (album.getPhotos().isEmpty()) {
             album.setCoverPhotoUrl(null);
+        } else if (coverWillBeRemoved) {
+            album.setCoverPhotoUrl(null);
+            autoSetThumbnailIfMissing(album);
         }
 
         return count;
     }
 
-    // 5) 앨범 수정 / 삭제
+    // 5) 앨범 수정
     @Transactional
     public AlbumDetailResponse updateAlbum(Long userId, Long albumId, UpdateAlbumRequest req) {
         Album album = albumRepository.findById(albumId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "ALBUM_NOT_FOUND"));
+                .orElseThrow(() -> new ApiException(ErrorCode.ALBUM_NOT_FOUND, "ALBUM_NOT_FOUND"));
 
+        // 소유자만 수정 가능 (명세 기준)
         if (album.getUser() == null || !userId.equals(album.getUser().getId())) {
-            throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범을 수정할 권한이 없습니다.");
+            throw new ApiException(ErrorCode.ALBUM_FORBIDDEN, "해당 앨범을 수정할 권한이 없습니다.");
         }
 
-        if (req.getTitle() != null) album.setName(req.getTitle());
-        if (req.getDescription() != null) album.setDescription(req.getDescription());
+        // 제목/설명 수정 (null 이면 변경 안 함)
+        if (req.getTitle() != null) {
+            album.setName(req.getTitle());
+        }
+        if (req.getDescription() != null) {
+            album.setDescription(req.getDescription());
+        }
 
-        autoSetThumbnailIfMissing(album);
+        // coverPhotoId 가 들어온 경우 대표 사진 변경
+        if (req.getCoverPhotoId() != null) {
+            Long coverPhotoId = req.getCoverPhotoId();
+
+            Photo photo = photoRepository.findByIdAndDeletedIsFalse(coverPhotoId)
+                    .orElseThrow(() ->
+                            new ApiException(ErrorCode.PHOTO_NOT_FOUND, "대표 사진으로 지정할 사진을 찾을 수 없습니다."));
+
+            boolean inAlbum = album.getPhotos() != null &&
+                    album.getPhotos().stream()
+                            .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                            .anyMatch(p -> p.getId().equals(coverPhotoId));
+
+            if (!inAlbum) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "대표 사진은 해당 앨범에 포함된 사진만 지정할 수 있습니다."
+                );
+            }
+
+            String thumb = (photo.getThumbnailUrl() != null && !photo.getThumbnailUrl().isBlank())
+                    ? photo.getThumbnailUrl()
+                    : photo.getImageUrl();
+            album.setCoverPhotoUrl(thumb);
+        }
+
+        // coverPhotoId 안 들어온 경우: 비어 있으면 자동 썸네일 채우기
+        if (req.getCoverPhotoId() == null) {
+            autoSetThumbnailIfMissing(album);
+        }
+
         return toDetail(album, "OWNER");
     }
 
@@ -266,15 +382,22 @@ public class AlbumService {
             throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범을 삭제할 권한이 없습니다.");
         }
 
+        // ✅ 0) 이 앨범과 연결된 공유 정보 전부 삭제
+        albumShareRepository.deleteByAlbumId(albumId);
+
+        // ✅ 1) 이 앨범을 즐겨찾기한 기록 전부 삭제
+        albumFavoriteRepository.deleteByAlbumId(albumId);
+
+        // ✅ 2) 앨범-사진 연관관계 정리
         if (album.getPhotos() != null && !album.getPhotos().isEmpty()) {
-            album.getPhotos().forEach(photo -> photo.setAlbum(null));
-            photoRepository.saveAll(album.getPhotos());
+            album.getPhotos().clear();
         }
 
+        // ✅ 3) 앨범 삭제
         albumRepository.delete(album);
     }
 
-    // 6) 썸네일 설정
+    // 6) 앨범 썸네일 생성/지정
     @Transactional
     public AlbumThumbnailResponse updateThumbnail(
             Long userId,
@@ -291,6 +414,7 @@ public class AlbumService {
 
         String thumbnailUrl;
 
+        // 1) file 이 있으면 업로드한 이미지로 썸네일 지정
         if (file != null && !file.isEmpty()) {
             try {
                 String key = photoStorage.store(file);
@@ -302,20 +426,26 @@ public class AlbumService {
                         e
                 );
             }
-        } else if (photoId != null) {
-            Photo photo = photoRepository.findById(photoId)
+        }
+        // 2) photoId 가 있으면 앨범 내 사진을 썸네일로 지정
+        else if (photoId != null) {
+            Photo photo = photoRepository.findByIdAndDeletedIsFalse(photoId)
                     .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "PHOTO_NOT_FOUND"));
 
-            if (photo.getAlbum() == null || !albumId.equals(photo.getAlbum().getId())) {
+            if (album.getPhotos() == null ||
+                    album.getPhotos().stream().noneMatch(p -> p.getId().equals(photoId))) {
                 throw new ApiException(ErrorCode.FORBIDDEN, "해당 앨범의 사진이 아닙니다.");
             }
 
             thumbnailUrl = (photo.getThumbnailUrl() != null && !photo.getThumbnailUrl().isBlank())
                     ? photo.getThumbnailUrl()
                     : photo.getImageUrl();
-        } else {
+        }
+        // 3) Body 비어 있으면 → 자동 지정
+        else {
             thumbnailUrl = pickAutoThumbnailUrl(album);
             if (thumbnailUrl == null) {
+                // 앨범에 살아있는 사진이 없는 경우
                 throw new ApiException(ErrorCode.NOT_FOUND, "PHOTO_NOT_FOUND");
             }
         }
@@ -389,6 +519,54 @@ public class AlbumService {
         }
     }
 
+    // 8) 앨범 전체 사진 다운로드 URL 조회
+    public AlbumDownloadUrlsResponse getAlbumDownloadUrls(Long userId, Long albumId) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.ALBUM_NOT_FOUND,
+                        "해당 앨범을 찾을 수 없습니다.")
+                );
+
+        if (!canAccessAlbum(userId, album)) {
+            throw new ApiException(
+                    ErrorCode.FORBIDDEN,
+                    "해당 앨범의 사진을 다운로드할 권한이 없습니다."
+            );
+        }
+
+        List<Photo> photos = (album.getPhotos() == null)
+                ? List.of()
+                : album.getPhotos().stream()
+                .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                .sorted(Comparator.comparing(Photo::getCreatedAt))
+                .toList();
+
+        int seq = 0;   // ✅ 명세: 0부터 시작
+        List<AlbumPhotoDownloadUrlDto> photoDtos = new ArrayList<>();
+
+        for (Photo p : photos) {
+            String downloadUrl = p.getImageUrl();
+            String filename = buildDownloadFilename(p);
+            Long fileSize = resolveFileSize(p);
+
+            photoDtos.add(AlbumPhotoDownloadUrlDto.builder()
+                    .photoId(p.getId())
+                    .sequence(seq++)
+                    .downloadUrl(downloadUrl)
+                    .filename(filename)
+                    .fileSize(fileSize)
+                    .build());
+        }
+
+        return AlbumDownloadUrlsResponse.builder()
+                .albumId(album.getId())
+                .albumTitle(album.getName())
+                .photoCount(photoDtos.size())
+                .photos(photoDtos)
+                .build();
+    }
+
+
     // 내부 유틸
     private String toPublicUrl(String key) {
         if (key == null) return null;
@@ -398,10 +576,48 @@ public class AlbumService {
         return String.format("%s/files/%s", publicBaseUrl, key);
     }
 
+    /** 앨범의 coverPhotoUrl 자동 설정 로직 */
     private void autoSetThumbnailIfMissing(Album album) {
-        if (album.getCoverPhotoUrl() != null && !album.getCoverPhotoUrl().isBlank()) return;
-        String url = pickAutoThumbnailUrl(album);
-        album.setCoverPhotoUrl(url);
+        // 사진이 아예 없으면 썸네일 제거
+        if (album.getPhotos() == null || album.getPhotos().isEmpty()) {
+            album.setCoverPhotoUrl(null);
+            return;
+        }
+
+        // 살아있는 사진만 필터링
+        List<Photo> alivePhotos = album.getPhotos().stream()
+                .filter(p -> Boolean.FALSE.equals(p.getDeleted()))
+                .toList();
+
+        // 살아있는 사진 없으면 썸네일 제거
+        if (alivePhotos.isEmpty()) {
+            album.setCoverPhotoUrl(null);
+            return;
+        }
+
+        String cover = album.getCoverPhotoUrl();
+        final String coverUrl = cover;   // ← lambda에서 사용할 final 변수
+
+        // 기존 커버가 살아있는 사진을 가리키는지 검증
+        if (coverUrl != null && !coverUrl.isBlank()) {
+            boolean stillValid = alivePhotos.stream().anyMatch(p -> {
+                String candidate = (p.getThumbnailUrl() != null && !p.getThumbnailUrl().isBlank())
+                        ? p.getThumbnailUrl()
+                        : p.getImageUrl();
+                return coverUrl.equals(candidate);
+            });
+
+            // 커버가 더 이상 유효하지 않으면 제거
+            if (!stillValid) {
+                cover = null;
+                album.setCoverPhotoUrl(null);
+            }
+        }
+
+        // cover가 비어 있으면 자동 선정
+        if (cover == null || cover.isBlank()) {
+            album.setCoverPhotoUrl(pickAutoThumbnailUrl(album));
+        }
     }
 
     private String pickAutoThumbnailUrl(Album album) {
@@ -433,6 +649,10 @@ public class AlbumService {
 
         int photoCount = photoList.size();
 
+        // ✅ 이 앨범이 현재 다른 사용자와 공유 중인지 여부 (ACCEPTED && active=true 기준)
+        boolean sharedFlag = albumShareRepository
+                .existsByAlbumIdAndStatusAndActiveTrue(album.getId(), Status.ACCEPTED);
+
         return AlbumDetailResponse.builder()
                 .albumId(album.getId())
                 .title(album.getName())
@@ -441,7 +661,58 @@ public class AlbumService {
                 .photoCount(photoCount)
                 .createdAt(album.getCreatedAt())
                 .role(role)
+                .shared(sharedFlag)
                 .photoList(photoList)
                 .build();
+
     }
+
+    /** imageUrl → S3 key 추출 */
+    private String extractStorageKeyFromUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+
+        String base = publicBaseUrl.replaceAll("/+$", "");
+        if (!url.startsWith(base)) {
+            return null;
+        }
+
+        String path = url.substring(base.length()); // "/files/..."
+        if (!path.startsWith("/files/")) {
+            return null;
+        }
+        return path.substring("/files/".length());
+    }
+
+    /** photo.imageUrl 기준 파일 크기 조회 */
+    private Long resolveFileSize(Photo photo) {
+        String key = extractStorageKeyFromUrl(photo.getImageUrl());
+        if (key == null) return null;
+
+        if (photoStorage instanceof S3PhotoStorage s3) {
+            try {
+                return s3.getObjectSize(key);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** 다운로드용 파일 이름 생성 */
+    private String buildDownloadFilename(Photo photo) {
+        String url = photo.getImageUrl();
+        String ext = "jpg";
+        if (url != null) {
+            try {
+                String path = new java.net.URL(url).getPath();
+                String name = path.substring(path.lastIndexOf('/') + 1);
+                int dot = name.lastIndexOf('.');
+                if (dot > 0 && dot < name.length() - 1) {
+                    ext = name.substring(dot + 1);
+                }
+            } catch (Exception ignored) {}
+        }
+        return "nemo_photo_" + photo.getId() + "." + ext;
+    }
+
 }

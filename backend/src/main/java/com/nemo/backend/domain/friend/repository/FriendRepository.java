@@ -52,4 +52,6 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
      */
     List<Friend> findAllByFriendIdAndStatus(Long friendId, FriendStatus status);
 
+    void deleteAllByUserIdOrFriendId(Long userId, Long friendId);
+
 }

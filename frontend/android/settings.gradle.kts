@@ -20,6 +20,8 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.9.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.21" apply false
+    // 🔹 Google Services 플러그인(version은 4.4.2 정도 사용)
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 include(":app")
