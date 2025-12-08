@@ -16,11 +16,16 @@ class PhotoViewerScreen extends StatefulWidget {
   final int photoId;
   final String imageUrl;
   final int? albumId; // 앨범에서 진입 시 앨범 ID 전달
+  final List<PhotoItem>? photos; // 사진 목록 (슬라이딩용)
+  final int? initialIndex; // 초기 인덱스 (슬라이딩용)
+
   const PhotoViewerScreen({
     super.key,
     required this.photoId,
     required this.imageUrl,
     this.albumId,
+    this.photos,
+    this.initialIndex,
   });
 
   @override
@@ -30,6 +35,49 @@ class PhotoViewerScreen extends StatefulWidget {
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   bool _showUI = true;
   String? _myRole; // 앨범에서 진입한 경우 내 role 저장
+  late PageController _pageController;
+  late int _currentIndex;
+  late List<PhotoItem> _photos;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 사진 목록 초기화
+    if (widget.photos != null && widget.photos!.isNotEmpty) {
+      _photos = widget.photos!;
+      _currentIndex =
+          widget.initialIndex ??
+          _photos.indexWhere((p) => p.photoId == widget.photoId);
+      if (_currentIndex == -1) _currentIndex = 0;
+    } else {
+      // 사진 목록이 없으면 현재 사진만 포함
+      _photos = [
+        PhotoItem(
+          photoId: widget.photoId,
+          imageUrl: widget.imageUrl,
+          takenAt: '',
+          location: '',
+          brand: '',
+          tagList: [],
+        ),
+      ];
+      _currentIndex = 0;
+    }
+
+    _pageController = PageController(initialPage: _currentIndex);
+
+    // 앨범에서 진입한 경우 role 확인
+    if (widget.albumId != null) {
+      _loadMyRole();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   void _toggleUI() {
     setState(() {
@@ -37,14 +85,16 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    // 앨범에서 진입한 경우 role 확인
-    if (widget.albumId != null) {
-      _loadMyRole();
-    }
+  void _onPageChanged(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
   }
+
+  // 현재 표시 중인 사진 정보
+  PhotoItem get _currentPhoto => _photos[_currentIndex];
+  int get _currentPhotoId => _currentPhoto.photoId;
+  String get _currentImageUrl => _currentPhoto.imageUrl;
 
   Future<void> _loadMyRole() async {
     if (widget.albumId == null) return;
@@ -106,15 +156,18 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     return _myRole == 'OWNER' || _myRole == 'CO_OWNER' || _myRole == 'EDITOR';
   }
 
+  Widget _buildImage(String imageUrl) {
+    final uri = Uri.tryParse(imageUrl);
+    final isFile = uri == null || !uri.hasScheme;
+    return isFile
+        ? Image.file(File(imageUrl), fit: BoxFit.contain)
+        : Image.network(imageUrl, fit: BoxFit.contain);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final uri = Uri.tryParse(widget.imageUrl);
-    final isFile = uri == null || !uri.hasScheme;
-    final Widget img = isFile
-        ? Image.file(File(widget.imageUrl), fit: BoxFit.contain)
-        : Image.network(widget.imageUrl, fit: BoxFit.contain);
     final isFav = context.select<PhotoProvider, bool>((p) {
-      final idx = p.items.indexWhere((e) => e.photoId == widget.photoId);
+      final idx = p.items.indexWhere((e) => e.photoId == _currentPhotoId);
       return idx != -1 ? p.items[idx].favorite : false;
     });
 
@@ -123,14 +176,23 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
       body: SafeArea(
         child: Stack(
           children: [
+            // PageView로 사진 슬라이딩
             Positioned.fill(
-              child: GestureDetector(
-                onTap: _toggleUI,
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4.0,
-                  child: Center(child: img),
-                ),
+              child: PageView.builder(
+                controller: _pageController,
+                onPageChanged: _onPageChanged,
+                itemCount: _photos.length,
+                itemBuilder: (context, index) {
+                  final photo = _photos[index];
+                  return GestureDetector(
+                    onTap: _toggleUI,
+                    child: InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Center(child: _buildImage(photo.imageUrl)),
+                    ),
+                  );
+                },
               ),
             ),
             // 위로 스와이프하면 상세 Half-sheet 열기
@@ -144,7 +206,8 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                       isScrollControlled: true,
                       isDismissible: true,
                       backgroundColor: Colors.transparent,
-                      builder: (_) => DetailSheetModal(photoId: widget.photoId),
+                      builder: (_) =>
+                          DetailSheetModal(photoId: _currentPhotoId),
                     );
                   }
                 },
@@ -213,7 +276,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                 try {
                                   final api = PhotoApi();
                                   final response = await api.toggleFavorite(
-                                    widget.photoId,
+                                    _currentPhotoId,
                                   );
                                   if (!context.mounted) return;
                                   // API 명세서: { photoId, isFavorite, message }
@@ -222,7 +285,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                   context
                                       .read<PhotoProvider>()
                                       .updateFromResponse({
-                                        'photoId': widget.photoId,
+                                        'photoId': _currentPhotoId,
                                         'favorite': isFavorite,
                                         'isFavorite': isFavorite,
                                       });
@@ -266,7 +329,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => PhotoEditScreen(
-                                        photoId: widget.photoId,
+                                        photoId: _currentPhotoId,
                                       ),
                                     ),
                                   );
@@ -283,7 +346,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                 try {
                                   final success =
                                       await PhotoDownloadService.downloadSinglePhotoToGallery(
-                                        widget.photoId,
+                                        _currentPhotoId,
                                       );
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -350,7 +413,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                       // ignore: use_build_context_synchronously
                                       await AlbumApi.removePhotos(
                                         albumId: widget.albumId!,
-                                        photoIds: [widget.photoId],
+                                        photoIds: [_currentPhotoId],
                                       );
                                       if (!context.mounted) return;
                                       // 앨범 상태만 수정
@@ -358,25 +421,25 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                       context
                                           .read<AlbumProvider>()
                                           .removePhotos(widget.albumId!, [
-                                            widget.photoId,
+                                            _currentPhotoId,
                                           ]);
                                     } else {
                                       final api = PhotoApi();
-                                      await api.deletePhoto(widget.photoId);
+                                      await api.deletePhoto(_currentPhotoId);
                                       if (!context.mounted) return;
                                       context.read<PhotoProvider>().removeById(
-                                        widget.photoId,
+                                        _currentPhotoId,
                                       );
 
                                       // 삭제된 사진이 썸네일인 앨범들을 찾아서 자동으로 썸네일 변경
-                                      if (widget.imageUrl.isNotEmpty) {
+                                      if (_currentImageUrl.isNotEmpty) {
                                         final albumProvider = context
                                             .read<AlbumProvider>();
                                         final albums = albumProvider.albums;
                                         for (final album in albums) {
                                           // 앨범의 썸네일 URL이 삭제된 사진의 imageUrl과 일치하는지 확인
                                           if (album.coverPhotoUrl ==
-                                              widget.imageUrl) {
+                                              _currentImageUrl) {
                                             try {
                                               // 자동으로 앨범 내 다른 사진으로 썸네일 변경
                                               final res =
@@ -402,16 +465,48 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                         }
                                       }
                                     }
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          widget.albumId != null
-                                              ? '앨범에서 제거했습니다.'
-                                              : '사진이 성공적으로 삭제되었습니다.',
+                                    // 삭제된 사진이 마지막 사진이면 이전 사진으로 이동
+                                    if (_photos.length > 1) {
+                                      if (_currentIndex >= _photos.length - 1) {
+                                        // 마지막 사진이면 이전으로
+                                        _pageController.previousPage(
+                                          duration: const Duration(
+                                            milliseconds: 300,
+                                          ),
+                                          curve: Curves.easeInOut,
+                                        );
+                                      } else {
+                                        // 다음 사진으로 이동
+                                        _pageController.nextPage(
+                                          duration: const Duration(
+                                            milliseconds: 300,
+                                          ),
+                                          curve: Curves.easeInOut,
+                                        );
+                                      }
+                                      _photos.removeAt(_currentIndex);
+                                      setState(() {
+                                        if (_currentIndex >= _photos.length) {
+                                          _currentIndex = _photos.length - 1;
+                                        }
+                                      });
+                                    } else {
+                                      // 마지막 사진이면 화면 닫기
+                                      Navigator.pop(context);
+                                    }
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            widget.albumId != null
+                                                ? '앨범에서 제거했습니다.'
+                                                : '사진이 성공적으로 삭제되었습니다.',
+                                          ),
                                         ),
-                                      ),
-                                    );
+                                      );
+                                    }
                                   } catch (e) {
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(

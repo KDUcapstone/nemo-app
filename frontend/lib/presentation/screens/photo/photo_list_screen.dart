@@ -385,12 +385,22 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                             }
                                           });
                                         } else {
+                                          final items = context
+                                              .read<PhotoProvider>()
+                                              .items;
+                                          final currentIndex = items.indexWhere(
+                                            (p) => p.photoId == item.photoId,
+                                          );
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
                                               builder: (_) => PhotoViewerScreen(
                                                 photoId: item.photoId,
                                                 imageUrl: item.imageUrl,
+                                                photos: items, // 전체 사진 목록 전달
+                                                initialIndex: currentIndex >= 0
+                                                    ? currentIndex
+                                                    : null, // 현재 인덱스 전달
                                               ),
                                             ),
                                           );
