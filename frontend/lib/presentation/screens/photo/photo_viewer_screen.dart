@@ -370,8 +370,8 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
 
                                       // 삭제된 사진이 썸네일인 앨범들을 찾아서 자동으로 썸네일 변경
                                       if (widget.imageUrl.isNotEmpty) {
-                                        final albumProvider =
-                                            context.read<AlbumProvider>();
+                                        final albumProvider = context
+                                            .read<AlbumProvider>();
                                         final albums = albumProvider.albums;
                                         for (final album in albums) {
                                           // 앨범의 썸네일 URL이 삭제된 사진의 imageUrl과 일치하는지 확인
@@ -379,17 +379,18 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                               widget.imageUrl) {
                                             try {
                                               // 자동으로 앨범 내 다른 사진으로 썸네일 변경
-                                              final res = await AlbumApi
-                                                  .setThumbnail(
-                                                albumId: album.albumId,
-                                                photoId:
-                                                    null, // null이면 자동으로 최신 사진 선택
-                                              );
+                                              final res =
+                                                  await AlbumApi.setThumbnail(
+                                                    albumId: album.albumId,
+                                                    photoId:
+                                                        null, // null이면 자동으로 최신 사진 선택
+                                                  );
                                               // 썸네일 URL 업데이트
                                               if (res['thumbnailUrl'] != null) {
                                                 albumProvider.updateCoverUrl(
                                                   album.albumId,
-                                                  res['thumbnailUrl'] as String?,
+                                                  res['thumbnailUrl']
+                                                      as String?,
                                                 );
                                               }
                                             } catch (e) {

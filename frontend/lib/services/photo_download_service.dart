@@ -8,7 +8,6 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'package:frontend/services/album_api.dart';
 import 'package:frontend/services/api_client.dart';
-import 'package:frontend/services/auth_service.dart';
 import 'package:frontend/app/constants.dart';
 
 /// 사진 다운로드 및 갤러리 저장 관련 공통 유틸
@@ -42,14 +41,9 @@ class PhotoDownloadService {
         }
       }
 
-      final baseUrl = AuthService.baseUrl;
-      final requestUri = Uri.parse('$baseUrl/api/photos/$photoId/download');
-
-      final headers = <String, String>{};
-      final token = AuthService.accessToken;
-      if (token != null && token.isNotEmpty) {
-        headers['Authorization'] = 'Bearer $token';
-      }
+      // ApiClient를 사용하여 슬래시 중복 문제 방지
+      final requestUri = ApiClient.uri('/api/photos/$photoId/download');
+      final headers = ApiClient.headers(includeAuth: true);
 
       // 바이너리 응답 받기
       final res = await http.get(requestUri, headers: headers);
