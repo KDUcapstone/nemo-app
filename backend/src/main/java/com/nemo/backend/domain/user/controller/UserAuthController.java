@@ -106,24 +106,33 @@ public class UserAuthController {
     // 로그아웃 (명세 반영)
     //  - Body: { "refreshToken": "..." }
     // ---------------------------
-    @PostMapping(
-            value = "/logout",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE
-    )
-    public ResponseEntity<Map<String, String>> logout(
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(
             HttpServletRequest servletRequest,
-            @RequestBody RefreshRequest body
+            @RequestBody(required = false) RefreshRequest body
     ) {
         String authorization = servletRequest.getHeader("Authorization");
-        Long userId = authExtractor.extractUserId(authorization);
+        Long userId = null;
 
-        if (body == null || body.refreshToken() == null || body.refreshToken().isBlank()) {
-            throw new ApiException(ErrorCode.INVALID_REQUEST, "refreshToken 은 필수입니다.");
+        // ✅ Authorization 이 있으면 시도해보고,
+        //    만료/유효하지 않으면 그냥 무시하고 refreshToken 기반/없음 기반 로그아웃만 수행
+        if (authorization != null && !authorization.isBlank()) {
+            try {
+                userId = authExtractor.extractUserId(authorization);
+            } catch (ApiException e) {
+                if (e.getErrorCode() != ErrorCode.UNAUTHORIZED) {
+                    throw e; // 다른 에러면 그대로 던지고
+                }
+                // UNAUTHORIZED(만료/유효X)는 무시하고 진행
+            }
         }
 
-        authService.logout(userId, body.refreshToken());
+        // ✅ body 가 없어도 괜찮고, refreshToken 이 없어도 괜찮게
+        String refreshToken = (body != null) ? body.refreshToken() : null;
+
+        authService.logout(userId, refreshToken);
 
         return ResponseEntity.ok(Map.of("message", "성공적으로 로그아웃되었습니다."));
     }
+
 }

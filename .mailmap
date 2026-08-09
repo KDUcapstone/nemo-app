@@ -1,0 +1,14 @@
+# git shortlog / GitHub 기여자 목록에서 한 사람이 여러 이름으로 흩어지는 것을 막습니다.
+#
+# 형식: <정규 이름> <정규 이메일> <커밋에 기록된 이메일>
+# 확인: git shortlog -sne --all
+#
+# 정규 이메일은 GitHub 계정에 연결되는 주소를 씁니다.
+
+김한욱 <138234676+hwkimv@users.noreply.github.com> <138234676+hwkimv@users.noreply.github.com>
+김한욱 <138234676+hwkimv@users.noreply.github.com> <hwkimv72@gmail.com>
+
+문한일 <48176672+Unpart@users.noreply.github.com> <48176672+Unpart@users.noreply.github.com>
+문한일 <48176672+Unpart@users.noreply.github.com> <mhy7847@naver.com>
+
+임다빈 <imdabin398@naver.com> <imdabin398@naver.com>

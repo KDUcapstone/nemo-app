@@ -1,40 +1,34 @@
 # ============================================
-# 💻 application-local.yml
-# - 로컬 PC에서 CloudType DB(외부 접속 주소)로 연결
-# - CloudType에서 "외부 TCP 접속 허용"을 켜야 함
+# Local PostgreSQL integration profile
+# - Select explicitly with SPRING_PROFILES_ACTIVE=local.
+# - Keep all credentials outside Git.
 # ============================================
 
 spring:
   datasource:
-    driver-class-name: org.mariadb.jdbc.Driver
-    # ⛓️ CloudType DB 접속 주소 (도메인 탭에서 확인)
-    url: jdbc:mariadb://svc.sel5.cloudtype.app:30303/nemo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
-    username: ${DB_USER}      # DB 사용자명
-    password: ${DB_PASSWORD}   # DB 비밀번호
-
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
   jpa:
-    database-platform: org.hibernate.dialect.MariaDBDialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: update        # 개발 중엔 update (운영은 validate 권장)
+      ddl-auto: ${JPA_HIBERNATE_DDL_AUTO:update}
     show-sql: true
     properties:
       hibernate.format_sql: true
 
 app:
-  public-base-url: http://10.0.2.2:8080
-
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
   jwt:
-    # 최소 32바이트 이상. 예시는 Base64 32바이트(24 raw bytes)보다 더 긴 랜덤 문자열 권장.
-    secret: "nemo-dev-secret-please-change-this-very-long-32bytes-min!"
-    issuer: "nemo-backend"
-    access-ttl-ms: 900000   # 15분 (밀리초)
-
-
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:nemo-backend}
+    access-ttl-ms: ${JWT_ACCESS_TTL_MS:900000}
   s3:
-    bucket: nemo-dev-photos
-    region: ap-northeast-2
-    endpoint: http://localhost:4566
-    accessKey: test
-    secretKey: test
-    pathStyle: true
-    createBucketIfMissing: true
+    bucket: ${AWS_S3_BUCKET:nemo-s3-prod}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ""
+    accessKey: ${AWS_ACCESS_KEY}
+    secretKey: ${AWS_SECRET_KEY}
+    pathStyle: false
+    createBucketIfMissing: false

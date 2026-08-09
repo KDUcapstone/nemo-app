@@ -1,41 +1,18 @@
-# =============================
-# 🌱 H2 데이터베이스 설정
-# =============================
+# ============================================
+# Common application configuration
+# - dev is the safe default for local execution.
+# - local/prod must be selected explicitly.
+# ============================================
+
 spring:
   profiles:
-    # 현재 활성화할 프로필 선택 (dev / local / prod)
-    # ✅ 개발 중엔 local (CloudType DB 외부 접속)
-    # ✅ 테스트용 H2는 dev
-    # ✅ 실제 배포는 prod
-    active: dev
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
-  datasource:
-    url: jdbc:h2:mem:nemodb
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-
-  jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
-    hibernate:
-      ddl-auto: update
-    properties:
-      hibernate:
-        format_sql: true
-        show_sql: true
-
-  # =============================
-  # ✉️ 메일(SMTP) 설정
-  # =============================
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -59,45 +36,17 @@ spring:
     serialization:
       WRITE_DATES_AS_TIMESTAMPS: false
 
-# ------------------------------------
-# 서버
-# ------------------------------------
 server:
-  port: 8080
+  port: ${PORT:8080}
 
-# =============================
-# ☁️ S3 버킷 관련 설정
-# =============================
-app:
-  s3:
-    bucket: nemo-dev-photos
-    region: ap-northeast-2
-    endpoint: http://localhost:4566   # ★ LocalStack이면 꼭 채우기
-    accessKey: test
-    secretKey: test
-    pathStyle: true
-    createBucketIfMissing: true        # ★ 없으면 자동 생성
-
-  # 업로드된 파일을 외부 URL로 만들 때 사용할 백엔드 퍼블릭 베이스 URL
-  public-base-url: http://10.0.2.2:8080
-
-# =============================
-# 로깅
-# =============================
 logging:
   level:
     root: INFO
     com.nemo.backend: DEBUG
 
-# 네이버 '개발자센터(오픈API)' - 지역검색(Local Search) 설정
 naver:
   openapi:
     local:
       endpoint: https://openapi.naver.com/v1/search/local.json
-      client-id: ${NAVER_LOCAL_CLIENT_ID}
-      client-secret: ${NAVER_LOCAL_CLIENT_SECRET}
-    map:
-      client-id: ${NAVER_MAP_CLIENT_ID}
-      client-secret: ${NAVER_MAP_CLIENT_SECRET}
     reverse:
       endpoint: https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc

@@ -5,7 +5,6 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:frontend/main.dart';
@@ -19,5 +18,6 @@ void main() {
     expect(find.text('이메일로 시작하기'), findsOneWidget);
     expect(find.text('카카오로 시작하기'), findsOneWidget);
     expect(find.text('Google로 시작하기'), findsOneWidget);
+    expect(find.text('앱 들어가기 (임시)'), findsNothing);
   });
 }

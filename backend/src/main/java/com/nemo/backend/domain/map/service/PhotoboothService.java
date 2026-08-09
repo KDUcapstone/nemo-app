@@ -37,7 +37,12 @@ public class PhotoboothService {
 
     // 🔍 기본 검색 키워드(브랜드 + 일반 키워드)
     private static final List<String> KEYWORDS = List.of(
-            "포토부스", "인생네컷", "하루필름", "포토이즘", "포토시그널", "포토그레이", "돈룩업"
+            "포토부스", "인생네컷", "하루필름", "포토이즘", "포토시그널", "포토그레이", "돈룩업", "엑시트", "포토랩"
+    );
+
+    // 포토부스 브랜드 이름만 모아둔 리스트 (자동완성 검색용)
+    private static final List<String> BRANDS = List.of(
+            "포토부스", "인생네컷", "하루필름", "포토이즘", "포토시그널", "포토그레이", "돈룩업", "엑시트", "포토랩"
     );
 
     private static final int PAGE_SIZE = 5;               // 네이버 LocalSearch 최대 display=5
@@ -135,6 +140,169 @@ public class PhotoboothService {
         // v.setZoom( ... ) // 필요하면 추후 추가
         return v;
     }
+
+    /**
+     * 🔍 포토부스 자동완성 검색
+     *
+     * - keyword: "명동", "인생네컷", "인생네컷 수유" 등
+     * - lat/lng 이 있으면 현재 위치 기준으로 distanceMeter 계산 후 가까운 순 정렬
+     * - 브랜드명 + 지점명을 같이 쳐도 동작하도록 키워드 조합
+     */
+    public List<PhotoboothDto> searchPhotobooths(
+            String keyword,
+            Double lat,
+            Double lng,
+            Integer limit
+    ) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+
+        String trimmed = keyword.trim();
+        int max = (limit != null && limit > 0) ? limit : 10;
+
+        // ────────────────────────────────────────
+        // 1) (선택) 현재 위치 기준으로 regionName 얻기
+        // ────────────────────────────────────────
+        String regionName = null;
+        if (lat != null && lng != null) {
+            regionName = naverApiClient.reverseGeocodeToRegion(lat, lng)
+                    .orElse(null);
+        }
+
+        // ────────────────────────────────────────
+        // 2) 실제 네이버에 던질 검색 키워드 조합
+        //    - 브랜드명이 포함된 검색어인지 먼저 판단
+        // ────────────────────────────────────────
+        List<String> searchKeywords = new ArrayList<>();
+
+        boolean containsBrand = !Objects.equals(guessBrand(trimmed), "기타");
+
+        if (containsBrand) {
+            // 예: "인생네컷 수유"
+            if (regionName != null && !regionName.isBlank()) {
+                searchKeywords.add(regionName + " " + trimmed);
+            }
+            searchKeywords.add(trimmed);
+        } else {
+            // 예: "명동"
+            String base = trimmed;
+            if (regionName != null && !regionName.isBlank()) {
+                base = regionName + " " + trimmed;
+            }
+
+            // "명동 인생네컷", "명동 포토그레이" ...
+            for (String brand : BRANDS) {
+                searchKeywords.add(base + " " + brand);
+            }
+            // "명동 포토부스"
+            searchKeywords.add(base + " 포토부스");
+        }
+
+        log.info("[MAP][SEARCH] keyword='{}', region='{}', searchKeywords={}",
+                trimmed, regionName, searchKeywords);
+
+        // ────────────────────────────────────────
+        // 3) 네이버 LocalSearch 여러 번 호출해서 raw 결과 수집
+        // ────────────────────────────────────────
+        List<Map<String, Object>> raw = new ArrayList<>();
+
+        for (String kw : searchKeywords) {
+            Map<String, Object> res = naverApiClient.searchLocal(kw, PAGE_SIZE, 1, "random");
+            List<Map<String, Object>> items = extractItems(res);
+            raw.addAll(items);
+
+            // 너무 많이 모이면 조기 종료 (성능 보호)
+            if (raw.size() >= max * 2) {
+                break;
+            }
+        }
+
+        log.info("[MAP][SEARCH][RAW] totalRawItems={}", raw.size());
+
+        /**
+         * 🔁 Fallback: 지역명 붙인 검색에서 0개 나오면
+         *    → regionName 없이 한 번 더 검색
+         */
+        if (raw.isEmpty() && regionName != null && !regionName.isBlank()) {
+            log.info("[MAP][SEARCH][FALLBACK] no result with region. retry without region");
+
+            List<String> fallbackKeywords = new ArrayList<>();
+
+            if (containsBrand) {
+                // 예: "인생네컷 수유"
+                fallbackKeywords.add(trimmed);  // "인생네컷 수유"
+            } else {
+                // 예: "수유"
+                for (String brand : BRANDS) {
+                    fallbackKeywords.add(trimmed + " " + brand);  // "수유 인생네컷" ...
+                }
+                fallbackKeywords.add(trimmed + " 포토부스");        // "수유 포토부스"
+            }
+
+            for (String kw : fallbackKeywords) {
+                Map<String, Object> res = naverApiClient.searchLocal(kw, PAGE_SIZE, 1, "random");
+                List<Map<String, Object>> items = extractItems(res);
+                raw.addAll(items);
+
+                if (raw.size() >= max * 2) {
+                    break;
+                }
+            }
+
+            log.info("[MAP][SEARCH][RAW][FALLBACK] totalRawItems={}", raw.size());
+        }
+
+        // ────────────────────────────────────────
+        // 4) raw → PhotoboothDto 변환 + 좌표 없는 항목 제거
+        // ────────────────────────────────────────
+        List<PhotoboothDto> all = raw.stream()
+                .map(this::toDto)  // 이미 존재하는 헬퍼 메서드
+                .filter(dto -> dto.getLatitude() != 0 && dto.getLongitude() != 0)
+                .toList();
+
+        // ────────────────────────────────────────
+        // 5) 중복 제거 (50m 이내 + 이름 유사)
+        //    viewport 로직과 동일한 기준 사용
+        // ────────────────────────────────────────
+        List<PhotoboothDto> deduped = new ArrayList<>();
+        for (PhotoboothDto cur : all) {
+            boolean dup = deduped.stream().anyMatch(x ->
+                    distanceMeter(x.getLatitude(), x.getLongitude(),
+                            cur.getLatitude(), cur.getLongitude()) < 50 &&
+                            (core(x.getName()).contains(core(cur.getName())) ||
+                                    core(cur.getName()).contains(core(x.getName())))
+            );
+            if (!dup) {
+                deduped.add(cur);
+            }
+        }
+
+        log.info("[MAP][SEARCH][DEDUP] deduped={}", deduped.size());
+
+        // ────────────────────────────────────────
+        // 6) 거리 계산 & 정렬 (lat/lng 있을 때만)
+        // ────────────────────────────────────────
+        if (lat != null && lng != null) {
+            for (PhotoboothDto dto : deduped) {
+                dto.setDistanceMeter(
+                        distanceMeter(lat, lng, dto.getLatitude(), dto.getLongitude())
+                );
+            }
+            deduped.sort(Comparator.comparingInt(PhotoboothDto::getDistanceMeter));
+        }
+
+        // ────────────────────────────────────────
+        // 7) limit 만큼 자르기
+        // ────────────────────────────────────────
+        if (deduped.size() > max) {
+            deduped = deduped.subList(0, max);
+        }
+
+        log.info("[MAP][SEARCH][RETURN] finalCount={}", deduped.size());
+        return deduped;
+    }
+
 
     /**
      * 마커가 sinceTs 이후로 변경되었는지 여부를 판단하는 헬퍼.

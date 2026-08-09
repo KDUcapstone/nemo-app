@@ -1,27 +1,55 @@
 # ============================================
-# 🚀 application-prod.yml
-# - CloudType에서 백엔드와 DB를 함께 배포했을 때 사용
-# - 내부 통신 (서비스명:3306)으로 연결
-# - 비밀번호 등 민감정보는 환경변수(시크릿)로 주입
+# application-prod.yml
+# - Spring Boot connects to Supabase PostgreSQL.
+# - Secrets are injected through deployment environment variables.
 # ============================================
 
 spring:
+  h2:
+    console:
+      enabled: false
   datasource:
-    driver-class-name: org.mariadb.jdbc.Driver
-    # 🛰️ 내부 통신용 주소 (포트 고정: 3306)
-    url: jdbc:mariadb://svc.sel5.cloudtype.app:30303/nemo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
-    username: ${DB_USER}         # 환경변수로 관리 (CloudType 시크릿)
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL}
+    username: ${DB_USER}
     password: ${DB_PASSWORD}
-
   jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: validate         # 운영 환경은 validate (DB 변경 금지)
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate.format_sql: true
 
+
 app:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:nemo-backend}
+    access-ttl-ms: ${JWT_ACCESS_TTL_MS:900000}
+
   s3:
-    accessKey: ${AWS_ACCESS_KEY_ID}
-    secretKey: ${AWS_SECRET_ACCESS_KEY}
+    bucket: ${AWS_S3_BUCKET:nemo-s3-prod}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ""                    # AWS니까 endpoint 없음
+    accessKey: ${AWS_ACCESS_KEY}
+    secretKey: ${AWS_SECRET_KEY}
     pathStyle: false
+    createBucketIfMissing: false
+
+  public-base-url: ${PUBLIC_BASE_URL}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

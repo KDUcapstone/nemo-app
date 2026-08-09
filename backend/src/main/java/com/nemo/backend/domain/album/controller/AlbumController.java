@@ -1,6 +1,8 @@
 // backend/src/main/java/com/nemo/backend/domain/album/controller/AlbumController.java
 package com.nemo.backend.domain.album.controller;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -38,7 +40,44 @@ public class AlbumController {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
         // favoriteOnly + ownership 반영
-        List<AlbumSummaryResponse> all = albumService.getAlbums(userId, ownership, favoriteOnly);
+        List<AlbumSummaryResponse> all =
+                new ArrayList<>(albumService.getAlbums(userId, ownership, favoriteOnly));
+
+        // ===== 정렬 적용 =====
+        String field = "createdAt";
+        boolean asc = false; // default = 최신순 (desc)
+
+        if (sort != null && !sort.isBlank()) {
+            String[] parts = sort.split(",");
+            field = parts[0].trim();
+            if (parts.length > 1) {
+                asc = "asc".equalsIgnoreCase(parts[1].trim());
+            }
+        }
+
+        Comparator<AlbumSummaryResponse> comparator;
+
+        switch (field) {
+            case "title", "name" -> {
+                comparator = Comparator.comparing(
+                        AlbumSummaryResponse::getTitle,
+                        String.CASE_INSENSITIVE_ORDER
+                );
+            }
+            case "createdAt" -> {
+                comparator = Comparator.comparing(AlbumSummaryResponse::getCreatedAt);
+            }
+            default -> {
+                // 잘못된 필드가 들어오면 createdAt 기준으로
+                comparator = Comparator.comparing(AlbumSummaryResponse::getCreatedAt);
+            }
+        }
+
+        if (!asc) {
+            comparator = comparator.reversed();
+        }
+        all.sort(comparator);
+        // ===== 정렬 끝 =====
 
         int fromIndex = Math.max(page * size, 0);
         if (fromIndex > all.size()) {
@@ -64,6 +103,7 @@ public class AlbumController {
                 )
         );
     }
+
 
     // 2) POST /api/albums : 앨범 생성
     @PostMapping
@@ -173,35 +213,38 @@ public class AlbumController {
     public ResponseEntity<AlbumThumbnailResponse> updateThumbnailFromGallery(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long albumId,
-            @RequestBody AlbumThumbnailSelectRequest req
+            @RequestBody(required = false) AlbumThumbnailSelectRequest req   // ✅ optional
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
+        Long photoId = (req != null ? req.getPhotoId() : null);  // ✅ null 허용
         AlbumThumbnailResponse resp =
-                albumService.updateThumbnail(userId, albumId, req.getPhotoId(), null);
+                albumService.updateThumbnail(userId, albumId, photoId, null);
 
         return ResponseEntity.ok(resp);
     }
 
-    // 8-2) POST /api/albums/{albumId}/thumbnail (multipart/form-data)
+
+    // 8-2) POST /api/albums/{albumId}/thumbnail (Multipart, 파일 업로드)
     @PostMapping(
             value = "/{albumId}/thumbnail",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE
     )
-    public ResponseEntity<AlbumThumbnailResponse> updateThumbnail(
+    public ResponseEntity<AlbumThumbnailResponse> updateThumbnailFromFile(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long albumId,
-            @RequestPart(value = "photoId", required = false) Long photoId,
-            @RequestPart(value = "file", required = false) MultipartFile file
+            @RequestPart(value = "file", required = false) MultipartFile file   // ✅ optional
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
 
         AlbumThumbnailResponse resp =
-                albumService.updateThumbnail(userId, albumId, photoId, file);
+                albumService.updateThumbnail(userId, albumId, null, file);
 
         return ResponseEntity.ok(resp);
     }
+
+
 
     // 9) POST /api/albums/{albumId}/favorite : 앨범 즐겨찾기 추가
     @PostMapping("/{albumId}/favorite")
@@ -222,6 +265,17 @@ public class AlbumController {
     ) {
         Long userId = authExtractor.extractUserId(authorizationHeader);
         AlbumFavoriteResponse resp = albumService.setFavorite(userId, albumId, false);
+        return ResponseEntity.ok(resp);
+    }
+
+    // ✅ 11) GET /api/albums/{albumId}/download-urls : 앨범 전체 사진 다운로드 URL 목록
+    @GetMapping("/{albumId}/download-urls")
+    public ResponseEntity<AlbumDownloadUrlsResponse> getAlbumDownloadUrls(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable Long albumId
+    ) {
+        Long userId = authExtractor.extractUserId(authorizationHeader);
+        AlbumDownloadUrlsResponse resp = albumService.getAlbumDownloadUrls(userId, albumId);
         return ResponseEntity.ok(resp);
     }
 }

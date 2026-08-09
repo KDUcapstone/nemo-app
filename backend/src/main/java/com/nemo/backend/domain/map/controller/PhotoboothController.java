@@ -126,6 +126,61 @@ public class PhotoboothController {
     }
 
     /**
+     * 🔍 포토부스 자동완성 검색 API
+     *
+     * - 사진 상세정보 입력창에서 위치 입력할 때 사용
+     * - 예시:
+     *   GET /api/map/photobooths/search?keyword=인생네컷%20수유&lat=37.6381&lng=127.0263&limit=10
+     */
+    @GetMapping("/search")
+    @Operation(
+            summary = "포토부스 자동완성 검색",
+            description = """
+                    사용자가 위치 입력창에 키워드를 입력했을 때,
+                    해당 키워드와 관련된 포토부스 지점 목록을 반환합니다.
+
+                    ✅ 사용 예시
+                    - keyword=명동          → 명동 근처 포토부스들
+                    - keyword=인생네컷       → 인생네컷 지점들
+                    - keyword=인생네컷 수유   → 인생네컷 수유점 근처 우선
+
+                    ✅ 권장 테스트 예시
+                    GET /api/map/photobooths/search?keyword=인생네컷%20수유&lat=37.6381&lng=127.0263&limit=10
+                    """
+    )
+    public ResponseEntity<List<PhotoboothDto>> searchPhotobooths(
+            @Parameter(
+                    description = "검색 키워드 (지점명/지역명/브랜드명 혼합 가능)",
+                    example = "인생네컷 수유"
+            )
+            @RequestParam String keyword,
+
+            @Parameter(
+                    description = "현재 사용자 위도 (있으면 거리순 정렬에 사용)",
+                    example = "37.6381"
+            )
+            @RequestParam(required = false) Double lat,
+
+            @Parameter(
+                    description = "현재 사용자 경도 (있으면 거리순 정렬에 사용)",
+                    example = "127.0263"
+            )
+            @RequestParam(required = false) Double lng,
+
+            @Parameter(
+                    description = "최대 반환 개수 (기본값 10)",
+                    example = "10"
+            )
+            @RequestParam(required = false, defaultValue = "10") Integer limit
+    ) {
+        List<PhotoboothDto> results =
+                service.searchPhotobooths(keyword, lat, lng, limit);
+
+        return ResponseEntity.ok(results);
+    }
+
+
+    /**
      * 뷰포트 유효성 검증 헬퍼 메서드
      * - 기존 /viewport GET에서도 재사용 중일 가능성 높음
      * - 여기서는 간단히 "상식적인 범위"만 거른다.

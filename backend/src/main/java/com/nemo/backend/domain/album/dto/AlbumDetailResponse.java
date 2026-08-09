@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * 앨범 상세 조회 응답
- * 명세: albumId, title, description, coverPhotoUrl, photoCount, createdAt, role, photoList[]
+ * 명세: albumId, title, description, coverPhotoUrl, photoCount, createdAt, role, shared, photoList[]
  */
 @Getter
 @Builder
@@ -23,6 +23,7 @@ public class AlbumDetailResponse {
     private int photoCount;
     private LocalDateTime createdAt;
     private String role;   // OWNER / CO_OWNER / EDITOR / VIEWER
+    private boolean shared; // ✅ true 이면 공유 앨범, false 이면 단독 앨범
     private List<PhotoSummary> photoList;
 
     @Getter
@@ -33,6 +34,5 @@ public class AlbumDetailResponse {
         private LocalDateTime takenAt;
         private String location;   // ✅ 명세: location (문자열만)
         private String brand;      // ✅ 명세: brand
-        // ❌ locationId / locationName / videoUrl 전부 없음
     }
 }

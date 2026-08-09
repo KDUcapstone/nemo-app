@@ -46,7 +46,7 @@ app:
     pathStyle: true
     createBucketIfMissing: true
 
-  public-base-url: http://10.0.2.2:8080
+  public-base-url: http://10.0.2.2:8080/
 
 naver:
   openapi:

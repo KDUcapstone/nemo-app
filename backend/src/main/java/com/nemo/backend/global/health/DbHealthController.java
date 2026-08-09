@@ -1,8 +1,11 @@
 package com.nemo.backend.global.health;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @RestController
 public class DbHealthController {
@@ -14,16 +17,22 @@ public class DbHealthController {
     }
 
     @GetMapping("/health/db")
-    public String checkDbConnection() {
+    public ResponseEntity<Map<String, String>> checkDbConnection() {
         try {
             Integer result = jdbc.queryForObject("SELECT 1", Integer.class);
             if (result != null && result == 1) {
-                return "✅ DB 연결 성공! CloudType MariaDB와 통신 중입니다.";
-            } else {
-                return "⚠️ DB 연결 시도는 됐지만, 응답이 올바르지 않습니다.";
+                return ResponseEntity.ok(Map.of(
+                        "status", "UP",
+                        "database", "PostgreSQL"
+                ));
             }
-        } catch (Exception e) {
-            return "❌ DB 연결 실패: " + e.getMessage();
+        } catch (Exception ignored) {
+            // Health responses must not leak connection details.
         }
+
+        return ResponseEntity.status(503).body(Map.of(
+                "status", "DOWN",
+                "database", "PostgreSQL"
+        ));
     }
 }

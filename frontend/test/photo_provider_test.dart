@@ -5,11 +5,16 @@ import 'package:frontend/providers/photo_provider.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUp(() {
+    AppConstants.useMockApi = true;
+  });
+
+  tearDown(() {
+    AppConstants.useMockApi = false;
+  });
+
   group('PhotoProvider mock brand filter', () {
     test('brand filter can be cleared back to all items', () async {
-      if (!AppConstants.useMockApi) {
-        fail('Test requires AppConstants.useMockApi == true');
-      }
       final provider = PhotoProvider();
       final totalCount = provider.items.length;
       expect(totalCount, greaterThan(0));

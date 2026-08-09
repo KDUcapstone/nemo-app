@@ -8,7 +8,10 @@ import 'api_client.dart';
 
 class AuthService {
   // ✅ 서버 URL 설정 (로컬 or 배포 서버로 교체해야 함)
-  static const String baseUrl = 'http://10.0.2.2:8080'; // ← TODO: 실제 주소로 바꿔!
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://10.0.2.2:8080',
+  );
 
   // JWT 토큰 저장소
   static String? _accessToken;

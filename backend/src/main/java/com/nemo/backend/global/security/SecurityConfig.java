@@ -38,10 +38,13 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/files/**",
-                                "/actuator/**",
+                                "/actuator/health",
+                                "/actuator/info",
 
                                 "/api/users/signup",
                                 "/api/users/login",
+                                "/api/auth/logout",
+                                "/api/auth/oauth/**",
 
                                 // 이메일 인증
                                 "/api/auth/email/**",

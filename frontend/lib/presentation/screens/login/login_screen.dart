@@ -78,18 +78,6 @@ class LoginScreen extends StatelessWidget {
                         // TODO: 구글 로그인/회원가입 통합 플로우
                       },
                     ),
-                    const SizedBox(height: 24),
-                    // 임시: 앱 메인 쉘로 진입 (하단 네비 포함)
-                    _AnimatedPrimaryButton(
-                      text: '앱 들어가기 (임시)',
-                      gradientColors: const [Colors.orange, Colors.deepOrange],
-                      onTap: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (_) => const MainShell()),
-                        );
-                      },
-                    ),
                   ],
                 ),
               ),
