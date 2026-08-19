@@ -1,8 +1,12 @@
 // src/main/java/com/nemo/backend/domain/map/util/NaverApiClient.java
 package com.nemo.backend.domain.map.util;
 
-import lombok.RequiredArgsConstructor;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
+import com.github.benmanes.caffeine.cache.stats.CacheStats;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -17,12 +21,10 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class NaverApiClient {
 
     // ───────────────────────────────────────────────────────────────
@@ -53,17 +55,44 @@ public class NaverApiClient {
     private String mapClientSecret;
 
     private final RestTemplate restTemplate;
+    private final Cache<String, Map<String, Object>> cache;
+    private final boolean cacheEnabled;
 
-    // ───────────────────────────────────────────────────────────────
-    // (A) 간단 캐시: 같은 요청(같은 URI)은 2분간 재사용
-    //     - Local Search / Reverse Geocode 둘 다 공통으로 사용
-    //     - key: 완성된 URI 문자열, value: 캐시 항목(응답+저장시각)
-    // ───────────────────────────────────────────────────────────────
-    private static final long CACHE_TTL_MILLIS = Duration.ofMinutes(2).toMillis();
-    private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    @Autowired
+    public NaverApiClient(
+            RestTemplate restTemplate,
+            @Value("${naver.cache.ttl-ms:120000}") long cacheTtlMillis,
+            @Value("${naver.cache.maximum-size:1000}") long cacheMaximumSize
+    ) {
+        this(restTemplate, cacheTtlMillis, cacheMaximumSize, Ticker.systemTicker());
+    }
 
-    private record CacheEntry(Map<String, Object> body, long savedAtMs) {}
-    // ───────────────────────────────────────────────────────────────
+    NaverApiClient(
+            RestTemplate restTemplate,
+            long cacheTtlMillis,
+            long cacheMaximumSize,
+            Ticker ticker
+    ) {
+        if (cacheTtlMillis < 0) {
+            throw new IllegalArgumentException("naver.cache.ttl-ms는 0 이상이어야 합니다.");
+        }
+        if (cacheMaximumSize <= 0) {
+            throw new IllegalArgumentException("naver.cache.maximum-size는 1 이상이어야 합니다.");
+        }
+
+        this.restTemplate = restTemplate;
+        this.cacheEnabled = cacheTtlMillis > 0;
+
+        Caffeine<Object, Object> cacheBuilder = Caffeine.newBuilder()
+                .maximumSize(cacheMaximumSize)
+                .recordStats()
+                .ticker(Objects.requireNonNull(ticker))
+                .executor(Runnable::run);
+        if (cacheEnabled) {
+            cacheBuilder.expireAfterWrite(Duration.ofMillis(cacheTtlMillis));
+        }
+        this.cache = cacheBuilder.build();
+    }
 
     // ───────────────────────────────────────────────────────────────
     // (B) 아주 단순한 레이트 리미터: 외부 호출 사이 최소 간격 200ms 확보(초당 최대 5회)
@@ -103,7 +132,7 @@ public class NaverApiClient {
 
         String cacheKey = uri.toString();
 
-        // 2) 캐시 확인 (2분 내면 재사용)
+        // 2) 캐시 확인 (설정된 TTL 안이면 재사용, TTL=0이면 비활성화)
         Map<String, Object> cached = loadFromCache(cacheKey);
         if (cached != null) {
             log.debug("[NAVER][CACHE-HIT][LOCAL] {}", cacheKey);
@@ -185,7 +214,7 @@ public class NaverApiClient {
 
         String cacheKey = uri.toString();
 
-        // 1) 캐시 확인 (2분 내면 재사용)
+        // 1) 캐시 확인 (설정된 TTL 안이면 재사용, TTL=0이면 비활성화)
         Map<String, Object> cached = loadFromCache(cacheKey);
         if (cached != null) {
             log.debug("[NAVER][CACHE-HIT][REVERSE] {}", cacheKey);
@@ -283,16 +312,21 @@ public class NaverApiClient {
     }
 
     private Map<String, Object> loadFromCache(String key) {
-        CacheEntry entry = cache.get(key);
-        if (entry == null) return null;
-        long age = System.currentTimeMillis() - entry.savedAtMs();
-        if (age <= CACHE_TTL_MILLIS) return entry.body();
-        cache.remove(key); // 만료되면 정리
-        return null;
+        if (!cacheEnabled) return null;
+        return cache.getIfPresent(key);
     }
 
     private void saveToCache(String key, Map<String, Object> body) {
-        cache.put(key, new CacheEntry(Objects.requireNonNullElse(body, Map.of()), System.currentTimeMillis()));
+        if (!cacheEnabled) return;
+        cache.put(key, Objects.requireNonNullElse(body, Map.of()));
+    }
+
+    public CacheStats cacheStats() {
+        return cache.stats();
+    }
+
+    public long cacheEstimatedSize() {
+        return cache.estimatedSize();
     }
 
     // 외부 호출 최소 간격 보장 (아주 단순한 방식)

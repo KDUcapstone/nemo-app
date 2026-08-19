@@ -45,6 +45,9 @@ logging:
     com.nemo.backend: DEBUG
 
 naver:
+  cache:
+    ttl-ms: ${NAVER_CACHE_TTL_MS:120000}
+    maximum-size: ${NAVER_CACHE_MAXIMUM_SIZE:1000}
   openapi:
     local:
       endpoint: https://openapi.naver.com/v1/search/local.json
